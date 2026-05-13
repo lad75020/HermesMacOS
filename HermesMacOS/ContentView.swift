@@ -77,6 +77,45 @@ final class HermesAskWorkspace: Identifiable {
     }
 }
 
+struct HermesTopTabSwitcher: View {
+    @Binding var selectedTab: HermesMacOSTab
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(HermesMacOSTab.allCases) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    Label(tab.title, systemImage: tab.systemImage)
+                        .font(.subheadline.weight(.semibold))
+                        .labelStyle(.titleAndIcon)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .frame(minWidth: 132)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selectedTab == tab ? Color.white : Color.primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(selectedTab == tab ? Color.hermesActionBlue : Color.hermesSurface.opacity(0.58))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(selectedTab == tab ? Color.white.opacity(0.24) : Color.white.opacity(0.14), lineWidth: 1)
+                )
+                .shadow(color: selectedTab == tab ? Color.hermesActionBlue.opacity(0.24) : .clear, radius: 8, y: 3)
+                .help(tab.title)
+                .accessibilityLabel(tab.title)
+                .accessibilityAddTraits(selectedTab == tab ? [.isSelected] : [])
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 0)
+    }
+}
+
 struct ContentView: View {
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
@@ -96,37 +135,12 @@ struct ContentView: View {
     }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            HermesAskWorkspacesView(
-                apiSettings: $apiSettings,
-                workspaces: askWorkspaces,
-                selectedWorkspaceID: selectedWorkspaceBinding,
-                promptHistory: promptHistory,
-                onSelectWorkspace: selectAskWorkspace,
-                onAddWorkspace: addAskWorkspace,
-                onDeleteWorkspace: deleteAskWorkspace
-            )
-                .tabItem { Label("Ask Hermes", systemImage: "dot.radiowaves.left.and.right") }
-                .tag(HermesMacOSTab.ask)
-
-            HermesHistoryView(
-                apiSettings: $apiSettings,
-                searchSession: historySearchSession,
-                isResponsesStreaming: askWorkspaces.contains(where: { $0.session.isSending }),
-                onResumeResponses: resumeConversationInResponses
-            )
-            .tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
-            .tag(HermesMacOSTab.history)
-
-            HermesUtilitiesView(
-                clipboardHistory: clipboardHistory,
-                promptHistory: promptHistory,
-                workspaces: askWorkspaces,
-                selectedWorkspaceID: selectedWorkspaceBinding
-            )
-            .tabItem { Label("Utilities", systemImage: "wrench.and.screwdriver") }
-            .tag(HermesMacOSTab.utilities)
+        VStack(spacing: 0) {
+            HermesTopTabSwitcher(selectedTab: $selectedTab)
+            activeTabContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .preferredColorScheme(appTheme.colorScheme)
         .tint(.hermesActionBlue)
         .onAppear {
@@ -136,6 +150,36 @@ struct ContentView: View {
             await clipboardHistory.runMonitoringLoop()
         }
         .onChange(of: apiSettings) { _, newValue in HermesSettingsStore.saveAPISettings(newValue) }
+    }
+
+    @ViewBuilder
+    private var activeTabContent: some View {
+        switch selectedTab {
+        case .ask:
+            HermesAskWorkspacesView(
+                apiSettings: $apiSettings,
+                workspaces: askWorkspaces,
+                selectedWorkspaceID: selectedWorkspaceBinding,
+                promptHistory: promptHistory,
+                onSelectWorkspace: selectAskWorkspace,
+                onAddWorkspace: addAskWorkspace,
+                onDeleteWorkspace: deleteAskWorkspace
+            )
+        case .history:
+            HermesHistoryView(
+                apiSettings: $apiSettings,
+                searchSession: historySearchSession,
+                isResponsesStreaming: askWorkspaces.contains(where: { $0.session.isSending }),
+                onResumeResponses: resumeConversationInResponses
+            )
+        case .utilities:
+            HermesUtilitiesView(
+                clipboardHistory: clipboardHistory,
+                promptHistory: promptHistory,
+                workspaces: askWorkspaces,
+                selectedWorkspaceID: selectedWorkspaceBinding
+            )
+        }
     }
 
     private var selectedWorkspaceBinding: Binding<HermesAskWorkspace.ID> {
@@ -182,8 +226,26 @@ struct ContentView: View {
     }
 }
 
-enum HermesMacOSTab: Hashable {
+enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case ask
     case history
     case utilities
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .ask: "Ask Hermes"
+        case .history: "History"
+        case .utilities: "Utilities"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .ask: "dot.radiowaves.left.and.right"
+        case .history: "clock.arrow.circlepath"
+        case .utilities: "wrench.and.screwdriver"
+        }
+    }
 }
