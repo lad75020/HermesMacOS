@@ -12,6 +12,7 @@ struct HermesResponsesConsoleView: View {
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var promptHistoryStore: HermesPromptHistoryStore
     var workspaceControls = AnyView(EmptyView())
+    var composerAccessoryControls = AnyView(EmptyView())
 
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
@@ -172,30 +173,6 @@ struct HermesResponsesConsoleView: View {
             }
 
             HStack(alignment: .bottom, spacing: 12) {
-                Button { isImportingAttachment = true } label: {
-                    Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                        .font(.headline)
-                        .frame(width: 38, height: 38)
-                }
-                .buttonStyle(.bordered)
-                .disabled(responseSession.isSending)
-                .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
-
-                Button {
-                    speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
-                        promptText = updatedPrompt
-                    }
-                } label: {
-                    Image(systemName: speechToText.buttonSystemImage)
-                        .font(.headline)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(speechToText.isRecording ? Color.hermesDestructive : Color.primary)
-                        .frame(width: 38, height: 38)
-                }
-                .buttonStyle(.bordered)
-                .disabled(responseSession.isSending || responseSession.isStreaming)
-                .help(speechToText.buttonTitle)
-
                 TextEditor(text: $promptText)
                     .font(.system(size: promptFontSize))
                     .scrollContentBackground(.hidden)
@@ -215,17 +192,44 @@ struct HermesResponsesConsoleView: View {
                         }
                     }
 
-                Button {
-                    submitPrompt()
-                } label: {
-                    Image(systemName: "paperplane.fill")
-                        .font(.headline)
-                        .frame(width: 42, height: 42)
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        composerAccessoryControls
+
+                        Button { isImportingAttachment = true } label: {
+                            HermesComposerCircleButtonLabel(systemImage: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(responseSession.isSending)
+                        .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
+                    }
+
+                    HStack(spacing: 8) {
+                        Button {
+                            speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
+                                promptText = updatedPrompt
+                            }
+                        } label: {
+                            HermesComposerCircleButtonLabel(
+                                systemImage: speechToText.buttonSystemImage,
+                                foreground: speechToText.isRecording ? Color.hermesDestructive : Color.primary
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(responseSession.isSending || responseSession.isStreaming)
+                        .help(speechToText.buttonTitle)
+
+                        Button {
+                            submitPrompt()
+                        } label: {
+                            HermesComposerSendButtonLabel()
+                        }
+                        .buttonStyle(.plain)
+                        .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
+                        .keyboardShortcut(.return, modifiers: [.command])
+                        .help("Send prompt (⌘↩)")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
-                .keyboardShortcut(.return, modifiers: [.command])
-                .help("Send prompt (⌘↩)")
             }
         }
         .padding(16)
@@ -397,6 +401,36 @@ private struct HermesMarqueeText: View {
 private struct HermesMarqueeTextWidthKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+struct HermesComposerCircleButtonLabel: View {
+    let systemImage: String
+    var foreground: Color = .primary
+    var background: Color = .hermesSurface
+    var size: CGFloat = 34
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(foreground)
+            .frame(width: size, height: size)
+            .background(background, in: Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.14), lineWidth: 1))
+            .contentShape(Circle())
+    }
+}
+
+struct HermesComposerSendButtonLabel: View {
+    var body: some View {
+        Image(systemName: "paperplane.fill")
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 42, height: 42)
+            .background(Color.hermesActionBlue, in: Circle())
+            .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+            .contentShape(Circle())
+    }
 }
 
 struct HermesProfileSelector: View {

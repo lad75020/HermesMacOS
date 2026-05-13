@@ -159,30 +159,6 @@ struct HermesChatConsoleView: View {
             }
 
             HStack(alignment: .bottom, spacing: 12) {
-                Button { isImportingAttachment = true } label: {
-                    Image(systemName: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                        .font(.headline)
-                        .frame(width: 38, height: 38)
-                }
-                .buttonStyle(.bordered)
-                .disabled(chatSession.isSending)
-                .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
-
-                Button {
-                    speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
-                        promptText = updatedPrompt
-                    }
-                } label: {
-                    Image(systemName: speechToText.buttonSystemImage)
-                        .font(.headline)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(speechToText.isRecording ? Color.hermesDestructive : Color.primary)
-                        .frame(width: 38, height: 38)
-                }
-                .buttonStyle(.bordered)
-                .disabled(chatSession.isSending || chatSession.isStreaming)
-                .help(speechToText.buttonTitle)
-
                 TextEditor(text: $promptText)
                     .font(.system(size: promptFontSize))
                     .scrollContentBackground(.hidden)
@@ -202,15 +178,41 @@ struct HermesChatConsoleView: View {
                         }
                     }
 
-                Button { submitPrompt() } label: {
-                    Image(systemName: "paperplane.fill")
-                        .font(.headline)
-                        .frame(width: 42, height: 42)
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        Button { isImportingAttachment = true } label: {
+                            HermesComposerCircleButtonLabel(systemImage: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(chatSession.isSending)
+                        .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
+                    }
+
+                    HStack(spacing: 8) {
+                        Button {
+                            speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
+                                promptText = updatedPrompt
+                            }
+                        } label: {
+                            HermesComposerCircleButtonLabel(
+                                systemImage: speechToText.buttonSystemImage,
+                                foreground: speechToText.isRecording ? Color.hermesDestructive : Color.primary
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(chatSession.isSending || chatSession.isStreaming)
+                        .help(speechToText.buttonTitle)
+
+                        Button { submitPrompt() } label: {
+                            HermesComposerSendButtonLabel()
+                        }
+                        .buttonStyle(.plain)
+                        .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
+                        .keyboardShortcut(.return, modifiers: [.command])
+                        .help("Send message (⌘↩)")
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
-                .keyboardShortcut(.return, modifiers: [.command])
-                .help("Send message (⌘↩)")
             }
         }
         .padding(16)

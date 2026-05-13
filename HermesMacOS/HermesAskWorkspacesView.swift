@@ -23,26 +23,27 @@ struct HermesAskWorkspacesView: View {
             apiSettings: $apiSettings,
             workspace: selectedWorkspace,
             promptHistory: promptHistory,
-            workspaceControls: workspaceControls
+            workspaceControls: workspaceControls,
+            composerAccessoryControls: composerAccessoryControls
         )
         .id(selectedWorkspace.id)
+    }
+
+    private var composerAccessoryControls: AnyView {
+        AnyView(
+            Button(action: onAddWorkspace) {
+                HermesComposerCircleButtonLabel(systemImage: "plus")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.hermesActionBlue)
+            .help("Open a new Ask Hermes workspace")
+            .accessibilityLabel("Open a new Ask Hermes workspace")
+        )
     }
 
     private var workspaceControls: AnyView {
         AnyView(
             HStack(spacing: 6) {
-                Button(action: onAddWorkspace) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 20, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .frame(width: 24, height: 24)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.hermesActionBlue)
-                .help("Open a new Ask Hermes workspace")
-                .accessibilityLabel("Open a new Ask Hermes workspace")
-
                 if workspaces.count > 1 {
                     ForEach(workspaces) { workspace in
                         Button {
@@ -121,6 +122,7 @@ private struct HermesAskWorkspaceHost: View {
     @Bindable var workspace: HermesAskWorkspace
     @Bindable var promptHistory: HermesPromptHistoryStore
     let workspaceControls: AnyView
+    let composerAccessoryControls: AnyView
 
     var body: some View {
         HermesResponsesConsoleView(
@@ -128,7 +130,8 @@ private struct HermesAskWorkspaceHost: View {
             requestDraft: $workspace.draft,
             responseSession: workspace.session,
             promptHistoryStore: promptHistory,
-            workspaceControls: workspaceControls
+            workspaceControls: workspaceControls,
+            composerAccessoryControls: composerAccessoryControls
         )
         .onChange(of: workspace.draft) { _, newValue in
             HermesSettingsStore.saveDraft(newValue)
