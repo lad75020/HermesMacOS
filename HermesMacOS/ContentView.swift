@@ -82,7 +82,41 @@ final class HermesAskWorkspace: Identifiable {
     }
 }
 
-struct HermesTopTabSwitcher: View {
+struct HermesSideTabButton: View {
+    let tab: HermesMacOSTab
+    let isSelected: Bool
+    let foregroundColor: Color
+    let backgroundColor: Color
+    let backgroundOpacity: Double
+    let shadowColor: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: tab.systemImage)
+                .font(.system(size: 19, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .frame(width: 44, height: 44)
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(foregroundColor)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(backgroundColor.opacity(backgroundOpacity))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(isSelected ? Color.white.opacity(0.24) : Color.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: shadowColor, radius: 8, y: 3)
+        .help(tab.title)
+        .accessibilityLabel(tab.title)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
+struct HermesSideTabSwitcher: View {
     @Binding var selectedTab: HermesMacOSTab
     let askAttention: HermesAskWorkspaceAttention?
     let historyAttention: HermesTopTabAttention?
@@ -102,38 +136,26 @@ struct HermesTopTabSwitcher: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(spacing: 10) {
             ForEach(HermesMacOSTab.allCases) { tab in
-                Button {
+                HermesSideTabButton(
+                    tab: tab,
+                    isSelected: selectedTab == tab,
+                    foregroundColor: foregroundColor(for: tab),
+                    backgroundColor: backgroundColor(for: tab),
+                    backgroundOpacity: backgroundOpacity(for: tab),
+                    shadowColor: shadowColor(for: tab)
+                ) {
                     selectedTab = tab
                     onSelectTab(tab)
-                } label: {
-                    Label(tab.title, systemImage: tab.systemImage)
-                        .font(.subheadline.weight(.semibold))
-                        .labelStyle(.titleAndIcon)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(minWidth: 132)
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(foregroundColor(for: tab))
-                .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(backgroundColor(for: tab).opacity(backgroundOpacity(for: tab)))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(selectedTab == tab ? Color.white.opacity(0.24) : Color.white.opacity(0.14), lineWidth: 1)
-                )
-                .shadow(color: shadowColor(for: tab), radius: 8, y: 3)
-                .help(tab.title)
-                .accessibilityLabel(tab.title)
-                .accessibilityAddTraits(selectedTab == tab ? [.isSelected] : [])
             }
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 16)
+        .frame(width: 66)
+        .frame(maxHeight: .infinity)
         .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 0)
         .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isAskBlinking)
         .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isHistoryBlinking)
@@ -245,8 +267,8 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HermesTopTabSwitcher(
+        HStack(spacing: 0) {
+            HermesSideTabSwitcher(
                 selectedTab: $selectedTab,
                 askAttention: askTabAttention,
                 historyAttention: historyTabAttention,
