@@ -890,7 +890,7 @@ private struct HermesChatMessageContent: Decodable {
 
     init(from decoder: Decoder) throws {
         if let value = try? decoder.singleValueContainer(), let string = try? value.decode(String.self) {
-            text = string
+            text = HermesImageJSONFormatter.renderableImageMarkdown(from: string) ?? string
             return
         }
 

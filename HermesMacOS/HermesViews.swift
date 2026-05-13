@@ -566,6 +566,11 @@ struct HermesCopyableBubbleContent: View {
     let fontSize: Double
     let isResponding: Bool
 
+    private var renderableText: String {
+        guard rendersMarkdown else { return text }
+        return HermesImageJSONFormatter.renderableImageMarkdown(from: text) ?? text
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if isResponding {
@@ -575,7 +580,7 @@ struct HermesCopyableBubbleContent: View {
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
             } else {
-                HermesBubbleMessageText(text: text, rendersMarkdown: rendersMarkdown, fontSize: fontSize)
+                HermesBubbleMessageText(text: renderableText, rendersMarkdown: rendersMarkdown, fontSize: fontSize)
                     .textSelection(.enabled)
             }
         }
