@@ -45,6 +45,7 @@ struct HermesAPISettings: Codable, Equatable {
 
     static func responseURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "responses") }
     static func chatCompletionsURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "chat/completions") }
+    static func requestCancelURL(from baseURL: String, requestID: String) -> URL? { endpointURL(from: baseURL, suffix: "requests/\(requestID)/cancel") }
     static func profilesURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "profiles") }
 
     private static func endpointURL(from baseURL: String, suffix: String) -> URL? {
@@ -58,6 +59,26 @@ struct HermesAPISettings: Codable, Equatable {
             return components.url
         }
         return URL(string: trimmed.hasSuffix("/") ? trimmed + suffix : trimmed + "/" + suffix)
+    }
+}
+
+enum HermesRequestCancellation {
+    static func makeRequestID() -> String {
+        "hermes-macos-\(UUID().uuidString.lowercased())"
+    }
+
+    static func sendCancel(apiSettings: HermesAPISettings, requestID: String) async {
+        let trimmedID = requestID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedID.isEmpty,
+              let url = HermesAPISettings.requestCancelURL(from: apiSettings.baseURL, requestID: trimmedID)
+        else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if !apiSettings.apiKey.isEmpty {
+            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        _ = try? await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
     }
 }
 
@@ -384,6 +405,8 @@ final class HermesResponsesSession {
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
     private var activeHistoryStore: HermesPromptHistoryStore?
+    private var activeCancellationRequestID = ""
+    private var activeCancellationAPISettings: HermesAPISettings?
 
     init() {
         lastKnownResponseID = HermesSettingsStore.loadLastResponsesSessionID()
@@ -403,16 +426,21 @@ final class HermesResponsesSession {
     var hasActiveConversation: Bool { !previousResponseID.isEmpty || !latestResponseID.isEmpty || !activeHermesSessionID.isEmpty || !entries.isEmpty || isSending }
 
     func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment? = nil, historyStore: HermesPromptHistoryStore? = nil) {
+        cancelActiveRequest()
         requestTask?.cancel()
         activeHistoryStore = historyStore
         historyStore?.record(draft.userPrompt, source: .askHermes)
         let requestedProfile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
         if activeProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { activeProfile = requestedProfile.isEmpty ? "default" : requestedProfile }
         let lockedDraft = draft.locked(toProfile: activeProfile)
-        requestTask = Task { await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment) }
+        let cancellationRequestID = HermesRequestCancellation.makeRequestID()
+        activeCancellationRequestID = cancellationRequestID
+        activeCancellationAPISettings = apiSettings
+        requestTask = Task { await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment, cancellationRequestID: cancellationRequestID) }
     }
 
     func cancel() {
+        cancelActiveRequest()
         requestTask?.cancel()
         requestTask = nil
         isSending = false
@@ -421,6 +449,7 @@ final class HermesResponsesSession {
     }
 
     func terminateAndStartNewSession() {
+        cancelActiveRequest()
         requestTask?.cancel()
         entries = []
         streamedText = ""
@@ -442,6 +471,7 @@ final class HermesResponsesSession {
     func resumeLastKnownResponseSession() {
         let sessionID = lastKnownResponseID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sessionID.isEmpty else { connectionStatus = "No previous session"; return }
+        cancelActiveRequest()
         requestTask?.cancel()
         entries = [HermesResponseMessage(role: "assistant", content: String(localized: "Resumed last Responses session \(Self.shortResponseID(sessionID)). Send a new prompt to continue."))]
         streamedText = ""
@@ -460,6 +490,7 @@ final class HermesResponsesSession {
     }
 
     func resumeConversation(from result: HermesDashboardConversationResult) {
+        cancelActiveRequest()
         requestTask?.cancel()
         requestTask = nil
         streamedText = ""
@@ -504,7 +535,24 @@ final class HermesResponsesSession {
             .first { $0.hasPrefix("resp_") } ?? ""
     }
 
-    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?) async {
+    private func cancelActiveRequest() {
+        let requestID = activeCancellationRequestID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !requestID.isEmpty, let apiSettings = activeCancellationAPISettings else { return }
+        activeCancellationRequestID = ""
+        activeCancellationAPISettings = nil
+        Task {
+            await HermesRequestCancellation.sendCancel(apiSettings: apiSettings, requestID: requestID)
+        }
+    }
+
+    private func clearActiveCancellationRequest(id: String) {
+        guard activeCancellationRequestID == id else { return }
+        activeCancellationRequestID = ""
+        activeCancellationAPISettings = nil
+    }
+
+    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, cancellationRequestID: String) async {
+        defer { clearActiveCancellationRequest(id: cancellationRequestID) }
         let continuationID = previousResponseID
         let hermesSessionID = activeHermesSessionID
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -517,9 +565,9 @@ final class HermesResponsesSession {
         connectionStatus = continuationID.isEmpty ? (draft.stream ? "Connecting to SSE stream" : "Sending request") : (draft.stream ? "Continuing SSE stream" : "Continuing request")
         do {
             if draft.stream {
-                try await streamResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID, hermesSessionID: hermesSessionID)
+                try await streamResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID, hermesSessionID: hermesSessionID, cancellationRequestID: cancellationRequestID)
             } else {
-                try await fetchResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID, hermesSessionID: hermesSessionID)
+                try await fetchResponse(apiSettings: apiSettings, draft: draft, attachment: attachment, previousResponseID: continuationID, hermesSessionID: hermesSessionID, cancellationRequestID: cancellationRequestID)
             }
             if !latestResponseID.isEmpty { previousResponseID = latestResponseID; persistLastResponseID(latestResponseID) }
             activeHistoryStore?.recordResponse(streamedText, source: .askHermes)
@@ -560,8 +608,8 @@ final class HermesResponsesSession {
         entries[index].content = HermesStreamTextFormatter.lineBreakAfterStatementDots(content)
     }
 
-    private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String, hermesSessionID: String) async throws {
-        let request = try buildRequest(apiSettings: apiSettings, draft: draft, attachment: attachment, stream: true, previousResponseID: previousResponseID, hermesSessionID: hermesSessionID)
+    private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String, hermesSessionID: String, cancellationRequestID: String) async throws {
+        let request = try buildRequest(apiSettings: apiSettings, draft: draft, attachment: attachment, stream: true, previousResponseID: previousResponseID, hermesSessionID: hermesSessionID, cancellationRequestID: cancellationRequestID)
         let (bytes, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).bytes(for: request)
         try HermesNetworkSessionFactory.validate(response: response)
         persistHermesSessionID(from: response)
@@ -573,8 +621,8 @@ final class HermesResponsesSession {
         if let event = parser.finish() { handle(event: event) }
     }
 
-    private func fetchResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String, hermesSessionID: String) async throws {
-        let request = try buildRequest(apiSettings: apiSettings, draft: draft, attachment: attachment, stream: false, previousResponseID: previousResponseID, hermesSessionID: hermesSessionID)
+    private func fetchResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String, hermesSessionID: String, cancellationRequestID: String) async throws {
+        let request = try buildRequest(apiSettings: apiSettings, draft: draft, attachment: attachment, stream: false, previousResponseID: previousResponseID, hermesSessionID: hermesSessionID, cancellationRequestID: cancellationRequestID)
         let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
         try HermesNetworkSessionFactory.validate(response: response)
         persistHermesSessionID(from: response)
@@ -588,7 +636,7 @@ final class HermesResponsesSession {
         eventCount = 1
     }
 
-    private func buildRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, stream: Bool, previousResponseID: String, hermesSessionID: String) throws -> URLRequest {
+    private func buildRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, stream: Bool, previousResponseID: String, hermesSessionID: String, cancellationRequestID: String) throws -> URLRequest {
         guard let url = HermesAPISettings.responseURL(from: apiSettings.baseURL) else { throw HermesResponsesError.invalidURL }
         let reasoning = HermesReasoningRequest(level: draft.reasoningLevel)
         let payload = HermesResponsesRequestBody(model: "hermes-agent", input: HermesResponsesInput(prompt: draft.userPrompt, attachment: attachment), stream: stream, store: true, previousResponseID: previousResponseID.isEmpty ? nil : previousResponseID, reasoning: reasoning)
@@ -597,6 +645,7 @@ final class HermesResponsesSession {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(stream ? "text/event-stream" : "application/json", forHTTPHeaderField: "Accept")
         if stream { request.timeoutInterval = 0 }
+        if !cancellationRequestID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { request.setValue(cancellationRequestID, forHTTPHeaderField: "X-Hermes-Request-Id") }
         let profile = draft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
         request.setValue(profile.isEmpty ? "default" : profile, forHTTPHeaderField: "X-Hermes-Profile")
         if !hermesSessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
