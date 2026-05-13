@@ -18,6 +18,7 @@ struct HermesResponsesConsoleView: View {
     @State private var isImportingAttachment = false
     @State private var promptText = ""
     @State private var profileRefreshError = ""
+    @State private var speechToText = HermesSpeechToTextSession()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -33,6 +34,7 @@ struct HermesResponsesConsoleView: View {
         }
         .onChange(of: apiSettings) { _, _ in Task { await refreshAPIProfiles() } }
         .onChange(of: promptText) { _, text in requestDraft.userPrompt = text }
+        .onDisappear { speechToText.stopTranscription() }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
         }
@@ -145,6 +147,13 @@ struct HermesResponsesConsoleView: View {
                     .foregroundStyle(Color.hermesDestructive)
             }
 
+            if !speechToText.statusMessage.isEmpty || !speechToText.lastErrorMessage.isEmpty {
+                Label(speechToText.lastErrorMessage.isEmpty ? speechToText.statusMessage : speechToText.lastErrorMessage,
+                      systemImage: speechToText.lastErrorMessage.isEmpty ? "waveform" : "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(speechToText.lastErrorMessage.isEmpty ? Color.hermesSecondaryText : Color.hermesDestructive)
+            }
+
             if let selectedAttachment {
                 HermesAttachmentChip(attachment: selectedAttachment) { self.selectedAttachment = nil }
                     .disabled(responseSession.isSending)
@@ -160,12 +169,29 @@ struct HermesResponsesConsoleView: View {
                 .disabled(responseSession.isSending)
                 .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
 
+                Button {
+                    speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
+                        promptText = updatedPrompt
+                    }
+                } label: {
+                    Image(systemName: speechToText.buttonSystemImage)
+                        .font(.headline)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(speechToText.isRecording ? Color.hermesDestructive : Color.primary)
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.bordered)
+                .disabled(responseSession.isSending || responseSession.isStreaming)
+                .help(speechToText.buttonTitle)
+
                 TextEditor(text: $promptText)
                     .font(.body)
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 78, maxHeight: 150)
                     .padding(8)
-                    .background(Color.hermesSurfaceInput.opacity(0.84), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Color.hermesSurfaceInput.opacity(responseSession.isStreaming ? 0.54 : 0.84), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .disabled(responseSession.isStreaming)
+                    .help(responseSession.isStreaming ? "This workspace is streaming a response" : "Prompt")
                     .overlay(alignment: .topLeading) {
                         if promptText.isEmpty {
                             Text("Ask Hermes something...")
@@ -191,6 +217,9 @@ struct HermesResponsesConsoleView: View {
         }
         .padding(16)
         .background(.ultraThinMaterial)
+        .onChange(of: responseSession.isStreaming) { _, isStreaming in
+            if isStreaming { speechToText.stopTranscription() }
+        }
     }
 
     private static let transcriptBottomID = "responses-transcript-bottom"
@@ -205,6 +234,7 @@ struct HermesResponsesConsoleView: View {
     }
 
     private func submitPrompt() {
+        speechToText.stopTranscription()
         var submittedDraft = requestDraft
         submittedDraft.userPrompt = promptText
         responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: selectedAttachment, historyStore: promptHistoryStore)
@@ -236,7 +266,7 @@ struct HermesResponsesConsoleView: View {
             syncSelectedProfileWithAPIProfiles(profiles, selectedProfile: &requestDraft.profile)
         } catch {
             apiProfiles = []
-            profileRefreshError = "Profiles unavailable: \(error.localizedDescription)"
+            profileRefreshError = String(localized: "Profiles unavailable: \(error.localizedDescription)")
         }
     }
 
@@ -321,7 +351,7 @@ private struct HermesStatusCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title.uppercased())
+            Text(String(localized: String.LocalizationValue(title)).uppercased())
                 .font(.caption2.weight(.bold))
                 .tracking(0.8)
                 .foregroundStyle(Color.hermesSecondaryText)

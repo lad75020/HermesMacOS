@@ -13,7 +13,7 @@ private enum HermesMessagesHistoryMode: String, CaseIterable, Identifiable {
     case prompt
     case response
     var id: String { rawValue }
-    var title: String { self == .prompt ? "Prompt" : "Response" }
+    var title: String { self == .prompt ? String(localized: "Prompt") : String(localized: "Response") }
 }
 
 struct HermesUtilitiesView: View {
@@ -25,8 +25,8 @@ struct HermesUtilitiesView: View {
     @AppStorage("hermes.macOS.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
     @AppStorage("hermes.macOS.utilities.messagesHistoryExpanded") private var isMessagesHistoryExpanded = false
     @AppStorage("hermes.macOS.utilities.debuggingExpanded") private var isDebuggingExpanded = false
-    @State private var statusMessage = "Monitoring the Mac clipboard while HermesMacOS is active."
-    @State private var historyStatusMessage = "Capturing prompts and responses sent from Ask Hermes."
+    @State private var statusMessage = String(localized: "Monitoring the Mac clipboard while HermesMacOS is active.")
+    @State private var historyStatusMessage = String(localized: "Capturing prompts and responses sent from Ask Hermes.")
     @State private var messagesHistoryMode: HermesMessagesHistoryMode = .prompt
 
     private var selectedWorkspace: HermesAskWorkspace {
@@ -48,7 +48,7 @@ struct HermesUtilitiesView: View {
                     DisclosureGroup(isExpanded: $isClipboardHistoryExpanded) {
                         clipboardHistoryContent
                     } label: {
-                        utilityDisclosureLabel(title: "Clipboard History", subtitle: "Last \(clipboardHistory.entries.count) of 10 copied objects", systemImage: "clipboard")
+                        utilityDisclosureLabel(title: String(localized: "Clipboard History"), subtitle: String(localized: "Last \(clipboardHistory.entries.count) of 10 copied objects"), systemImage: "clipboard")
                     }
                     .tint(.hermesActionBlue)
 
@@ -57,7 +57,7 @@ struct HermesUtilitiesView: View {
                     DisclosureGroup(isExpanded: $isMessagesHistoryExpanded) {
                         messagesHistoryContent
                     } label: {
-                        utilityDisclosureLabel(title: "Messages History", subtitle: messagesHistorySubtitle, systemImage: "text.bubble")
+                        utilityDisclosureLabel(title: String(localized: "Messages History"), subtitle: messagesHistorySubtitle, systemImage: "text.bubble")
                     }
                     .tint(.hermesActionBlue)
 
@@ -66,7 +66,7 @@ struct HermesUtilitiesView: View {
                     DisclosureGroup(isExpanded: $isDebuggingExpanded) {
                         HermesResponsesDebugPanel(workspaces: workspaces, selectedWorkspaceID: $selectedWorkspaceID)
                     } label: {
-                        utilityDisclosureLabel(title: "Debugging", subtitle: "Inspect streamed Responses API JSON", systemImage: "ladybug")
+                        utilityDisclosureLabel(title: String(localized: "Debugging"), subtitle: String(localized: "Inspect streamed Responses API JSON"), systemImage: "ladybug")
                     }
                     .tint(.hermesActionBlue)
                 }
@@ -83,8 +83,8 @@ struct HermesUtilitiesView: View {
 
     private var messagesHistorySubtitle: String {
         switch messagesHistoryMode {
-        case .prompt: "Last \(promptHistory.entries.count) of 10 prompts sent to Hermes"
-        case .response: "Last \(promptHistory.responseEntries.count) of 10 Hermes responses"
+        case .prompt: String(localized: "Last \(promptHistory.entries.count) of 10 prompts sent to Hermes")
+        case .response: String(localized: "Last \(promptHistory.responseEntries.count) of 10 Hermes responses")
         }
     }
 
@@ -113,11 +113,11 @@ struct HermesUtilitiesView: View {
     private var clipboardHistoryContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Button { clipboardHistory.captureCurrentPasteboardIfNeeded(force: true); statusMessage = "Clipboard checked." } label: {
+                Button { clipboardHistory.captureCurrentPasteboardIfNeeded(force: true); statusMessage = String(localized: "Clipboard checked.") } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
-                Button(role: .destructive) { clipboardHistory.clear(); statusMessage = "Clipboard history cleared." } label: {
+                Button(role: .destructive) { clipboardHistory.clear(); statusMessage = String(localized: "Clipboard history cleared.") } label: {
                     Label("Clear", systemImage: "trash")
                 }
                 .buttonStyle(.bordered)
@@ -131,11 +131,11 @@ struct HermesUtilitiesView: View {
                 LazyVStack(spacing: 10) {
                     ForEach(clipboardHistory.entries) { entry in
                         HStack(spacing: 10) {
-                            Button { clipboardHistory.copyToPasteboard(entry); statusMessage = "Copied \(entry.kind.displayName.lowercased()) back to the clipboard." } label: {
+                            Button { clipboardHistory.copyToPasteboard(entry); statusMessage = String(localized: "Copied \(entry.kind.localizedDisplayName.lowercased()) back to the clipboard.") } label: {
                                 HermesClipboardHistoryRow(entry: entry)
                             }
                             .buttonStyle(.plain)
-                            Button(role: .destructive) { clipboardHistory.delete(entry); statusMessage = "Deleted \(entry.kind.displayName.lowercased()) from clipboard history." } label: { trashIcon }
+                            Button(role: .destructive) { clipboardHistory.delete(entry); statusMessage = String(localized: "Deleted \(entry.kind.localizedDisplayName.lowercased()) from clipboard history.") } label: { trashIcon }
                                 .buttonStyle(.plain)
                         }
                     }
@@ -152,8 +152,8 @@ struct HermesUtilitiesView: View {
             }
             .pickerStyle(.segmented)
             Button(role: .destructive) {
-                if messagesHistoryMode == .prompt { promptHistory.clear(); historyStatusMessage = "Prompt history cleared." }
-                else { promptHistory.clearResponses(); historyStatusMessage = "Response history cleared." }
+                if messagesHistoryMode == .prompt { promptHistory.clear(); historyStatusMessage = String(localized: "Prompt history cleared.") }
+                else { promptHistory.clearResponses(); historyStatusMessage = String(localized: "Response history cleared.") }
             } label: { Label("Clear", systemImage: "trash") }
             .buttonStyle(.bordered)
             .disabled(messagesHistoryMode == .prompt ? promptHistory.entries.isEmpty : promptHistory.responseEntries.isEmpty)
@@ -171,8 +171,8 @@ struct HermesUtilitiesView: View {
             LazyVStack(spacing: 10) {
                 ForEach(promptHistory.entries) { entry in
                     HStack(spacing: 10) {
-                        Button { promptHistory.copyToPasteboard(entry); historyStatusMessage = "Copied prompt to the clipboard." } label: { HermesPromptHistoryRow(entry: entry) }.buttonStyle(.plain)
-                        Button(role: .destructive) { promptHistory.delete(entry); historyStatusMessage = "Deleted prompt from history." } label: { trashIcon }.buttonStyle(.plain)
+                        Button { promptHistory.copyToPasteboard(entry); historyStatusMessage = String(localized: "Copied prompt to the clipboard.") } label: { HermesPromptHistoryRow(entry: entry) }.buttonStyle(.plain)
+                        Button(role: .destructive) { promptHistory.delete(entry); historyStatusMessage = String(localized: "Deleted prompt from history.") } label: { trashIcon }.buttonStyle(.plain)
                     }
                 }
             }
@@ -187,8 +187,8 @@ struct HermesUtilitiesView: View {
             LazyVStack(spacing: 10) {
                 ForEach(promptHistory.responseEntries) { entry in
                     HStack(spacing: 10) {
-                        Button { promptHistory.copyResponseToPasteboard(entry); historyStatusMessage = "Copied response to the clipboard." } label: { HermesResponseHistoryRow(entry: entry) }.buttonStyle(.plain)
-                        Button(role: .destructive) { promptHistory.deleteResponse(entry); historyStatusMessage = "Deleted response from history." } label: { trashIcon }.buttonStyle(.plain)
+                        Button { promptHistory.copyResponseToPasteboard(entry); historyStatusMessage = String(localized: "Copied response to the clipboard.") } label: { HermesResponseHistoryRow(entry: entry) }.buttonStyle(.plain)
+                        Button(role: .destructive) { promptHistory.deleteResponse(entry); historyStatusMessage = String(localized: "Deleted response from history.") } label: { trashIcon }.buttonStyle(.plain)
                     }
                 }
             }
@@ -215,7 +215,7 @@ private struct HermesResponsesDebugPanel: View {
     }
 
     private var debugText: String {
-        selectedWorkspace.session.rawStreamedJSON.isEmpty ? "No Responses API JSON has been streamed yet in workspace \(selectedWorkspace.number). Send an Ask Hermes request with streaming enabled to populate this debug view." : selectedWorkspace.session.rawStreamedJSON
+        selectedWorkspace.session.rawStreamedJSON.isEmpty ? String(localized: "No Responses API JSON has been streamed yet in workspace \(selectedWorkspace.number). Send an Ask Hermes request with streaming enabled to populate this debug view.") : selectedWorkspace.session.rawStreamedJSON
     }
 
     var body: some View {
@@ -285,7 +285,7 @@ private struct HermesClipboardHistoryRow: View {
                 .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
-                Label(entry.kind.displayName, systemImage: entry.kind.systemImage).font(.caption.weight(.semibold)).foregroundStyle(Color.hermesSecondaryText)
+                Label(entry.kind.localizedDisplayName, systemImage: entry.kind.systemImage).font(.caption.weight(.semibold)).foregroundStyle(Color.hermesSecondaryText)
                 Text(entry.title).font(.headline).lineLimit(2).multilineTextAlignment(.leading)
                 if let subtitle = entry.subtitle { Text(subtitle).font(.caption).foregroundStyle(Color.hermesSecondaryText).lineLimit(1) }
             }
@@ -375,7 +375,7 @@ final class HermesClipboardHistoryStore {
             return HermesClipboardHistoryEntry(kind: .text, typeIdentifier: UTType.utf8PlainText.identifier, payload: data, displayName: nil)
         }
         if let data = pasteboard.data(forType: .tiff), data.count <= maxStoredBytes {
-            return HermesClipboardHistoryEntry(kind: .image, typeIdentifier: UTType.tiff.identifier, payload: data, displayName: "Clipboard image")
+            return HermesClipboardHistoryEntry(kind: .image, typeIdentifier: UTType.tiff.identifier, payload: data, displayName: String(localized: "Clipboard image"))
         }
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], let url = urls.first, let data = url.path.data(using: .utf8), data.count <= maxStoredBytes {
             return HermesClipboardHistoryEntry(kind: .file, typeIdentifier: UTType.fileURL.identifier, payload: data, displayName: url.lastPathComponent)
@@ -388,6 +388,7 @@ struct HermesClipboardHistoryEntry: Identifiable, Codable, Equatable {
     enum Kind: String, Codable {
         case text, image, file
         var displayName: String { self == .text ? "Text" : (self == .image ? "Image" : "File") }
+        var localizedDisplayName: String { String(localized: String.LocalizationValue(displayName)) }
         var systemImage: String { self == .text ? "text.alignleft" : (self == .image ? "photo" : "doc") }
     }
     let id: UUID
@@ -422,7 +423,7 @@ struct HermesClipboardHistoryEntry: Identifiable, Codable, Equatable {
     }
     var subtitle: String? {
         switch kind {
-        case .text: return textValue.map { "\($0.count) characters" }
+        case .text: return textValue.map { String(localized: "\($0.count) characters") }
         case .image: return ByteCountFormatter.string(fromByteCount: Int64(payload.count), countStyle: .file)
         case .file: return fileURL?.path
         }
@@ -471,14 +472,14 @@ final class HermesPromptHistoryStore {
 struct HermesPromptHistoryEntry: Identifiable, Codable, Equatable {
     enum Source: String, Codable {
         case askHermes
-        var displayName: String { "Ask Hermes" }
+        var displayName: String { String(localized: "Ask Hermes") }
         var systemImage: String { "dot.radiowaves.left.and.right" }
     }
     let id: UUID; let prompt: String; let source: Source; let createdAt: Date; let fingerprint: String
     init(prompt: String, source: Source) { self.id = UUID(); self.prompt = prompt; self.source = source; self.createdAt = Date(); self.fingerprint = Self.makeFingerprint(text: prompt, source: source, kind: "prompt") }
     private static func makeFingerprint(text: String, source: Source, kind: String) -> String { source.rawValue + ":" + kind + ":" + SHA256.hash(data: Data((source.rawValue + ":" + kind + ":" + text).utf8)).map { String(format: "%02x", $0) }.joined() }
-    var title: String { Self.normalizedTitle(from: prompt, fallback: "Prompt") }
-    var subtitle: String { "\(prompt.count) characters" }
+    var title: String { Self.normalizedTitle(from: prompt, fallback: String(localized: "Prompt")) }
+    var subtitle: String { String(localized: "\(prompt.count) characters") }
     static func normalizedTitle(from text: String, fallback: String) -> String {
         let normalized = text.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? fallback : normalized
@@ -489,6 +490,6 @@ struct HermesResponseHistoryEntry: Identifiable, Codable, Equatable {
     let id: UUID; let response: String; let source: HermesPromptHistoryEntry.Source; let createdAt: Date; let fingerprint: String
     init(response: String, source: HermesPromptHistoryEntry.Source) { self.id = UUID(); self.response = response; self.source = source; self.createdAt = Date(); self.fingerprint = Self.makeFingerprint(response: response, source: source) }
     private static func makeFingerprint(response: String, source: HermesPromptHistoryEntry.Source) -> String { source.rawValue + ":response:" + SHA256.hash(data: Data((source.rawValue + ":response:" + response).utf8)).map { String(format: "%02x", $0) }.joined() }
-    var title: String { HermesPromptHistoryEntry.normalizedTitle(from: response, fallback: "Response") }
-    var subtitle: String { "\(response.count) characters" }
+    var title: String { HermesPromptHistoryEntry.normalizedTitle(from: response, fallback: String(localized: "Response")) }
+    var subtitle: String { String(localized: "\(response.count) characters") }
 }

@@ -125,10 +125,6 @@ struct ContentView: View {
             )
             .tabItem { Label("Utilities", systemImage: "wrench.and.screwdriver") }
             .tag(HermesMacOSTab.utilities)
-
-            SettingsView()
-                .tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
-                .tag(HermesMacOSTab.settings)
         }
         .preferredColorScheme(appTheme.colorScheme)
         .tint(.hermesActionBlue)
@@ -172,5 +168,4 @@ enum HermesMacOSTab: Hashable {
     case ask
     case history
     case utilities
-    case settings
 }

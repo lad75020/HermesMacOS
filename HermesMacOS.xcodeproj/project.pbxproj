@@ -7,7 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2776471A84D2345DB28B851A /* HermesSpeechToText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */; };
 		6CF2BF183476837D25A0F25D /* HermesAskWorkspacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC30A9107E0067942908A526 /* HermesAskWorkspacesView.swift */; };
+		7E22EC2AAB8B02F82DF4CF12 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0111AF5B10A59D4B0A68BF86 /* InfoPlist.strings */; };
 		8910B73C7B81F160EDD47BD8 /* HermesModelsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBBF745CBB6AEE27A9D9EB9E /* HermesModelsAPI.swift */; };
 		894771D840EFDC655AA6773F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4501AB7BBEE0E95DA1F88BD8 /* Assets.xcassets */; };
 		8C0CBEB9FC4A6D4040EBFD56 /* HermesMacOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */; };
@@ -16,19 +18,27 @@
 		C29A742AAE1F188A9653ADB4 /* HermesUtilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBD3C94B644F20D2E6BD269 /* HermesUtilitiesView.swift */; };
 		DC9951D9255D694859E91CC4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CBD5F9B22B44BCCD839298 /* ContentView.swift */; };
 		E1848BEE3EF0960620A17BD3 /* HermesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6696056CAFB17C7255BD45D7 /* HermesViews.swift */; };
+		E6DB079DBEBCA1119036ACEA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardHistorySearch.swift; sourceTree = "<group>"; };
 		1EBD3C94B644F20D2E6BD269 /* HermesUtilitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesUtilitiesView.swift; sourceTree = "<group>"; };
+		2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		37F22943CF56D37CF71DD1CD /* HermesHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesHistoryView.swift; sourceTree = "<group>"; };
 		4501AB7BBEE0E95DA1F88BD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		59D8EC4527F9A1247F7B7D87 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		6696056CAFB17C7255BD45D7 /* HermesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesViews.swift; sourceTree = "<group>"; };
 		69CBD5F9B22B44BCCD839298 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		98751529CF81E71302A3466F /* HermesMacOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesMacOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AC30A9107E0067942908A526 /* HermesAskWorkspacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesAskWorkspacesView.swift; sourceTree = "<group>"; };
+		B58BD62886261007C1C9E595 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesSpeechToText.swift; sourceTree = "<group>"; };
 		D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMacOSApp.swift; sourceTree = "<group>"; };
+		D76746761A58C12E6B3890D5 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		EBBF745CBB6AEE27A9D9EB9E /* HermesModelsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesModelsAPI.swift; sourceTree = "<group>"; };
+		F32AE47EB41A0A5D4A1AC620 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		FA43AC78DAFC778F3E5332ED /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -58,8 +68,11 @@
 				37F22943CF56D37CF71DD1CD /* HermesHistoryView.swift */,
 				D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */,
 				EBBF745CBB6AEE27A9D9EB9E /* HermesModelsAPI.swift */,
+				C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */,
 				1EBD3C94B644F20D2E6BD269 /* HermesUtilitiesView.swift */,
 				6696056CAFB17C7255BD45D7 /* HermesViews.swift */,
+				2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */,
+				0111AF5B10A59D4B0A68BF86 /* InfoPlist.strings */,
 			);
 			path = HermesMacOS;
 			sourceTree = "<group>";
@@ -95,6 +108,7 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					E3C5D3AA387F5281A30E9B9E = {
+						DevelopmentTeam = RJYVGK9S3F;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -104,7 +118,11 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				Base,
+				de,
 				en,
+				es,
+				fr,
+				"zh-Hans",
 			);
 			mainGroup = 7F3829D2597AB26B747A4644;
 			minimizedProjectReferenceProxies = 1;
@@ -124,6 +142,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				894771D840EFDC655AA6773F /* Assets.xcassets in Resources */,
+				7E22EC2AAB8B02F82DF4CF12 /* InfoPlist.strings in Resources */,
+				E6DB079DBEBCA1119036ACEA /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -140,12 +160,28 @@
 				94CFB24AD7B68108672D0497 /* HermesHistoryView.swift in Sources */,
 				8C0CBEB9FC4A6D4040EBFD56 /* HermesMacOSApp.swift in Sources */,
 				8910B73C7B81F160EDD47BD8 /* HermesModelsAPI.swift in Sources */,
+				2776471A84D2345DB28B851A /* HermesSpeechToText.swift in Sources */,
 				C29A742AAE1F188A9653ADB4 /* HermesUtilitiesView.swift in Sources */,
 				E1848BEE3EF0960620A17BD3 /* HermesViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		0111AF5B10A59D4B0A68BF86 /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				59D8EC4527F9A1247F7B7D87 /* de */,
+				FA43AC78DAFC778F3E5332ED /* en */,
+				F32AE47EB41A0A5D4A1AC620 /* es */,
+				D76746761A58C12E6B3890D5 /* fr */,
+				B58BD62886261007C1C9E595 /* zh-Hans */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
 		27C5BD145F458C836D0A060B /* Release */ = {
@@ -161,12 +197,12 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Hermes on MacOS";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Laurent Dubertrand";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HermesMacOS can attach and send selected files to Hermes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HermesMacOS uses the microphone to dictate prompts into Ask Hermes.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "HermesMacOS can transcribe your speech into Ask Hermes prompts.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesMacOS;
 				PRODUCT_NAME = HermesMacOS;
 				SDKROOT = macosx;
@@ -224,7 +260,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -281,7 +317,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -305,12 +341,12 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Hermes on MacOS";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Laurent Dubertrand";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HermesMacOS can attach and send selected files to Hermes.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HermesMacOS uses the microphone to dictate prompts into Ask Hermes.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "HermesMacOS can transcribe your speech into Ask Hermes prompts.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				PRODUCT_BUNDLE_IDENTIFIER = fr.dubertrand.HermesMacOS;
 				PRODUCT_NAME = HermesMacOS;
 				SDKROOT = macosx;

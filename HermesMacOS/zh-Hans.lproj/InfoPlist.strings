@@ -1,0 +1,5 @@
+"CFBundleName" = "MacOS 上的 Hermes";
+"CFBundleDisplayName" = "MacOS 上的 Hermes";
+"NSHumanReadableCopyright" = "Copyright © 2026 Laurent Dubertrand";
+"NSMicrophoneUsageDescription" = "HermesMacOS 使用麦克风将语音听写到询问 Hermes 提示中。";
+"NSSpeechRecognitionUsageDescription" = "HermesMacOS 可以将你的语音转写为询问 Hermes 的提示。";

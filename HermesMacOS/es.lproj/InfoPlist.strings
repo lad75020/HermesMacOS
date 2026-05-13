@@ -1,0 +1,5 @@
+"CFBundleName" = "Hermes en MacOS";
+"CFBundleDisplayName" = "Hermes en MacOS";
+"NSHumanReadableCopyright" = "Copyright © 2026 Laurent Dubertrand";
+"NSMicrophoneUsageDescription" = "HermesMacOS usa el micrófono para dictar prompts en Preguntar a Hermes.";
+"NSSpeechRecognitionUsageDescription" = "HermesMacOS puede transcribir tu voz en prompts para Preguntar a Hermes.";

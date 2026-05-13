@@ -168,20 +168,9 @@ struct HermesPromptAttachment: Equatable {
     var textContent: String? { isUTF8Text ? String(data: data, encoding: .utf8) : nil }
     var textAttachmentBlock: String {
         if let textContent {
-            return """
-
-Attached file: \(filename) (\(mimeType), \(formattedByteCount))
-```\(fileExtension)
-\(textContent)
-```
-"""
+            return "\n" + String(localized: "Attached file: \(filename) (\(mimeType), \(formattedByteCount))\n```\(fileExtension)\n\(textContent)\n```")
         }
-        return """
-
-Attached file: \(filename) (\(mimeType), \(formattedByteCount))
-The file is provided as a base64 data URL. Decode it if you need to inspect or process the document bytes:
-\(base64DataURL)
-"""
+        return "\n" + String(localized: "Attached file: \(filename) (\(mimeType), \(formattedByteCount))\nThe file is provided as a base64 data URL. Decode it if you need to inspect or process the document bytes:\n\(base64DataURL)")
     }
 
     private static func mimeType(forExtension ext: String, contentType: UTType?) -> String {
@@ -206,7 +195,7 @@ The file is provided as a base64 data URL. Decode it if you need to inspect or p
 
 enum HermesAttachmentError: LocalizedError {
     case unsupportedFileType(String)
-    var errorDescription: String? { "Unsupported attachment type: \(typeDescription). Choose an image, PDF, Office document, text, JSON, YAML, TOML, or Swift file." }
+    var errorDescription: String? { String(localized: "Unsupported attachment type: \(typeDescription). Choose an image, PDF, Office document, text, JSON, YAML, TOML, or Swift file.") }
     private var typeDescription: String { if case .unsupportedFileType(let value) = self { value } else { "file" } }
 }
 
@@ -289,7 +278,11 @@ final class HermesResponsesSession {
     var displaySessionTitle: String {
         let title = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         if !title.isEmpty { return title }
-        return previousResponseID.isEmpty && activeHermesSessionID.isEmpty ? "New response" : "Continuing response"
+        return previousResponseID.isEmpty && activeHermesSessionID.isEmpty ? String(localized: "New response") : String(localized: "Continuing response")
+    }
+
+    var localizedConnectionStatus: String {
+        String(localized: String.LocalizationValue(connectionStatus))
     }
 
     var hasActiveConversation: Bool { !previousResponseID.isEmpty || !latestResponseID.isEmpty || !activeHermesSessionID.isEmpty || !entries.isEmpty || isSending }
@@ -335,7 +328,7 @@ final class HermesResponsesSession {
         let sessionID = lastKnownResponseID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sessionID.isEmpty else { connectionStatus = "No previous session"; return }
         requestTask?.cancel()
-        entries = [HermesResponseMessage(role: "assistant", content: "Resumed last Responses session \(Self.shortResponseID(sessionID)). Send a new prompt to continue.")]
+        entries = [HermesResponseMessage(role: "assistant", content: String(localized: "Resumed last Responses session \(Self.shortResponseID(sessionID)). Send a new prompt to continue."))]
         streamedText = ""
         activeAssistantEntryID = nil
         isSending = false
@@ -347,7 +340,7 @@ final class HermesResponsesSession {
         latestMessageType = "resumed response"
         eventCount = 0
         rawStreamedJSON = ""
-        sessionTitle = Self.userFriendlySessionTitle(from: lastKnownResponseTitle, fallback: "Last response")
+        sessionTitle = Self.userFriendlySessionTitle(from: lastKnownResponseTitle, fallback: String(localized: "Last response"))
         connectionStatus = "Resumed last response"
     }
 
@@ -379,7 +372,7 @@ final class HermesResponsesSession {
             }
             .map { HermesResponseMessage(role: $0.role.lowercased(), content: $0.content) }
         entries = restoredEntries.isEmpty
-            ? [HermesResponseMessage(role: "assistant", content: "Loaded session \(displayTitle). Send a new prompt to start a new Responses API turn.")]
+            ? [HermesResponseMessage(role: "assistant", content: String(localized: "Loaded session \(displayTitle). Send a new prompt to start a new Responses API turn."))]
             : restoredEntries
         connectionStatus = continuationID.isEmpty ? (activeHermesSessionID.isEmpty ? "Loaded history" : "Resumed session") : "Resumed response"
     }
@@ -400,7 +393,7 @@ final class HermesResponsesSession {
         let continuationID = previousResponseID
         let hermesSessionID = activeHermesSessionID
         let prompt = draft.userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        if sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sessionTitle = Self.userFriendlySessionTitle(from: prompt, fallback: attachment?.filename ?? "New response") }
+        if sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sessionTitle = Self.userFriendlySessionTitle(from: prompt, fallback: attachment?.filename ?? String(localized: "New response")) }
         persistLastResponseTitle(sessionTitle)
         resetForRequest()
         appendExchange(prompt: displayPrompt(prompt, attachment: attachment))
@@ -418,12 +411,12 @@ final class HermesResponsesSession {
             if !Task.isCancelled { connectionStatus = "Completed" }
         } catch is CancellationError {
             connectionStatus = "Cancelled"
-            updateActiveAssistantEntry(with: streamedText.isEmpty ? "Cancelled." : streamedText)
+            updateActiveAssistantEntry(with: streamedText.isEmpty ? String(localized: "Cancelled.") : streamedText)
         } catch {
             lastErrorMessage = error.localizedDescription
             lastErrorWasTimeoutOrNetworkLoss = HermesRequestFailureClassifier.isTimeoutOrNetworkLoss(error)
             connectionStatus = "Failed"
-            updateActiveAssistantEntry(with: streamedText.isEmpty ? "Request failed: \(error.localizedDescription)" : streamedText)
+            updateActiveAssistantEntry(with: streamedText.isEmpty ? String(localized: "Request failed: \(error.localizedDescription)") : streamedText)
         }
         isSending = false
         isStreaming = false
@@ -443,7 +436,7 @@ final class HermesResponsesSession {
 
     private func displayPrompt(_ prompt: String, attachment: HermesPromptAttachment?) -> String {
         guard let attachment else { return prompt }
-        let label = "Attached: \(attachment.filename) (\(attachment.mimeType), \(attachment.formattedByteCount))"
+        let label = String(localized: "Attached: \(attachment.filename) (\(attachment.mimeType), \(attachment.formattedByteCount))")
         return prompt.isEmpty ? label : "\(prompt)\n\n\(label)"
     }
 
@@ -514,7 +507,7 @@ final class HermesResponsesSession {
             updateActiveAssistantEntry(with: streamedText)
             connectionStatus = "Streaming output"
         } else if summary.title.hasPrefix("response.output_item.") { connectionStatus = summary.status }
-        else { connectionStatus = "Processing \(summary.title)" }
+        else { connectionStatus = String(localized: "Processing \(summary.title)") }
     }
 
     private func persistHermesSessionID(from response: URLResponse) {
@@ -534,7 +527,7 @@ final class HermesResponsesSession {
     private func persistLastResponseID(_ value: String) { let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines); if !trimmed.isEmpty { lastKnownResponseID = trimmed; HermesSettingsStore.saveLastResponsesSessionID(trimmed) } }
     private func persistLastResponseTitle(_ value: String) { let normalized = Self.userFriendlySessionTitle(from: value, fallback: ""); if !normalized.isEmpty { lastKnownResponseTitle = normalized; HermesSettingsStore.saveLastResponsesSessionTitle(normalized) } }
     private static func shortResponseID(_ responseID: String) -> String { responseID.count > 18 ? String(responseID.prefix(18)) + "…" : responseID }
-    private static func userFriendlySessionTitle(from title: String, fallback: String) -> String { let normalized = title.split(whereSeparator: { $0.isWhitespace }).joined(separator: " "); return normalized.isEmpty ? (fallback.isEmpty ? "New response" : fallback) : normalized }
+    private static func userFriendlySessionTitle(from title: String, fallback: String) -> String { let normalized = title.split(whereSeparator: { $0.isWhitespace }).joined(separator: " "); return normalized.isEmpty ? (fallback.isEmpty ? String(localized: "New response") : fallback) : normalized }
     private static func prettyPrintedJSON(from string: String) -> String { string.data(using: .utf8).map(prettyPrintedJSON(from:)) ?? string }
     private static func prettyPrintedJSON(from data: Data) -> String { guard let object = try? JSONSerialization.jsonObject(with: data), let prettyData = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]), let pretty = String(data: prettyData, encoding: .utf8) else { return String(data: data, encoding: .utf8) ?? "" }; return pretty }
 }
@@ -552,9 +545,9 @@ private enum HermesResponsesInput: Encodable {
     init(prompt: String, attachment: HermesPromptAttachment?) {
         guard let attachment else { self = .text(prompt); return }
         if attachment.isImage {
-            self = .message([HermesResponsesInputMessage(role: "user", content: [.inputText(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Please inspect the attached image." : prompt), .inputImage(attachment.base64DataURL)])])
+            self = .message([HermesResponsesInputMessage(role: "user", content: [.inputText(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? String(localized: "Please inspect the attached image.") : prompt), .inputImage(attachment.base64DataURL)])])
         } else {
-            let base = prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Please inspect the attached file." : prompt
+            let base = prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? String(localized: "Please inspect the attached file.") : prompt
             self = .text(base + attachment.textAttachmentBlock)
         }
     }
@@ -661,5 +654,5 @@ enum HermesStreamTextFormatter {
 
 enum HermesResponsesError: LocalizedError {
     case invalidURL, invalidResponse, httpError(Int)
-    var errorDescription: String? { switch self { case .invalidURL: "The Hermes gateway URL is invalid."; case .invalidResponse: "The Hermes gateway returned an invalid response."; case .httpError(let code): "The Hermes gateway returned HTTP \(code)." } }
+    var errorDescription: String? { switch self { case .invalidURL: String(localized: "The Hermes gateway URL is invalid."); case .invalidResponse: String(localized: "The Hermes gateway returned an invalid response."); case .httpError(let code): String(localized: "The Hermes gateway returned HTTP \(code).") } }
 }

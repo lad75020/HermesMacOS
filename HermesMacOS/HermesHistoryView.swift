@@ -78,7 +78,7 @@ struct HermesHistoryView: View {
                     .fixedSize()
 
                     Button(action: runDashboardSearch) {
-                        Label(searchSession.isSearching ? "Searching…" : "Search", systemImage: "magnifyingglass")
+                        Label(searchSession.isSearching ? String(localized: "Searching…") : String(localized: "Search"), systemImage: "magnifyingglass")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(searchSession.isSearching || searchSession.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -102,7 +102,7 @@ struct HermesHistoryView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(searchSession.status)
+                    Text(String(localized: String.LocalizationValue(searchSession.status)))
                         .font(.caption)
                         .foregroundStyle(Color.hermesSecondaryText)
 
@@ -165,7 +165,7 @@ struct HermesHistoryView: View {
 
     private var profileFilterOptions: [HermesHistoryProfileFilterOption] {
         var seen = Set(["all", "default"])
-        var options = [HermesHistoryProfileFilterOption(title: "All", value: "all"), HermesHistoryProfileFilterOption(title: "Default", value: "default")]
+        var options = [HermesHistoryProfileFilterOption(title: String(localized: "All"), value: "all"), HermesHistoryProfileFilterOption(title: String(localized: "Default"), value: "default")]
         let namedProfiles = apiProfiles.filter { !$0.isDefault }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         for profile in namedProfiles {
             let value = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -258,7 +258,7 @@ private struct HermesDashboardConversationSummary: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Spacer()
-                Text("\(result.matches.count) hit\(result.matches.count == 1 ? "" : "s")")
+                Text(String.localizedStringWithFormat(String(localized: "%lld hit%@"), result.matches.count, result.matches.count == 1 ? "" : "s"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.hermesActionBlue)
             }
@@ -316,8 +316,8 @@ private struct HermesDashboardConversationMessageRow: View {
 
     private var displayRoleTitle: String {
         switch message.role.lowercased() {
-        case "user": "Initial prompt"
-        case "assistant": "Final response"
+        case "user": String(localized: "Initial prompt")
+        case "assistant": String(localized: "Final response")
         default: message.role.capitalized
         }
     }

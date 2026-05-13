@@ -240,6 +240,10 @@ final class HermesDashboardHistorySearchSession {
         isSearching || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !results.isEmpty || !lastErrorMessage.isEmpty
     }
 
+    var localizedStatus: String {
+        String(localized: String.LocalizationValue(status))
+    }
+
     func clear() {
         requestTask?.cancel()
         activeSearchID = nil
