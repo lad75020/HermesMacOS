@@ -76,9 +76,9 @@ struct HermesResponsesConsoleView: View {
                     )
                 }
 
-                HermesStatusCard(title: "Session", value: responseSession.displaySessionTitle, tint: .hermesPurple)
-                HermesStatusCard(title: "Status", value: responseSession.connectionStatus, tint: .hermesOrange)
-                HermesStatusCard(title: "Events", value: "\(responseSession.eventCount)", tint: .hermesActionBlue)
+                HermesStatusCard(title: "Session", value: responseSession.displaySessionTitle, tint: .hermesPurple, minimumWidth: 180, maximumWidth: .infinity)
+                HermesStatusCard(title: "Status", value: responseSession.connectionStatus, tint: .hermesOrange, minimumWidth: 112, maximumWidth: 126)
+                HermesStatusCard(title: "Events", value: "\(responseSession.eventCount)", tint: .hermesActionBlue, minimumWidth: 112, maximumWidth: 126)
             }
 
             if !profileRefreshError.isEmpty {
@@ -478,8 +478,9 @@ private struct HermesReasoningLevelPill: View {
             .disabled(isDisabled)
             .help("Reasoning effort sent as reasoning.effort when the selected profile model supports it")
         }
-        .padding(12)
-        .frame(minWidth: 130, maxWidth: 170, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 11)
+        .frame(minWidth: 118, maxWidth: 142, alignment: .leading)
         .hermesGlassPanel(tint: Color.hermesPurple.opacity(0.08))
     }
 }
@@ -488,6 +489,8 @@ private struct HermesStatusCard: View {
     let title: String
     let value: String
     let tint: Color
+    var minimumWidth: CGFloat = 120
+    var maximumWidth: CGFloat = 150
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -497,8 +500,9 @@ private struct HermesStatusCard: View {
                 .foregroundStyle(Color.hermesSecondaryText)
             HermesMarqueeText(value, font: .caption.weight(.semibold))
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 11)
+        .frame(minWidth: minimumWidth, maxWidth: maximumWidth, alignment: .leading)
         .hermesGlassPanel(tint: tint.opacity(0.09))
     }
 }
