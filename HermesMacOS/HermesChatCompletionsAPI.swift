@@ -421,7 +421,12 @@ final class HermesChatSession {
     private func preferredText(from candidates: [[String]]) -> String {
         candidates
             .map { $0.joined() }
-            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
+            .compactMap { candidate -> String? in
+                let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return nil }
+                return HermesImageJSONFormatter.renderableImageMarkdown(from: candidate) ?? candidate
+            }
+            .first ?? ""
     }
 
     private func validate(response: URLResponse) throws {

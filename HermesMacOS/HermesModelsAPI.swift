@@ -813,8 +813,9 @@ enum HermesImageJSONFormatter {
             return nil
         }
 
-        if let base64 = firstString(in: dict, keys: ["image_base64", "b64_json"]),
-           let source = dataImageSource(from: base64, fallbackMIME: firstString(in: dict, keys: ["mime_type", "original_mime_type"])) {
+        if let base64 = firstString(in: dict, keys: ["image_base64", "b64_json"]) {
+            let mime = normalizedImageMIME(firstString(in: dict, keys: ["mime_type", "original_mime_type"])) ?? "image/png"
+            let source = dataImageSource(from: base64, fallbackMIME: mime) ?? "data:\(mime);base64,invalid"
             return "\n\n![Hermes image](\(source))"
         }
 
@@ -863,7 +864,7 @@ enum HermesImageJSONFormatter {
         let rawMime = firstJSONStringValue(for: "mime_type", in: text) ?? firstJSONStringValue(for: "original_mime_type", in: text)
         let mime = normalizedImageMIME(rawMime) ?? "image/png"
         guard let base64 = firstJSONStringValue(for: "image_base64", in: text) ?? firstJSONStringValue(for: "b64_json", in: text) else { return nil }
-        guard let source = dataImageSource(from: base64, fallbackMIME: mime) else { return nil }
+        let source = dataImageSource(from: base64, fallbackMIME: mime) ?? "data:\(mime);base64,invalid"
         return "\n\n![Hermes image](\(source))"
     }
 
