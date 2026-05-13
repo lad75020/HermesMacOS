@@ -42,12 +42,12 @@ struct HermesHistoryView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label("History", systemImage: "clock.arrow.circlepath")
-                .font(.title2.weight(.semibold))
+                .hermesWebsiteTitleFont(size: 22, weight: .bold)
             Spacer()
             if searchSession.isDashboardHTTPActive {
                 ProgressView().controlSize(.small)
                 Text("Dashboard HTTP")
-                    .font(.caption.weight(.semibold))
+                    .hermesWebsiteLabelFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.hermesSecondaryText)
             }
         }
@@ -282,12 +282,12 @@ private struct HermesDashboardConversationSummary: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Label(result.session.displayTitle, systemImage: result.session.sourceIconName)
-                    .font(.headline)
+                    .hermesWebsiteTitleFont(size: 15, weight: .bold)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Spacer()
                 Text(String.localizedStringWithFormat(String(localized: "%lld hit%@"), result.matches.count, result.matches.count == 1 ? "" : "s"))
-                    .font(.caption.weight(.semibold))
+                    .hermesWebsiteLabelFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.hermesActionBlue)
             }
 
@@ -318,7 +318,7 @@ private struct HermesDashboardConversationMessageRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text(displayRoleTitle)
-                    .font(.caption.weight(.semibold))
+                    .hermesWebsiteLabelFont(size: 11, weight: .bold)
                     .foregroundStyle(roleColor)
                 if let timestamp = message.timestampDate {
                     Text(timestamp.formatted(date: .omitted, time: .shortened))

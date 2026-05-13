@@ -7,6 +7,10 @@ import SwiftUI
 
 @main
 struct HermesMacOSApp: App {
+    init() {
+        HermesWebsiteFontRegistrar.registerBundledFonts()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

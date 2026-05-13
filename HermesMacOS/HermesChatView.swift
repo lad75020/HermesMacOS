@@ -46,12 +46,12 @@ struct HermesChatConsoleView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Label("Chat with Hermes", systemImage: "text.bubble")
-                    .font(.title2.weight(.semibold))
+                    .hermesWebsiteTitleFont(size: 22, weight: .bold)
                 Spacer()
                 if chatSession.isStreaming {
                     ProgressView().controlSize(.small)
                     Text("Streaming")
-                        .font(.caption.weight(.semibold))
+                        .hermesWebsiteLabelFont(size: 11, weight: .bold)
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
             }
@@ -90,7 +90,7 @@ struct HermesChatConsoleView: View {
                     if chatSession.entries.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Label("Start a Chat Completions session", systemImage: "bubble.left.and.bubble.right")
-                                .font(.headline)
+                                .hermesWebsiteTitleFont(size: 15, weight: .bold)
                             Text("Enter a prompt below. Your prompts and Hermes replies will appear here as chat bubbles for this session.")
                                 .font(.subheadline)
                                 .foregroundStyle(Color.hermesSecondaryText)

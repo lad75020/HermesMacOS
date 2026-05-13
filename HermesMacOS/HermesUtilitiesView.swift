@@ -45,7 +45,7 @@ struct HermesUtilitiesView: View {
                         .font(.system(size: 30, weight: .semibold))
                         .foregroundStyle(Color.hermesActionBlue)
                     Text("Utilities")
-                        .font(.title2.weight(.semibold))
+                        .hermesWebsiteTitleFont(size: 22, weight: .bold)
                 }
 
                 VStack(spacing: 0) {
@@ -130,7 +130,7 @@ struct HermesUtilitiesView: View {
                 .frame(width: 34, height: 34)
                 .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.10), cornerRadius: 11)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.headline)
+                Text(title).hermesWebsiteTitleFont(size: 15, weight: .bold)
                 Text(subtitle).font(.caption).foregroundStyle(Color.hermesSecondaryText)
             }
             Spacer(minLength: 0)
@@ -282,7 +282,7 @@ private struct HermesResponsesDebugPanel: View {
             }
             HStack(spacing: 12) {
                 Label("\(eventCount) events", systemImage: "timeline.selection")
-                    .font(.caption.weight(.semibold))
+                    .hermesWebsiteLabelFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.hermesSecondaryText)
                 Spacer()
                 Button { clearDebugText() } label: { Label("Clear", systemImage: "trash") }
@@ -333,8 +333,8 @@ private func historyRow(systemImage: String, badge: String, title: String, subti
             .frame(width: 72, height: 72)
             .hermesGlassPanel(tint: Color.hermesSurfaceInput.opacity(0.66), cornerRadius: 16)
         VStack(alignment: .leading, spacing: 6) {
-            Label(badge, systemImage: badgeIcon).font(.caption.weight(.semibold)).foregroundStyle(Color.hermesSecondaryText)
-            Text(title).font(.headline).lineLimit(3).multilineTextAlignment(.leading)
+            Label(badge, systemImage: badgeIcon).hermesWebsiteLabelFont(size: 11, weight: .bold).foregroundStyle(Color.hermesSecondaryText)
+            Text(title).hermesWebsiteTitleFont(size: 15, weight: .bold).lineLimit(3).multilineTextAlignment(.leading)
             Text(subtitle).font(.caption).foregroundStyle(Color.hermesSecondaryText).lineLimit(1)
         }
         Spacer(minLength: 0)
@@ -353,8 +353,8 @@ private struct HermesClipboardHistoryRow: View {
                 .hermesGlassPanel(tint: Color.hermesSurfaceInput.opacity(0.66), cornerRadius: 16)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
-                Label(entry.kind.localizedDisplayName, systemImage: entry.kind.systemImage).font(.caption.weight(.semibold)).foregroundStyle(Color.hermesSecondaryText)
-                Text(entry.title).font(.headline).lineLimit(2).multilineTextAlignment(.leading)
+                Label(entry.kind.localizedDisplayName, systemImage: entry.kind.systemImage).hermesWebsiteLabelFont(size: 11, weight: .bold).foregroundStyle(Color.hermesSecondaryText)
+                Text(entry.title).hermesWebsiteTitleFont(size: 15, weight: .bold).lineLimit(2).multilineTextAlignment(.leading)
                 if let subtitle = entry.subtitle { Text(subtitle).font(.caption).foregroundStyle(Color.hermesSecondaryText).lineLimit(1) }
             }
             Spacer(minLength: 0)

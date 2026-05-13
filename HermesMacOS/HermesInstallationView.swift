@@ -193,12 +193,12 @@ struct HermesInstallationView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label("Hermes Installation", systemImage: "arrow.triangle.2.circlepath")
-                .font(.title2.weight(.semibold))
+                .hermesWebsiteTitleFont(size: 22, weight: .bold)
             Spacer()
             if session.isRefreshing || session.isPreviewingMerge || session.isMerging {
                 ProgressView().controlSize(.small)
                 Text(activeOperationLabel)
-                    .font(.caption.weight(.semibold))
+                    .hermesWebsiteLabelFont(size: 11, weight: .bold)
                     .foregroundStyle(Color.hermesSecondaryText)
             }
         }
@@ -209,7 +209,7 @@ struct HermesInstallationView: View {
     private var repositorySection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Local Hermes repository")
-                .font(.headline)
+                .hermesWebsiteTitleFont(size: 15, weight: .bold)
             TextField("Hermes agent repository path", text: $repositoryPath)
                 .textFieldStyle(.roundedBorder)
             Text("Git commands run directly on this Mac against the selected repository. No macOS companion host is used.")
@@ -284,7 +284,7 @@ struct HermesInstallationView: View {
     private var actionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Update workflow")
-                .font(.headline)
+                .hermesWebsiteTitleFont(size: 15, weight: .bold)
             HStack(spacing: 10) {
                 Button { session.refresh(repositoryPath: repositoryPath) } label: {
                     Label("Refresh lag", systemImage: "arrow.clockwise")
@@ -324,7 +324,7 @@ struct HermesInstallationView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Git output")
-                    .font(.headline)
+                    .hermesWebsiteTitleFont(size: 15, weight: .bold)
                 Spacer()
                 if !displayOutput.isEmpty {
                     Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(displayOutput, forType: .string) }

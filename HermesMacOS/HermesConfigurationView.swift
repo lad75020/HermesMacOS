@@ -45,7 +45,7 @@ struct HermesConfigurationView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Label("Configuration", systemImage: "gearshape.2")
-                .font(.title2.weight(.semibold))
+                .hermesWebsiteTitleFont(size: 22, weight: .bold)
             Button {
                 reloadToken = UUID()
             } label: {
@@ -58,7 +58,7 @@ struct HermesConfigurationView: View {
             .accessibilityLabel("Reload")
             Spacer()
             Text("Hermes Dashboard")
-                .font(.caption.weight(.semibold))
+                .hermesWebsiteLabelFont(size: 11, weight: .bold)
                 .foregroundStyle(Color.hermesSecondaryText)
         }
         .padding(18)

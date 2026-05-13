@@ -49,13 +49,13 @@ struct HermesResponsesConsoleView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
                 Label("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
-                    .font(.title2.weight(.semibold))
+                    .hermesWebsiteTitleFont(size: 22, weight: .bold)
                 workspaceControls
                 Spacer()
                 if responseSession.isStreaming {
                     ProgressView().controlSize(.small)
                     Text("Streaming")
-                        .font(.caption.weight(.semibold))
+                        .hermesWebsiteLabelFont(size: 11, weight: .bold)
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
             }
@@ -101,7 +101,7 @@ struct HermesResponsesConsoleView: View {
                     if responseSession.entries.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Label("Start a Responses session", systemImage: "bubble.left.and.bubble.right")
-                                .font(.headline)
+                                .hermesWebsiteTitleFont(size: 15, weight: .bold)
                             Text("Enter a prompt below. Your prompts and Hermes replies will appear here as chat bubbles for this session.")
                                 .font(.subheadline)
                                 .foregroundStyle(Color.hermesSecondaryText)
@@ -433,8 +433,7 @@ struct HermesProfileSelector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("PROFILE")
-                .font(.caption2.weight(.bold))
-                .tracking(0.8)
+                .hermesWebsiteLabelFont(size: 10, weight: .bold)
                 .foregroundStyle(Color.hermesSecondaryText)
             Menu {
                 ForEach(pickerProfiles) { profile in
@@ -444,7 +443,7 @@ struct HermesProfileSelector: View {
                     }
                 }
             } label: {
-                HermesMarqueeText(currentProfile, font: .caption.weight(.semibold))
+                HermesMarqueeText(currentProfile, font: .system(size: 11, weight: .semibold, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .disabled(isDisabled)
@@ -462,8 +461,7 @@ private struct HermesReasoningLevelPill: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("REASONING")
-                .font(.caption2.weight(.bold))
-                .tracking(0.8)
+                .hermesWebsiteLabelFont(size: 10, weight: .bold)
                 .foregroundStyle(Color.hermesSecondaryText)
             Menu {
                 ForEach(HermesReasoningLevel.allCases.filter { $0 != .off }) { level in
@@ -474,7 +472,7 @@ private struct HermesReasoningLevelPill: View {
                     Image(systemName: "brain")
                         .font(.caption.weight(.semibold))
                     Text(reasoningLevel == .off ? HermesReasoningLevel.medium.title : reasoningLevel.title)
-                        .font(.caption.weight(.semibold))
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
                         .lineLimit(1)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -499,10 +497,9 @@ struct HermesStatusCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(String(localized: String.LocalizationValue(title)).uppercased())
-                .font(.caption2.weight(.bold))
-                .tracking(0.8)
+                .hermesWebsiteLabelFont(size: 10, weight: .bold)
                 .foregroundStyle(Color.hermesSecondaryText)
-            HermesMarqueeText(value, font: .caption.weight(.semibold))
+            HermesMarqueeText(value, font: .system(size: 11, weight: .semibold, design: .monospaced))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 11)
@@ -812,6 +809,8 @@ private struct HermesRenderedBubbleImageView: View {
 
 struct SettingsView: View {
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
+    @AppStorage("hermes.macOS.titleFont") private var titleFont: HermesWebsiteFont = .rulesExpanded
+    @AppStorage("hermes.macOS.labelFont") private var labelFont: HermesWebsiteFont = .mondwest
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
@@ -831,6 +830,24 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     Text("Choose a fixed light or dark appearance, or follow the macOS system theme.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                    Divider()
+                    Picker("Title font", selection: $titleFont) {
+                        ForEach(HermesWebsiteFont.allCases) { font in
+                            Text(font.title).tag(font)
+                        }
+                    }
+                    Picker("Label font", selection: $labelFont) {
+                        ForEach(HermesWebsiteFont.allCases) { font in
+                            Text(font.title).tag(font)
+                        }
+                    }
+                    Button("Restore website fonts") {
+                        titleFont = .rulesExpanded
+                        labelFont = .mondwest
+                    }
+                    Text("Titles default to the dashboard’s Rules Expanded look; compact labels default to Mondwest. Chat bubbles and prompt composer fonts stay controlled separately below.")
                         .font(.caption)
                         .foregroundStyle(Color.hermesSecondaryText)
                     Divider()
