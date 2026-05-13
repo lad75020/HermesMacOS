@@ -79,7 +79,7 @@ struct HermesResponsesConsoleView: View {
             }
         }
         .padding(18)
-        .background(.ultraThinMaterial)
+        .hermesGlassPanel(cornerRadius: 0)
     }
 
     private var transcript: some View {
@@ -99,7 +99,7 @@ struct HermesResponsesConsoleView: View {
                         }
                         .padding(18)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .hermesCard(tint: Color.hermesActionBlue.opacity(0.08))
+                        .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.07))
                     } else {
                         ForEach(responseSession.entries) { message in
                             HermesResponseBubble(message: message, isResponding: isResponsePlaceholder(message))
@@ -189,7 +189,7 @@ struct HermesResponsesConsoleView: View {
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 78, maxHeight: 150)
                     .padding(8)
-                    .background(Color.hermesSurfaceInput.opacity(responseSession.isStreaming ? 0.54 : 0.84), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .hermesGlassInput(tint: Color.hermesSurfaceInput.opacity(responseSession.isStreaming ? 0.42 : 0.70))
                     .disabled(responseSession.isStreaming)
                     .help(responseSession.isStreaming ? "This workspace is streaming a response" : "Prompt")
                     .overlay(alignment: .topLeading) {
@@ -216,7 +216,7 @@ struct HermesResponsesConsoleView: View {
             }
         }
         .padding(16)
-        .background(.ultraThinMaterial)
+        .hermesGlassPanel(cornerRadius: 0)
         .onChange(of: responseSession.isStreaming) { _, isStreaming in
             if isStreaming { speechToText.stopTranscription() }
         }
@@ -340,7 +340,7 @@ private struct HermesProfileSelector: View {
         }
         .padding(12)
         .frame(minWidth: 170, maxWidth: 260, alignment: .leading)
-        .hermesCard(tint: Color.hermesActionBlue.opacity(0.08))
+        .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.07))
     }
 }
 
@@ -361,7 +361,7 @@ private struct HermesStatusCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .hermesCard(tint: tint.opacity(0.10))
+        .hermesGlassPanel(tint: tint.opacity(0.09))
     }
 }
 
@@ -384,7 +384,7 @@ private struct HermesAttachmentChip: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .hermesCard(tint: Color.hermesActionBlue.opacity(0.08))
+        .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.07))
     }
 }
 
@@ -432,7 +432,7 @@ private struct HermesCopyableBubbleContent: View {
             }
         }
         .padding(13)
-        .background(isUser ? Color.hermesActionBlue.opacity(0.92) : Color.hermesSurface.opacity(0.92), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .hermesGlassPanel(tint: isUser ? Color.hermesActionBlue.opacity(0.86) : Color.hermesSurface.opacity(0.78), cornerRadius: 18, interactive: true)
         .foregroundStyle(isUser ? .white : .primary)
         .overlay(alignment: .topTrailing) {
             Button {
@@ -471,46 +471,50 @@ struct SettingsView: View {
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
 
     var body: some View {
-        Form {
-            Section("Appearance") {
-                Picker("Theme", selection: $appTheme) {
-                    ForEach(HermesAppTheme.allCases) { theme in
-                        Text(theme.title).tag(theme)
+        ZStack {
+            HermesLiquidGlassCanvas().ignoresSafeArea()
+            Form {
+                Section("Appearance") {
+                    Picker("Theme", selection: $appTheme) {
+                        ForEach(HermesAppTheme.allCases) { theme in
+                            Text(theme.title).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text("Choose a fixed light or dark appearance, or follow the macOS system theme.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+
+                Section("Hermes API") {
+                    TextField("Base URL", text: $apiSettings.baseURL)
+                        .textFieldStyle(.roundedBorder)
+                    SecureField("API key", text: $apiSettings.apiKey)
+                        .textFieldStyle(.roundedBorder)
+                    Toggle("Allow self-signed certificates", isOn: $apiSettings.allowSelfSignedCertificates)
+                    Button("Restore default endpoint") {
+                        apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesAPIPort, path: "/v1")
                     }
                 }
-                .pickerStyle(.segmented)
-                Text("Choose a fixed light or dark appearance, or follow the macOS system theme.")
-                    .font(.caption)
-                    .foregroundStyle(Color.hermesSecondaryText)
-            }
 
-            Section("Hermes API") {
-                TextField("Base URL", text: $apiSettings.baseURL)
-                    .textFieldStyle(.roundedBorder)
-                SecureField("API key", text: $apiSettings.apiKey)
-                    .textFieldStyle(.roundedBorder)
-                Toggle("Allow self-signed certificates", isOn: $apiSettings.allowSelfSignedCertificates)
-                Button("Restore default endpoint") {
-                    apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesAPIPort, path: "/v1")
+                Section("Hermes Dashboard") {
+                    TextField("Dashboard URL", text: $dashboardURL)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Restore default dashboard") {
+                        dashboardURL = defaultHermesDashboardURL
+                    }
+                }
+
+                Section("Ask Hermes defaults") {
+                    TextField("Default profile", text: $draft.profile)
+                    Toggle("Stream Responses API output", isOn: $draft.stream)
+                    TextEditor(text: $draft.userPrompt)
+                        .frame(minHeight: 100)
                 }
             }
-
-            Section("Hermes Dashboard") {
-                TextField("Dashboard URL", text: $dashboardURL)
-                    .textFieldStyle(.roundedBorder)
-                Button("Restore default dashboard") {
-                    dashboardURL = defaultHermesDashboardURL
-                }
-            }
-
-            Section("Ask Hermes defaults") {
-                TextField("Default profile", text: $draft.profile)
-                Toggle("Stream Responses API output", isOn: $draft.stream)
-                TextEditor(text: $draft.userPrompt)
-                    .frame(minHeight: 100)
-            }
+            .scrollContentBackground(.hidden)
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
         .preferredColorScheme(appTheme.colorScheme)
         .padding()
         .frame(minWidth: 560, minHeight: 420)
@@ -526,9 +530,30 @@ struct HermesLiquidGlassCanvas: View {
 }
 
 extension View {
+    @ViewBuilder
+    func hermesGlassPanel(tint: Color = Color.hermesSurface.opacity(0.66), cornerRadius: CGFloat = 22, interactive: Bool = false) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(macOS 26.0, *) {
+            self
+                .background(tint, in: shape)
+                .glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(0.16), lineWidth: 1))
+                .shadow(color: .black.opacity(0.10), radius: 18, y: 8)
+        } else {
+            self
+                .background(.ultraThinMaterial, in: shape)
+                .background(tint, in: shape)
+                .overlay(shape.strokeBorder(.white.opacity(0.14), lineWidth: 1))
+                .shadow(color: .black.opacity(0.08), radius: 14, y: 6)
+        }
+    }
+
+    func hermesGlassInput(tint: Color = Color.hermesSurfaceInput.opacity(0.70), cornerRadius: CGFloat = 14) -> some View {
+        hermesGlassPanel(tint: tint, cornerRadius: cornerRadius, interactive: true)
+    }
+
     func hermesCard(tint: Color = Color.hermesSurface.opacity(0.82)) -> some View {
-        self.background(tint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        hermesGlassPanel(tint: tint, cornerRadius: 18)
     }
 }
 

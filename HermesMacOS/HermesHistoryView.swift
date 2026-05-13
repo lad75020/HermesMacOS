@@ -50,7 +50,7 @@ struct HermesHistoryView: View {
             }
         }
         .padding(18)
-        .background(.ultraThinMaterial)
+        .hermesGlassPanel(cornerRadius: 0)
     }
 
     private var searchSection: some View {
@@ -119,6 +119,8 @@ struct HermesHistoryView: View {
                     }
                 }
             }
+            .padding(14)
+            .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.58), cornerRadius: 18)
             .padding(.vertical, 4)
         } header: {
             Label("Full-text search", systemImage: "text.magnifyingglass")
@@ -311,7 +313,7 @@ private struct HermesDashboardConversationMessageRow: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.hermesSurfaceInput.opacity(0.65), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .hermesGlassPanel(tint: Color.hermesSurfaceInput.opacity(0.58), cornerRadius: 14)
     }
 
     private var displayRoleTitle: String {

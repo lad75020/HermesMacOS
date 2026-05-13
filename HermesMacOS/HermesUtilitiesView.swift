@@ -71,7 +71,7 @@ struct HermesUtilitiesView: View {
                     .tint(.hermesActionBlue)
                 }
                 .padding(18)
-                .hermesCard(tint: Color.hermesSurface.opacity(0.78))
+                .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.68), cornerRadius: 24)
             }
             .padding(24)
             .frame(maxWidth: 980, alignment: .leading)
@@ -100,7 +100,7 @@ struct HermesUtilitiesView: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Color.hermesActionBlue)
                 .frame(width: 34, height: 34)
-                .background(Color.hermesActionBlue.opacity(0.12), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.10), cornerRadius: 11)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.headline)
                 Text(subtitle).font(.caption).foregroundStyle(Color.hermesSecondaryText)
@@ -200,7 +200,7 @@ struct HermesUtilitiesView: View {
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(Color.hermesDestructive)
             .frame(width: 38, height: 38)
-            .background(Color.hermesDestructive.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .hermesGlassPanel(tint: Color.hermesDestructive.opacity(0.10), cornerRadius: 12)
     }
 }
 
@@ -241,7 +241,7 @@ private struct HermesResponsesDebugPanel: View {
                 .scrollContentBackground(.hidden)
                 .frame(height: visibleDebugLineCount * debugLineHeight)
                 .padding(8)
-                .background(Color.hermesSurfaceInput.opacity(0.84), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .hermesGlassInput(tint: Color.hermesSurfaceInput.opacity(0.70), cornerRadius: 14)
         }
         .padding(.top, 12)
     }
@@ -263,7 +263,7 @@ private func historyRow(systemImage: String, badge: String, title: String, subti
             .font(.system(size: 28, weight: .semibold))
             .foregroundStyle(Color.hermesActionBlue)
             .frame(width: 72, height: 72)
-            .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .hermesGlassPanel(tint: Color.hermesSurfaceInput.opacity(0.66), cornerRadius: 16)
         VStack(alignment: .leading, spacing: 6) {
             Label(badge, systemImage: badgeIcon).font(.caption.weight(.semibold)).foregroundStyle(Color.hermesSecondaryText)
             Text(title).font(.headline).lineLimit(3).multilineTextAlignment(.leading)
@@ -274,7 +274,7 @@ private func historyRow(systemImage: String, badge: String, title: String, subti
     }
     .padding(12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .hermesCard(tint: Color.hermesActionBlue.opacity(0.06))
+    .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.05), cornerRadius: 18)
 }
 
 private struct HermesClipboardHistoryRow: View {
@@ -282,7 +282,7 @@ private struct HermesClipboardHistoryRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
             preview.frame(width: 72, height: 72)
-                .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .hermesGlassPanel(tint: Color.hermesSurfaceInput.opacity(0.66), cornerRadius: 16)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             VStack(alignment: .leading, spacing: 6) {
                 Label(entry.kind.localizedDisplayName, systemImage: entry.kind.systemImage).font(.caption.weight(.semibold)).foregroundStyle(Color.hermesSecondaryText)
@@ -294,7 +294,7 @@ private struct HermesClipboardHistoryRow: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .hermesCard(tint: Color.hermesActionBlue.opacity(0.06))
+        .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.05), cornerRadius: 18)
     }
 
     @ViewBuilder private var preview: some View {
