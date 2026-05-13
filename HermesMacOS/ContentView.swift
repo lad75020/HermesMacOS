@@ -79,6 +79,19 @@ final class HermesAskWorkspace: Identifiable {
 
 struct HermesTopTabSwitcher: View {
     @Binding var selectedTab: HermesMacOSTab
+    let askAttention: HermesAskWorkspaceAttention?
+    @State private var isAskBlinking = false
+
+    private var activeAskAttention: HermesAskWorkspaceAttention? {
+        switch askAttention {
+        case .completed:
+            return .completed
+        case .streaming:
+            return .streaming
+        case .failed, nil:
+            return nil
+        }
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -94,16 +107,16 @@ struct HermesTopTabSwitcher: View {
                         .frame(minWidth: 132)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(selectedTab == tab ? Color.white : Color.primary)
+                .foregroundStyle(foregroundColor(for: tab))
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(selectedTab == tab ? Color.hermesActionBlue : Color.hermesSurface.opacity(0.58))
+                        .fill(backgroundColor(for: tab).opacity(backgroundOpacity(for: tab)))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .strokeBorder(selectedTab == tab ? Color.white.opacity(0.24) : Color.white.opacity(0.14), lineWidth: 1)
                 )
-                .shadow(color: selectedTab == tab ? Color.hermesActionBlue.opacity(0.24) : .clear, radius: 8, y: 3)
+                .shadow(color: shadowColor(for: tab), radius: 8, y: 3)
                 .help(tab.title)
                 .accessibilityLabel(tab.title)
                 .accessibilityAddTraits(selectedTab == tab ? [.isSelected] : [])
@@ -113,6 +126,49 @@ struct HermesTopTabSwitcher: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
         .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 0)
+        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isAskBlinking)
+        .onAppear { isAskBlinking = activeAskAttention == .streaming }
+        .onChange(of: activeAskAttention) { _, newValue in
+            if newValue == .streaming { isAskBlinking = true }
+            else { isAskBlinking = false }
+        }
+    }
+
+    private func foregroundColor(for tab: HermesMacOSTab) -> Color {
+        if tab == .ask, activeAskAttention != nil { return .white }
+        return selectedTab == tab ? .white : .primary
+    }
+
+    private func backgroundColor(for tab: HermesMacOSTab) -> Color {
+        if tab == .ask {
+            switch activeAskAttention {
+            case .completed:
+                return .green
+            case .streaming:
+                return .hermesOrange
+            case .failed, nil:
+                break
+            }
+        }
+        return selectedTab == tab ? .hermesActionBlue : .hermesSurface.opacity(0.58)
+    }
+
+    private func backgroundOpacity(for tab: HermesMacOSTab) -> Double {
+        tab == .ask && activeAskAttention == .streaming && isAskBlinking ? 0.45 : 1.0
+    }
+
+    private func shadowColor(for tab: HermesMacOSTab) -> Color {
+        if tab == .ask {
+            switch activeAskAttention {
+            case .completed:
+                return .green.opacity(0.24)
+            case .streaming:
+                return .hermesOrange.opacity(0.24)
+            case .failed, nil:
+                break
+            }
+        }
+        return selectedTab == tab ? .hermesActionBlue.opacity(0.24) : .clear
     }
 }
 
@@ -137,9 +193,15 @@ struct ContentView: View {
         return askWorkspaces[0]
     }
 
+    private var askTabAttention: HermesAskWorkspaceAttention? {
+        if askWorkspaces.contains(where: { $0.attention == .completed }) { return .completed }
+        if askWorkspaces.contains(where: { $0.attention == .streaming }) { return .streaming }
+        return nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HermesTopTabSwitcher(selectedTab: $selectedTab)
+            HermesTopTabSwitcher(selectedTab: $selectedTab, askAttention: askTabAttention)
             activeTabContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
