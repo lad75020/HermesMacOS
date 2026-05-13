@@ -435,12 +435,25 @@ private struct HermesBubbleMessageText: View {
 }
 
 struct SettingsView: View {
+    @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var draft = HermesSettingsStore.loadDraft()
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
 
     var body: some View {
         Form {
+            Section("Appearance") {
+                Picker("Theme", selection: $appTheme) {
+                    ForEach(HermesAppTheme.allCases) { theme in
+                        Text(theme.title).tag(theme)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("Choose a fixed light or dark appearance, or follow the macOS system theme.")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+            }
+
             Section("Hermes API") {
                 TextField("Base URL", text: $apiSettings.baseURL)
                     .textFieldStyle(.roundedBorder)
@@ -468,6 +481,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .preferredColorScheme(appTheme.colorScheme)
         .padding()
         .frame(minWidth: 560, minHeight: 420)
         .onChange(of: apiSettings) { _, value in HermesSettingsStore.saveAPISettings(value) }

@@ -11,6 +11,30 @@ enum HermesAskWorkspaceAttention {
     case failed
 }
 
+enum HermesAppTheme: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class HermesAskWorkspace: Identifiable {
@@ -54,6 +78,7 @@ final class HermesAskWorkspace: Identifiable {
 }
 
 struct ContentView: View {
+    @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var askWorkspaces = [HermesAskWorkspace(number: 1)]
     @State private var selectedAskWorkspaceID: HermesAskWorkspace.ID?
@@ -105,6 +130,7 @@ struct ContentView: View {
                 .tabItem { Label("Settings", systemImage: "slider.horizontal.3") }
                 .tag(HermesMacOSTab.settings)
         }
+        .preferredColorScheme(appTheme.colorScheme)
         .tint(.hermesActionBlue)
         .onAppear {
             if selectedAskWorkspaceID == nil { selectedAskWorkspaceID = askWorkspaces.first?.id }
