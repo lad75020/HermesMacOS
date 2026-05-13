@@ -710,11 +710,8 @@ private struct HermesResponseContent: Decodable {
     }
     var imageMarkdown: String? {
         let base64 = b64JSON ?? imageBase64
-        let mime = HermesImageJSONFormatter.normalizedImageMIME(mimeType ?? originalMimeType) ?? "image/png"
-        let source = imageURL?.url ?? url ?? base64.map { base64Value in
-            let encoded = base64Value.filter { !$0.isWhitespace }
-            guard encoded.count <= 32_000_000 else { return "" }
-            return "data:\(mime);base64,\(encoded)"
+        let source = imageURL?.url ?? url ?? base64.flatMap { base64Value in
+            HermesImageJSONFormatter.dataImageSource(from: base64Value, fallbackMIME: mimeType ?? originalMimeType)
         }
         guard let source, HermesImageJSONFormatter.looksLikeImageSource(source) else { return nil }
         return "\n\n![Hermes image](\(source))"
@@ -816,11 +813,9 @@ enum HermesImageJSONFormatter {
             return nil
         }
 
-        if let base64 = firstString(in: dict, keys: ["image_base64", "b64_json"]) {
-            let encoded = base64.filter { !$0.isWhitespace }
-            guard !encoded.isEmpty, encoded.count <= maxEncodedImageCharacters else { return nil }
-            let mime = normalizedImageMIME(firstString(in: dict, keys: ["mime_type", "original_mime_type"])) ?? "image/png"
-            return "\n\n![Hermes image](data:\(mime);base64,\(encoded))"
+        if let base64 = firstString(in: dict, keys: ["image_base64", "b64_json"]),
+           let source = dataImageSource(from: base64, fallbackMIME: firstString(in: dict, keys: ["mime_type", "original_mime_type"])) {
+            return "\n\n![Hermes image](\(source))"
         }
 
         if let source = imageSource(in: dict), looksLikeImageSource(source) {
@@ -868,9 +863,33 @@ enum HermesImageJSONFormatter {
         let rawMime = firstJSONStringValue(for: "mime_type", in: text) ?? firstJSONStringValue(for: "original_mime_type", in: text)
         let mime = normalizedImageMIME(rawMime) ?? "image/png"
         guard let base64 = firstJSONStringValue(for: "image_base64", in: text) ?? firstJSONStringValue(for: "b64_json", in: text) else { return nil }
-        let encoded = base64.filter { !$0.isWhitespace }
+        guard let source = dataImageSource(from: base64, fallbackMIME: mime) else { return nil }
+        return "\n\n![Hermes image](\(source))"
+    }
+
+    static func dataImageSource(from value: String, fallbackMIME: String?) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let separator = trimmed.range(of: ";base64,", options: [.caseInsensitive]) {
+            let prefix = String(trimmed[..<separator.lowerBound]).lowercased()
+            guard prefix.hasPrefix("data:"), let mime = normalizedImageMIME(String(prefix.dropFirst("data:".count))) else { return nil }
+            guard let encoded = normalizedBase64Payload(String(trimmed[separator.upperBound...])) else { return nil }
+            return "data:\(mime);base64,\(encoded)"
+        }
+        guard let encoded = normalizedBase64Payload(value) else { return nil }
+        let mime = normalizedImageMIME(fallbackMIME) ?? "image/png"
+        return "data:\(mime);base64,\(encoded)"
+    }
+
+    private static func normalizedBase64Payload(_ value: String) -> String? {
+        var encoded = value.filter { !$0.isWhitespace }
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
         guard !encoded.isEmpty, encoded.count <= maxEncodedImageCharacters else { return nil }
-        return "\n\n![Hermes image](data:\(mime);base64,\(encoded))"
+        let remainder = encoded.count % 4
+        if remainder == 1 { return nil }
+        if remainder > 0 { encoded += String(repeating: "=", count: 4 - remainder) }
+        guard encoded.range(of: #"^[A-Za-z0-9+/]*={0,2}$"#, options: .regularExpression) != nil else { return nil }
+        return encoded
     }
 
     private static func firstJSONStringValue(for key: String, in text: String) -> String? { let pattern = #""# + NSRegularExpression.escapedPattern(for: key) + #""\s*:\s*"((?:\\.|[^"\\])*)""#; guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]), let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)), let range = Range(match.range(at: 1), in: text) else { return nil }; let value = String(text[range]); let wrapped = "\"\(value)\""; return wrapped.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) as? String } ?? value }
