@@ -121,6 +121,8 @@ struct ContentView: View {
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var askWorkspaces = [HermesAskWorkspace(number: 1)]
     @State private var selectedAskWorkspaceID: HermesAskWorkspace.ID?
+    @State private var chatDraft = HermesSettingsStore.loadChatDraft()
+    @State private var chatSession = HermesChatSession()
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
     @State private var historySearchSession = HermesDashboardHistorySearchSession()
@@ -150,6 +152,7 @@ struct ContentView: View {
             await clipboardHistory.runMonitoringLoop()
         }
         .onChange(of: apiSettings) { _, newValue in HermesSettingsStore.saveAPISettings(newValue) }
+        .onChange(of: chatDraft) { _, newValue in HermesSettingsStore.saveChatDraft(newValue) }
     }
 
     @ViewBuilder
@@ -165,19 +168,29 @@ struct ContentView: View {
                 onAddWorkspace: addAskWorkspace,
                 onDeleteWorkspace: deleteAskWorkspace
             )
+        case .chat:
+            HermesChatConsoleView(
+                apiSettings: $apiSettings,
+                chatDraft: $chatDraft,
+                chatSession: chatSession,
+                promptHistoryStore: promptHistory
+            )
         case .history:
             HermesHistoryView(
                 apiSettings: $apiSettings,
                 searchSession: historySearchSession,
                 isResponsesStreaming: askWorkspaces.contains(where: { $0.session.isSending }),
-                onResumeResponses: resumeConversationInResponses
+                isChatStreaming: chatSession.isSending,
+                onResumeResponses: resumeConversationInResponses,
+                onResumeChat: resumeConversationInChat
             )
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
                 promptHistory: promptHistory,
                 workspaces: askWorkspaces,
-                selectedWorkspaceID: selectedWorkspaceBinding
+                selectedWorkspaceID: selectedWorkspaceBinding,
+                chatSession: chatSession
             )
         }
     }
@@ -224,10 +237,17 @@ struct ContentView: View {
         workspace.session.resumeConversation(from: result)
         selectedTab = .ask
     }
+
+    private func resumeConversationInChat(_ result: HermesDashboardConversationResult) {
+        guard !chatSession.isSending else { return }
+        chatSession.resumeConversation(from: result)
+        selectedTab = .chat
+    }
 }
 
 enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case ask
+    case chat
     case history
     case utilities
 
@@ -236,6 +256,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .ask: "Ask Hermes"
+        case .chat: "Chat with Hermes"
         case .history: "History"
         case .utilities: "Utilities"
         }
@@ -244,6 +265,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .ask: "dot.radiowaves.left.and.right"
+        case .chat: "text.bubble"
         case .history: "clock.arrow.circlepath"
         case .utilities: "wrench.and.screwdriver"
         }

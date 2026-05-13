@@ -9,7 +9,9 @@ struct HermesHistoryView: View {
     @Binding var apiSettings: HermesAPISettings
     @Bindable var searchSession: HermesDashboardHistorySearchSession
     let isResponsesStreaming: Bool
+    let isChatStreaming: Bool
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
+    let onResumeChat: (HermesDashboardConversationResult) -> Void
 
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
     @State private var expandedConversationIDs: Set<String> = []
@@ -150,7 +152,9 @@ struct HermesHistoryView: View {
                         result: result,
                         isExpanded: bindingForConversation(result.id),
                         isResumeResponsesDisabled: isResponsesStreaming,
-                        onResumeResponses: onResumeResponses
+                        isResumeChatDisabled: isChatStreaming,
+                        onResumeResponses: onResumeResponses,
+                        onResumeChat: onResumeChat
                     )
                 }
             }
@@ -211,7 +215,9 @@ private struct HermesDashboardConversationDisclosure: View {
     let result: HermesDashboardConversationResult
     @Binding var isExpanded: Bool
     let isResumeResponsesDisabled: Bool
+    let isResumeChatDisabled: Bool
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
+    let onResumeChat: (HermesDashboardConversationResult) -> Void
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
@@ -225,6 +231,15 @@ private struct HermesDashboardConversationDisclosure: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(isResumeResponsesDisabled)
                     .help(isResumeResponsesDisabled ? "Ask Hermes is streaming a response" : "Resume this conversation in Ask Hermes")
+
+                    Button {
+                        onResumeChat(result)
+                    } label: {
+                        Label("Resume in Chat with Hermes", systemImage: "text.bubble")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isResumeChatDisabled)
+                    .help(isResumeChatDisabled ? "Chat with Hermes is streaming a response" : "Resume this conversation in Chat with Hermes")
                 }
 
                 ForEach(result.displayMessages) { message in
@@ -236,14 +251,25 @@ private struct HermesDashboardConversationDisclosure: View {
             HStack(alignment: .center, spacing: 12) {
                 HermesDashboardConversationSummary(result: result)
                 Spacer(minLength: 8)
-                Button {
-                    onResumeResponses(result)
+                Menu {
+                    Button {
+                        onResumeResponses(result)
+                    } label: {
+                        Label("Ask Hermes", systemImage: "dot.radiowaves.left.and.right")
+                    }
+                    .disabled(isResumeResponsesDisabled)
+
+                    Button {
+                        onResumeChat(result)
+                    } label: {
+                        Label("Chat with Hermes", systemImage: "text.bubble")
+                    }
+                    .disabled(isResumeChatDisabled)
                 } label: {
                     Label("Resume", systemImage: "arrow.uturn.forward")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(isResumeResponsesDisabled)
             }
         }
     }

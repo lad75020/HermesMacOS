@@ -14,14 +14,17 @@
 		894771D840EFDC655AA6773F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4501AB7BBEE0E95DA1F88BD8 /* Assets.xcassets */; };
 		8C0CBEB9FC4A6D4040EBFD56 /* HermesMacOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */; };
 		94CFB24AD7B68108672D0497 /* HermesHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F22943CF56D37CF71DD1CD /* HermesHistoryView.swift */; };
+		AB364C25AEB7E281976FF7DA /* HermesChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23D78F8C8391F85BE1F3FFF /* HermesChatView.swift */; };
 		ADA3B122D278EEEE2D7A34BD /* HermesDashboardHistorySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */; };
 		C29A742AAE1F188A9653ADB4 /* HermesUtilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBD3C94B644F20D2E6BD269 /* HermesUtilitiesView.swift */; };
 		DC9951D9255D694859E91CC4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CBD5F9B22B44BCCD839298 /* ContentView.swift */; };
 		E1848BEE3EF0960620A17BD3 /* HermesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6696056CAFB17C7255BD45D7 /* HermesViews.swift */; };
+		E6744ACE824DD627E37B9020 /* HermesChatCompletionsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */; };
 		E6DB079DBEBCA1119036ACEA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesChatCompletionsAPI.swift; sourceTree = "<group>"; };
 		1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardHistorySearch.swift; sourceTree = "<group>"; };
 		1EBD3C94B644F20D2E6BD269 /* HermesUtilitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesUtilitiesView.swift; sourceTree = "<group>"; };
 		2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
@@ -36,6 +39,7 @@
 		C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesSpeechToText.swift; sourceTree = "<group>"; };
 		D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMacOSApp.swift; sourceTree = "<group>"; };
 		D76746761A58C12E6B3890D5 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		E23D78F8C8391F85BE1F3FFF /* HermesChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesChatView.swift; sourceTree = "<group>"; };
 		EBBF745CBB6AEE27A9D9EB9E /* HermesModelsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesModelsAPI.swift; sourceTree = "<group>"; };
 		F32AE47EB41A0A5D4A1AC620 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		FA43AC78DAFC778F3E5332ED /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -64,6 +68,8 @@
 				4501AB7BBEE0E95DA1F88BD8 /* Assets.xcassets */,
 				69CBD5F9B22B44BCCD839298 /* ContentView.swift */,
 				AC30A9107E0067942908A526 /* HermesAskWorkspacesView.swift */,
+				03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */,
+				E23D78F8C8391F85BE1F3FFF /* HermesChatView.swift */,
 				1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */,
 				37F22943CF56D37CF71DD1CD /* HermesHistoryView.swift */,
 				D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */,
@@ -156,6 +162,8 @@
 			files = (
 				DC9951D9255D694859E91CC4 /* ContentView.swift in Sources */,
 				6CF2BF183476837D25A0F25D /* HermesAskWorkspacesView.swift in Sources */,
+				E6744ACE824DD627E37B9020 /* HermesChatCompletionsAPI.swift in Sources */,
+				AB364C25AEB7E281976FF7DA /* HermesChatView.swift in Sources */,
 				ADA3B122D278EEEE2D7A34BD /* HermesDashboardHistorySearch.swift in Sources */,
 				94CFB24AD7B68108672D0497 /* HermesHistoryView.swift in Sources */,
 				8C0CBEB9FC4A6D4040EBFD56 /* HermesMacOSApp.swift in Sources */,

@@ -44,6 +44,7 @@ struct HermesAPISettings: Codable, Equatable {
     var allowSelfSignedCertificates = false
 
     static func responseURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "responses") }
+    static func chatCompletionsURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "chat/completions") }
     static func profilesURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "profiles") }
 
     private static func endpointURL(from baseURL: String, suffix: String) -> URL? {
@@ -116,15 +117,24 @@ enum HermesSettingsStore {
     private static let requestDraftKey = "hermes.macOS.responsesDraft"
     private static let lastResponseIDKey = "hermes.macOS.lastResponsesSessionID"
     private static let lastResponseTitleKey = "hermes.macOS.lastResponsesSessionTitle"
+    private static let chatDraftKey = "hermes.macOS.chatDraft"
+    private static let lastChatSessionIDKey = "hermes.macOS.lastChatSessionID"
+    private static let lastChatSessionTitleKey = "hermes.macOS.lastChatSessionTitle"
 
     static func loadAPISettings() -> HermesAPISettings { load(HermesAPISettings.self, forKey: apiSettingsKey) ?? HermesAPISettings() }
     static func saveAPISettings(_ value: HermesAPISettings) { save(value, forKey: apiSettingsKey) }
     static func loadDraft() -> HermesRequestDraft { load(HermesRequestDraft.self, forKey: requestDraftKey) ?? HermesRequestDraft() }
     static func saveDraft(_ value: HermesRequestDraft) { save(value, forKey: requestDraftKey) }
+    static func loadChatDraft() -> HermesChatDraft { load(HermesChatDraft.self, forKey: chatDraftKey) ?? HermesChatDraft() }
+    static func saveChatDraft(_ value: HermesChatDraft) { save(value, forKey: chatDraftKey) }
     static func loadLastResponsesSessionID() -> String { UserDefaults.standard.string(forKey: lastResponseIDKey) ?? "" }
     static func saveLastResponsesSessionID(_ value: String) { UserDefaults.standard.set(value, forKey: lastResponseIDKey) }
     static func loadLastResponsesSessionTitle() -> String { UserDefaults.standard.string(forKey: lastResponseTitleKey) ?? "" }
     static func saveLastResponsesSessionTitle(_ value: String) { UserDefaults.standard.set(value, forKey: lastResponseTitleKey) }
+    static func loadLastChatSessionID() -> String { UserDefaults.standard.string(forKey: lastChatSessionIDKey) ?? "" }
+    static func saveLastChatSessionID(_ value: String) { UserDefaults.standard.set(value, forKey: lastChatSessionIDKey) }
+    static func loadLastChatSessionTitle() -> String { UserDefaults.standard.string(forKey: lastChatSessionTitleKey) ?? "" }
+    static func saveLastChatSessionTitle(_ value: String) { UserDefaults.standard.set(value, forKey: lastChatSessionTitleKey) }
 
     private static func load<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
@@ -746,7 +756,9 @@ private enum HermesEventSummaryBuilder {
 struct HermesLooseJSON {
     private let object: Any?
     init(json: String) { object = json.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) } }
+    init(data: Data) { object = try? JSONSerialization.jsonObject(with: data) }
     func string(at path: [String]) -> String? { guard let value = value(at: path) else { return nil }; if let string = value as? String { return string }; if let number = value as? NSNumber { return number.stringValue }; return nil }
+    func texts(at path: [String]) -> [String] { value(at: path).map(extractTexts(from:)) ?? [] }
     func messageOutputTexts(at path: [String]) -> [String] { value(at: path).map(extractMessageOutputTexts(from:)) ?? [] }
     private func value(at path: [String]) -> Any? { var current = object; for key in path { if let index = Int(key), let array = current as? [Any], array.indices.contains(index) { current = array[index] } else if let dict = current as? [String: Any] { current = dict[key] } else { return nil } }; return current }
     private func extractMessageOutputTexts(from value: Any) -> [String] { if let array = value as? [Any] { return array.flatMap(extractMessageOutputTexts) }; guard let dict = value as? [String: Any] else { return [] }; if let type = dict["type"] as? String, type != "message" { return [] }; return extractTexts(from: dict["content"] ?? dict["output"] ?? dict) }

@@ -21,12 +21,13 @@ struct HermesUtilitiesView: View {
     @Bindable var promptHistory: HermesPromptHistoryStore
     let workspaces: [HermesAskWorkspace]
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
+    @Bindable var chatSession: HermesChatSession
 
     @AppStorage("hermes.macOS.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
     @AppStorage("hermes.macOS.utilities.messagesHistoryExpanded") private var isMessagesHistoryExpanded = false
     @AppStorage("hermes.macOS.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @State private var statusMessage = String(localized: "Monitoring the Mac clipboard while HermesMacOS is active.")
-    @State private var historyStatusMessage = String(localized: "Capturing prompts and responses sent from Ask Hermes.")
+    @State private var historyStatusMessage = String(localized: "Capturing prompts and responses sent from Ask Hermes and Chat with Hermes.")
     @State private var messagesHistoryMode: HermesMessagesHistoryMode = .prompt
 
     private var selectedWorkspace: HermesAskWorkspace {
@@ -64,9 +65,9 @@ struct HermesUtilitiesView: View {
                     Divider().padding(.vertical, 8)
 
                     DisclosureGroup(isExpanded: $isDebuggingExpanded) {
-                        HermesResponsesDebugPanel(workspaces: workspaces, selectedWorkspaceID: $selectedWorkspaceID)
+                        HermesResponsesDebugPanel(workspaces: workspaces, selectedWorkspaceID: $selectedWorkspaceID, chatSession: chatSession)
                     } label: {
-                        utilityDisclosureLabel(title: String(localized: "Debugging"), subtitle: String(localized: "Inspect streamed Responses API JSON"), systemImage: "ladybug")
+                        utilityDisclosureLabel(title: String(localized: "Debugging"), subtitle: String(localized: "Inspect streamed Responses and Chat JSON"), systemImage: "ladybug")
                     }
                     .tint(.hermesActionBlue)
                 }
@@ -165,7 +166,7 @@ struct HermesUtilitiesView: View {
 
     @ViewBuilder private var promptHistoryList: some View {
         if promptHistory.entries.isEmpty {
-            ContentUnavailableView("No prompt history yet", systemImage: "text.quote", description: Text("Send prompts from Ask Hermes, then open this utility to copy them back later."))
+            ContentUnavailableView("No prompt history yet", systemImage: "text.quote", description: Text("Send prompts from Ask Hermes or Chat with Hermes, then open this utility to copy them back later."))
                 .frame(maxWidth: .infinity, minHeight: 220)
         } else {
             LazyVStack(spacing: 10) {
@@ -181,7 +182,7 @@ struct HermesUtilitiesView: View {
 
     @ViewBuilder private var responseHistoryList: some View {
         if promptHistory.responseEntries.isEmpty {
-            ContentUnavailableView("No response history yet", systemImage: "text.bubble", description: Text("Hermes responses from Ask Hermes will appear here after requests complete."))
+            ContentUnavailableView("No response history yet", systemImage: "text.bubble", description: Text("Hermes responses from Ask Hermes and Chat with Hermes will appear here after requests complete."))
                 .frame(maxWidth: .infinity, minHeight: 220)
         } else {
             LazyVStack(spacing: 10) {
@@ -205,8 +206,17 @@ struct HermesUtilitiesView: View {
 }
 
 private struct HermesResponsesDebugPanel: View {
+    enum DebugSource: String, CaseIterable, Identifiable {
+        case ask
+        case chat
+        var id: String { rawValue }
+        var title: String { self == .ask ? String(localized: "Ask Hermes") : String(localized: "Chat with Hermes") }
+    }
+
     let workspaces: [HermesAskWorkspace]
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
+    @Bindable var chatSession: HermesChatSession
+    @State private var debugSource: DebugSource = .ask
     private let visibleDebugLineCount: CGFloat = 16
     private let debugLineHeight: CGFloat = 18
 
@@ -215,25 +225,42 @@ private struct HermesResponsesDebugPanel: View {
     }
 
     private var debugText: String {
-        selectedWorkspace.session.rawStreamedJSON.isEmpty ? String(localized: "No Responses API JSON has been streamed yet in workspace \(selectedWorkspace.number). Send an Ask Hermes request with streaming enabled to populate this debug view.") : selectedWorkspace.session.rawStreamedJSON
+        switch debugSource {
+        case .ask:
+            return selectedWorkspace.session.rawStreamedJSON.isEmpty ? String(localized: "No Responses API JSON has been streamed yet in workspace \(selectedWorkspace.number). Send an Ask Hermes request with streaming enabled to populate this debug view.") : selectedWorkspace.session.rawStreamedJSON
+        case .chat:
+            return chatSession.rawStreamedJSON.isEmpty ? String(localized: "No Chat Completions JSON has been streamed yet. Send a Chat with Hermes request with streaming enabled to populate this debug view.") : chatSession.rawStreamedJSON
+        }
+    }
+
+    private var eventCount: Int {
+        switch debugSource {
+        case .ask: selectedWorkspace.session.eventCount
+        case .chat: chatSession.eventCount
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if workspaces.count > 1 {
+            Picker("Debug source", selection: $debugSource) {
+                ForEach(DebugSource.allCases) { source in Text(source.title).tag(source) }
+            }
+            .pickerStyle(.segmented)
+
+            if debugSource == .ask && workspaces.count > 1 {
                 Picker("Workspace", selection: $selectedWorkspaceID) {
                     ForEach(workspaces) { workspace in Text("Workspace \(workspace.number)").tag(workspace.id) }
                 }
                 .pickerStyle(.segmented)
             }
             HStack(spacing: 12) {
-                Label("\(selectedWorkspace.session.eventCount) events", systemImage: "timeline.selection")
+                Label("\(eventCount) events", systemImage: "timeline.selection")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.hermesSecondaryText)
                 Spacer()
-                Button { selectedWorkspace.session.rawStreamedJSON = "" } label: { Label("Clear", systemImage: "trash") }
+                Button { clearDebugText() } label: { Label("Clear", systemImage: "trash") }
                     .buttonStyle(.bordered)
-                    .disabled(selectedWorkspace.session.rawStreamedJSON.isEmpty)
+                    .disabled(isClearDisabled)
             }
             TextEditor(text: .constant(debugText))
                 .font(.system(.caption, design: .monospaced))
@@ -244,6 +271,20 @@ private struct HermesResponsesDebugPanel: View {
                 .hermesGlassInput(tint: Color.hermesSurfaceInput.opacity(0.70), cornerRadius: 14)
         }
         .padding(.top, 12)
+    }
+
+    private var isClearDisabled: Bool {
+        switch debugSource {
+        case .ask: selectedWorkspace.session.rawStreamedJSON.isEmpty
+        case .chat: chatSession.rawStreamedJSON.isEmpty
+        }
+    }
+
+    private func clearDebugText() {
+        switch debugSource {
+        case .ask: selectedWorkspace.session.rawStreamedJSON = ""
+        case .chat: chatSession.rawStreamedJSON = ""
+        }
     }
 }
 
@@ -472,8 +513,19 @@ final class HermesPromptHistoryStore {
 struct HermesPromptHistoryEntry: Identifiable, Codable, Equatable {
     enum Source: String, Codable {
         case askHermes
-        var displayName: String { String(localized: "Ask Hermes") }
-        var systemImage: String { "dot.radiowaves.left.and.right" }
+        case chatWithHermes
+        var displayName: String {
+            switch self {
+            case .askHermes: String(localized: "Ask Hermes")
+            case .chatWithHermes: String(localized: "Chat with Hermes")
+            }
+        }
+        var systemImage: String {
+            switch self {
+            case .askHermes: "dot.radiowaves.left.and.right"
+            case .chatWithHermes: "text.bubble"
+            }
+        }
     }
     let id: UUID; let prompt: String; let source: Source; let createdAt: Date; let fingerprint: String
     init(prompt: String, source: Source) { self.id = UUID(); self.prompt = prompt; self.source = source; self.createdAt = Date(); self.fingerprint = Self.makeFingerprint(text: prompt, source: source, kind: "prompt") }

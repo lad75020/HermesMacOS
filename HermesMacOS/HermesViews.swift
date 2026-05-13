@@ -399,7 +399,7 @@ private struct HermesMarqueeTextWidthKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
-private struct HermesProfileSelector: View {
+struct HermesProfileSelector: View {
     @Binding var selectedProfile: String
     let apiProfiles: [HermesAPIProfile]
     let lockedProfile: String
@@ -489,7 +489,7 @@ private struct HermesReasoningLevelPill: View {
     }
 }
 
-private struct HermesStatusCard: View {
+struct HermesStatusCard: View {
     let title: String
     let value: String
     let tint: Color
@@ -511,7 +511,7 @@ private struct HermesStatusCard: View {
     }
 }
 
-private struct HermesAttachmentChip: View {
+struct HermesAttachmentChip: View {
     let attachment: HermesPromptAttachment
     let remove: () -> Void
 
@@ -558,7 +558,7 @@ struct HermesResponseBubble: View {
     private var displayContent: String { message.content }
 }
 
-private struct HermesCopyableBubbleContent: View {
+struct HermesCopyableBubbleContent: View {
     let text: String
     let copyText: String
     let isUser: Bool
@@ -811,6 +811,7 @@ struct SettingsView: View {
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var draft = HermesSettingsStore.loadDraft()
+    @State private var chatDraft = HermesSettingsStore.loadChatDraft()
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
 
     var body: some View {
@@ -869,6 +870,15 @@ struct SettingsView: View {
                     TextEditor(text: $draft.userPrompt)
                         .frame(minHeight: 100)
                 }
+
+                Section("Chat with Hermes defaults") {
+                    TextField("Default profile", text: $chatDraft.profile)
+                    Toggle("Stream Chat Completions output", isOn: $chatDraft.stream)
+                    TextField("Common system prompt (optional)", text: $chatDraft.systemPrompt, axis: .vertical)
+                        .lineLimit(2...5)
+                    TextEditor(text: $chatDraft.userPrompt)
+                        .frame(minHeight: 100)
+                }
             }
             .scrollContentBackground(.hidden)
             .formStyle(.grouped)
@@ -878,6 +888,7 @@ struct SettingsView: View {
         .frame(minWidth: 560, minHeight: 420)
         .onChange(of: apiSettings) { _, value in HermesSettingsStore.saveAPISettings(value) }
         .onChange(of: draft) { _, value in HermesSettingsStore.saveDraft(value) }
+        .onChange(of: chatDraft) { _, value in HermesSettingsStore.saveChatDraft(value) }
     }
 }
 
