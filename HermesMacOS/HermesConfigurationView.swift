@@ -18,26 +18,6 @@ struct HermesConfigurationView: View {
         VStack(spacing: 16) {
             header
 
-            HStack(spacing: 10) {
-                Image(systemName: "globe")
-                    .foregroundStyle(Color.hermesActionBlue)
-                Text(dashboardURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Dashboard URL is empty" : dashboardURL)
-                    .font(.callout.monospaced())
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(dashboardURL)
-                Spacer(minLength: 12)
-                Button {
-                    reloadToken = UUID()
-                } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(normalizedDashboardURL == nil)
-            }
-            .padding(12)
-            .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.72), cornerRadius: 16)
-
             Group {
                 if let normalizedDashboardURL {
                     HermesDashboardWebView(url: normalizedDashboardURL, reloadToken: reloadToken)
@@ -65,6 +45,16 @@ struct HermesConfigurationView: View {
         HStack(spacing: 12) {
             Label("Configuration", systemImage: "gearshape.2")
                 .font(.title2.weight(.semibold))
+            Button {
+                reloadToken = UUID()
+            } label: {
+                Label("Reload", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(normalizedDashboardURL == nil)
+            .help("Reload")
+            .accessibilityLabel("Reload")
             Spacer()
             Text("Hermes Dashboard")
                 .font(.caption.weight(.semibold))
