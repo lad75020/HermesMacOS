@@ -316,6 +316,85 @@ struct HermesResponsesConsoleView: View {
     }
 }
 
+private struct HermesMarqueeText: View {
+    let text: String
+    let font: Font
+    var startDelay: Double = 0.7
+    var pointsPerSecond: Double = 34
+    var gap: CGFloat = 36
+
+    @State private var textWidth: CGFloat = 0
+    @State private var containerWidth: CGFloat = 0
+    @State private var isScrolling = false
+
+    init(_ text: String, font: Font, startDelay: Double = 0.7, pointsPerSecond: Double = 34, gap: CGFloat = 36) {
+        self.text = text
+        self.font = font
+        self.startDelay = startDelay
+        self.pointsPerSecond = pointsPerSecond
+        self.gap = gap
+    }
+
+    private var shouldScroll: Bool { textWidth > containerWidth + 1 && containerWidth > 0 }
+    private var duration: Double { max(4.0, Double(textWidth + gap) / pointsPerSecond) }
+
+    var body: some View {
+        GeometryReader { geometry in
+            HStack(spacing: gap) {
+                measuredText
+                if shouldScroll { plainText }
+            }
+            .offset(x: shouldScroll && isScrolling ? -(textWidth + gap) : 0)
+            .animation(shouldScroll ? .linear(duration: duration).repeatForever(autoreverses: false) : nil, value: isScrolling)
+            .onAppear { updateContainerWidth(geometry.size.width) }
+            .onChange(of: geometry.size.width) { _, width in updateContainerWidth(width) }
+            .onChange(of: text) { _, _ in restartIfNeeded() }
+        }
+        .frame(height: 17)
+        .clipped()
+        .onPreferenceChange(HermesMarqueeTextWidthKey.self) { width in
+            textWidth = width
+            restartIfNeeded()
+        }
+        .accessibilityLabel(text)
+        .help(text)
+    }
+
+    private var measuredText: some View {
+        plainText.background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: HermesMarqueeTextWidthKey.self, value: proxy.size.width)
+            }
+        )
+    }
+
+    private var plainText: some View {
+        Text(text)
+            .font(font)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func updateContainerWidth(_ width: CGFloat) {
+        containerWidth = width
+        restartIfNeeded()
+    }
+
+    private func restartIfNeeded() {
+        isScrolling = false
+        guard shouldScroll else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + startDelay) {
+            guard shouldScroll else { return }
+            isScrolling = true
+        }
+    }
+}
+
+private struct HermesMarqueeTextWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 private struct HermesProfileSelector: View {
     @Binding var selectedProfile: String
     let apiProfiles: [HermesAPIProfile]
@@ -361,8 +440,7 @@ private struct HermesProfileSelector: View {
                     }
                 }
             } label: {
-                Text(currentProfile)
-                    .lineLimit(1)
+                HermesMarqueeText(currentProfile, font: .caption.weight(.semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .disabled(isDisabled)
@@ -417,9 +495,7 @@ private struct HermesStatusCard: View {
                 .font(.caption2.weight(.bold))
                 .tracking(0.8)
                 .foregroundStyle(Color.hermesSecondaryText)
-            Text(value)
-                .font(.caption.weight(.semibold))
-                .lineLimit(2)
+            HermesMarqueeText(value, font: .caption.weight(.semibold))
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
