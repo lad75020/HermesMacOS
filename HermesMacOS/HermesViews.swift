@@ -13,6 +13,9 @@ struct HermesResponsesConsoleView: View {
     @Bindable var promptHistoryStore: HermesPromptHistoryStore
     var workspaceControls = AnyView(EmptyView())
 
+    @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
+    @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
+
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedAttachment: HermesPromptAttachment?
     @State private var isImportingAttachment = false
@@ -111,7 +114,7 @@ struct HermesResponsesConsoleView: View {
                         .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.07))
                     } else {
                         ForEach(responseSession.entries) { message in
-                            HermesResponseBubble(message: message, isResponding: isResponsePlaceholder(message))
+                            HermesResponseBubble(message: message, fontSize: chatBubbleFontSize, isResponding: isResponsePlaceholder(message))
                                 .id(message.id)
                         }
                     }
@@ -194,7 +197,7 @@ struct HermesResponsesConsoleView: View {
                 .help(speechToText.buttonTitle)
 
                 TextEditor(text: $promptText)
-                    .font(.body)
+                    .font(.system(size: promptFontSize))
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 78, maxHeight: 150)
                     .padding(8)
@@ -204,6 +207,7 @@ struct HermesResponsesConsoleView: View {
                     .overlay(alignment: .topLeading) {
                         if promptText.isEmpty {
                             Text("Ask Hermes something...")
+                                .font(.system(size: promptFontSize))
                                 .foregroundStyle(Color.hermesSecondaryText)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 16)
@@ -532,6 +536,7 @@ private struct HermesAttachmentChip: View {
 
 struct HermesResponseBubble: View {
     let message: HermesResponseMessage
+    let fontSize: Double
     var isResponding = false
 
     var body: some View {
@@ -541,7 +546,7 @@ struct HermesResponseBubble: View {
                 Text(isUser ? "You" : "Hermes")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.hermesSecondaryText)
-                HermesCopyableBubbleContent(text: displayContent, copyText: message.content, isUser: isUser, rendersMarkdown: !isUser, isResponding: isResponding)
+                HermesCopyableBubbleContent(text: displayContent, copyText: message.content, isUser: isUser, rendersMarkdown: !isUser, fontSize: fontSize, isResponding: isResponding)
             }
             .frame(maxWidth: 680, alignment: isUser ? .trailing : .leading)
             if !isUser { Spacer(minLength: 80) }
@@ -558,6 +563,7 @@ private struct HermesCopyableBubbleContent: View {
     let copyText: String
     let isUser: Bool
     let rendersMarkdown: Bool
+    let fontSize: Double
     let isResponding: Bool
 
     var body: some View {
@@ -569,7 +575,7 @@ private struct HermesCopyableBubbleContent: View {
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
             } else {
-                HermesBubbleMessageText(text: text, rendersMarkdown: rendersMarkdown)
+                HermesBubbleMessageText(text: text, rendersMarkdown: rendersMarkdown, fontSize: fontSize)
                     .textSelection(.enabled)
             }
         }
@@ -596,6 +602,7 @@ private struct HermesCopyableBubbleContent: View {
 private struct HermesBubbleMessageText: View {
     let text: String
     let rendersMarkdown: Bool
+    let fontSize: Double
 
     private var renderableText: String {
         guard rendersMarkdown else { return text }
@@ -617,8 +624,10 @@ private struct HermesBubbleMessageText: View {
             if !textWithoutRenderedImages.isEmpty {
                 if rendersMarkdown, let attributedText = try? AttributedString(markdown: textWithoutRenderedImages) {
                     Text(attributedText)
+                        .font(.system(size: fontSize))
                 } else {
                     Text(textWithoutRenderedImages)
+                        .font(.system(size: fontSize))
                 }
             }
             ForEach(renderedImages) { renderedImage in
@@ -798,6 +807,8 @@ private struct HermesRenderedBubbleImageView: View {
 
 struct SettingsView: View {
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
+    @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
+    @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var draft = HermesSettingsStore.loadDraft()
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
@@ -814,6 +825,16 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     Text("Choose a fixed light or dark appearance, or follow the macOS system theme.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                    Divider()
+                    Stepper("Chat bubble font: \(Int(chatBubbleFontSize)) pt", value: $chatBubbleFontSize, in: 11...24, step: 1)
+                    Stepper("Prompt area font: \(Int(promptFontSize)) pt", value: $promptFontSize, in: 11...24, step: 1)
+                    Button("Restore default font sizes") {
+                        chatBubbleFontSize = 14
+                        promptFontSize = 14
+                    }
+                    Text("Adjust the text size used in Ask Hermes chat bubbles and in the prompt composer.")
                         .font(.caption)
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
