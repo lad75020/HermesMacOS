@@ -12,6 +12,7 @@ struct HermesAskWorkspacesView: View {
     @Bindable var promptHistory: HermesPromptHistoryStore
     let onSelectWorkspace: (HermesAskWorkspace) -> Void
     let onAddWorkspace: () -> Void
+    let onDeleteWorkspace: (HermesAskWorkspace) -> Void
 
     private var selectedWorkspace: HermesAskWorkspace {
         workspaces.first(where: { $0.id == selectedWorkspaceID }) ?? workspaces[0]
@@ -52,6 +53,14 @@ struct HermesAskWorkspacesView: View {
                         }
                         .buttonStyle(.plain)
                         .controlSize(.small)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                onDeleteWorkspace(workspace)
+                            } label: {
+                                Label("Delete Workspace", systemImage: "trash")
+                            }
+                            .disabled(workspace.session.isStreaming)
+                        }
                         .help("Switch to workspace \(workspace.number)")
                     }
                 }

@@ -103,7 +103,8 @@ struct ContentView: View {
                 selectedWorkspaceID: selectedWorkspaceBinding,
                 promptHistory: promptHistory,
                 onSelectWorkspace: selectAskWorkspace,
-                onAddWorkspace: addAskWorkspace
+                onAddWorkspace: addAskWorkspace,
+                onDeleteWorkspace: deleteAskWorkspace
             )
                 .tabItem { Label("Ask Hermes", systemImage: "dot.radiowaves.left.and.right") }
                 .tag(HermesMacOSTab.ask)
@@ -154,6 +155,23 @@ struct ContentView: View {
     private func selectAskWorkspace(_ workspace: HermesAskWorkspace) {
         workspace.acknowledgeCurrentStatus()
         selectedAskWorkspaceID = workspace.id
+    }
+
+    private func deleteAskWorkspace(_ workspace: HermesAskWorkspace) {
+        guard !workspace.session.isStreaming,
+              let deletedIndex = askWorkspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
+
+        let wasSelected = selectedAskWorkspaceID == workspace.id
+        askWorkspaces.remove(at: deletedIndex)
+
+        if askWorkspaces.isEmpty {
+            let replacement = HermesAskWorkspace(number: 1, draft: workspace.draft)
+            askWorkspaces = [replacement]
+            selectedAskWorkspaceID = replacement.id
+        } else if wasSelected {
+            let replacementIndex = min(deletedIndex, askWorkspaces.count - 1)
+            selectedAskWorkspaceID = askWorkspaces[replacementIndex].id
+        }
     }
 
     private func resumeConversationInResponses(_ result: HermesDashboardConversationResult) {
