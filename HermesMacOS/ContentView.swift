@@ -160,25 +160,14 @@ struct HermesSideTabSwitcher: View {
         .frame(width: 66)
         .frame(maxHeight: .infinity)
         .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 0)
-        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isAskBlinking)
-        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isChatBlinking)
-        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isHistoryBlinking)
-        .onAppear {
-            isAskBlinking = activeAskAttention == .streaming
-            isChatBlinking = chatAttention == .streaming
-            isHistoryBlinking = historyAttention == .streaming
+        .task(id: activeAskAttention) {
+            await runAskBlinkLoop(for: activeAskAttention)
         }
-        .onChange(of: activeAskAttention) { _, newValue in
-            if newValue == .streaming { isAskBlinking = true }
-            else { isAskBlinking = false }
+        .task(id: chatAttention) {
+            await runChatBlinkLoop(for: chatAttention)
         }
-        .onChange(of: chatAttention) { _, newValue in
-            if newValue == .streaming { isChatBlinking = true }
-            else { isChatBlinking = false }
-        }
-        .onChange(of: historyAttention) { _, newValue in
-            if newValue == .streaming { isHistoryBlinking = true }
-            else { isHistoryBlinking = false }
+        .task(id: historyAttention) {
+            await runHistoryBlinkLoop(for: historyAttention)
         }
     }
 
@@ -270,6 +259,43 @@ struct HermesSideTabSwitcher: View {
             }
         }
         return selectedTab == tab ? .hermesActionBlue.opacity(0.24) : .clear
+    }
+
+    @MainActor
+    private func runAskBlinkLoop(for attention: HermesAskWorkspaceAttention?) async {
+        await runBlinkLoop(isStreaming: attention == .streaming) { isAskBlinking = $0 }
+    }
+
+    @MainActor
+    private func runChatBlinkLoop(for attention: HermesTopTabAttention?) async {
+        await runBlinkLoop(isStreaming: attention == .streaming) { isChatBlinking = $0 }
+    }
+
+    @MainActor
+    private func runHistoryBlinkLoop(for attention: HermesTopTabAttention?) async {
+        await runBlinkLoop(isStreaming: attention == .streaming) { isHistoryBlinking = $0 }
+    }
+
+    @MainActor
+    private func runBlinkLoop(isStreaming: Bool, setPhase: @escaping (Bool) -> Void) async {
+        guard isStreaming else {
+            setPhase(false)
+            return
+        }
+
+        setPhase(false)
+        while !Task.isCancelled {
+            withAnimation(.easeInOut(duration: 0.7)) {
+                setPhase(true)
+            }
+            do { try await Task.sleep(nanoseconds: 700_000_000) } catch { break }
+            if Task.isCancelled { break }
+            withAnimation(.easeInOut(duration: 0.7)) {
+                setPhase(false)
+            }
+            do { try await Task.sleep(nanoseconds: 700_000_000) } catch { break }
+        }
+        setPhase(false)
     }
 }
 

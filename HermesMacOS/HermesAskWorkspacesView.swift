@@ -102,12 +102,31 @@ private struct HermesAskWorkspaceButtonLabel: View {
             .frame(width: 24, height: 24)
             .background(backgroundColor.opacity(blinkOpacity), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 1))
-            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isBlinking)
-            .onAppear { isBlinking = attention == .streaming }
-            .onChange(of: attention) { _, newValue in
-                if newValue == .streaming { isBlinking.toggle() }
-                else { isBlinking = false }
+            .task(id: attention) {
+                await runBlinkLoop(for: attention)
             }
+    }
+
+    @MainActor
+    private func runBlinkLoop(for attention: HermesAskWorkspaceAttention?) async {
+        guard attention == .streaming else {
+            isBlinking = false
+            return
+        }
+
+        isBlinking = false
+        while !Task.isCancelled {
+            withAnimation(.easeInOut(duration: 0.45)) {
+                isBlinking = true
+            }
+            do { try await Task.sleep(nanoseconds: 450_000_000) } catch { break }
+            if Task.isCancelled { break }
+            withAnimation(.easeInOut(duration: 0.45)) {
+                isBlinking = false
+            }
+            do { try await Task.sleep(nanoseconds: 450_000_000) } catch { break }
+        }
+        isBlinking = false
     }
 }
 
