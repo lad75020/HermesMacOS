@@ -8,6 +8,7 @@ import WebKit
 
 struct HermesConfigurationView: View {
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
+    let webViewStore: HermesDashboardWebViewStore
     @State private var reloadToken = UUID()
 
     private var normalizedDashboardURL: URL? {
@@ -20,7 +21,7 @@ struct HermesConfigurationView: View {
 
             Group {
                 if let normalizedDashboardURL {
-                    HermesDashboardWebView(url: normalizedDashboardURL, reloadToken: reloadToken)
+                    HermesDashboardWebView(store: webViewStore, url: normalizedDashboardURL, reloadToken: reloadToken)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -76,41 +77,45 @@ private enum HermesConfigurationWebURL {
     }
 }
 
-struct HermesDashboardWebView: NSViewRepresentable {
-    let url: URL
-    let reloadToken: UUID
+@MainActor
+final class HermesDashboardWebViewStore {
+    let webView: WKWebView
+    private var lastLoadedURL: URL?
+    private var lastReloadToken: UUID?
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> WKWebView {
+    init() {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
-        context.coordinator.lastLoadedURL = url
-        context.coordinator.lastReloadToken = reloadToken
-        webView.load(URLRequest(url: url))
-        return webView
     }
 
-    func updateNSView(_ webView: WKWebView, context: Context) {
-        if context.coordinator.lastLoadedURL != url {
-            context.coordinator.lastLoadedURL = url
-            context.coordinator.lastReloadToken = reloadToken
+    func loadIfNeeded(url: URL, reloadToken: UUID) {
+        if lastLoadedURL != url {
+            lastLoadedURL = url
+            lastReloadToken = reloadToken
             webView.load(URLRequest(url: url))
             return
         }
 
-        if context.coordinator.lastReloadToken != reloadToken {
-            context.coordinator.lastReloadToken = reloadToken
+        if lastReloadToken != reloadToken {
+            lastReloadToken = reloadToken
             webView.reload()
         }
     }
+}
 
-    final class Coordinator {
-        var lastLoadedURL: URL?
-        var lastReloadToken: UUID?
+struct HermesDashboardWebView: NSViewRepresentable {
+    let store: HermesDashboardWebViewStore
+    let url: URL
+    let reloadToken: UUID
+
+    func makeNSView(context: Context) -> WKWebView {
+        store.loadIfNeeded(url: url, reloadToken: reloadToken)
+        return store.webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        store.loadIfNeeded(url: url, reloadToken: reloadToken)
     }
 }

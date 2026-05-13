@@ -183,6 +183,7 @@ struct ContentView: View {
     @State private var promptHistory = HermesPromptHistoryStore()
     @State private var historySearchSession = HermesDashboardHistorySearchSession()
     @State private var installationSession = HermesInstallationSession()
+    @State private var configurationWebViewStore = HermesDashboardWebViewStore()
     @State private var selectedTab = HermesMacOSTab.ask
 
     private var selectedAskWorkspace: HermesAskWorkspace {
@@ -248,7 +249,7 @@ struct ContentView: View {
                 onResumeChat: resumeConversationInChat
             )
         case .configuration:
-            HermesConfigurationView()
+            HermesConfigurationView(webViewStore: configurationWebViewStore)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
