@@ -231,6 +231,10 @@ final class HermesDashboardHistorySearchSession {
     var matchedMessages = 0
     var matchedSessions = 0
     var isDashboardHTTPActive = false
+    private var activeSearchAttentionToken = ""
+    private var acknowledgedActiveSearchToken = ""
+    private var completedSearchToken = ""
+    private var acknowledgedCompletedSearchToken = ""
 
     private var requestTask: Task<Void, Never>?
     private var activeSearchID: UUID?
@@ -238,6 +242,12 @@ final class HermesDashboardHistorySearchSession {
 
     var hasActiveSearch: Bool {
         isSearching || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !results.isEmpty || !lastErrorMessage.isEmpty
+    }
+
+    var tabAttention: HermesTopTabAttention? {
+        if !completedSearchToken.isEmpty, completedSearchToken != acknowledgedCompletedSearchToken { return .completed }
+        if isSearching, !activeSearchAttentionToken.isEmpty, activeSearchAttentionToken != acknowledgedActiveSearchToken { return .streaming }
+        return nil
     }
 
     var localizedStatus: String {
@@ -255,6 +265,15 @@ final class HermesDashboardHistorySearchSession {
         lastErrorMessage = ""
         matchedMessages = 0
         matchedSessions = 0
+        activeSearchAttentionToken = ""
+        acknowledgedActiveSearchToken = ""
+        completedSearchToken = ""
+        acknowledgedCompletedSearchToken = ""
+    }
+
+    func acknowledgeTabAttention() {
+        if !activeSearchAttentionToken.isEmpty { acknowledgedActiveSearchToken = activeSearchAttentionToken }
+        if !completedSearchToken.isEmpty { acknowledgedCompletedSearchToken = completedSearchToken }
     }
 
     func search(dashboardBaseURL: String, apiSettings: HermesAPISettings, profileFilter: String = "all", limit: Int = 25) {
@@ -266,6 +285,7 @@ final class HermesDashboardHistorySearchSession {
         requestTask?.cancel()
         let searchID = UUID()
         activeSearchID = searchID
+        activeSearchAttentionToken = searchID.uuidString
         results = []
         matchedMessages = 0
         matchedSessions = 0
@@ -278,6 +298,7 @@ final class HermesDashboardHistorySearchSession {
         requestTask?.cancel()
         requestTask = nil
         activeSearchID = nil
+        activeSearchAttentionToken = ""
         isSearching = false
         isDashboardHTTPActive = false
         status = "Cancelled"
@@ -306,6 +327,7 @@ final class HermesDashboardHistorySearchSession {
             results = filteredResults
             matchedMessages = filteredResults.reduce(0) { $0 + $1.matches.count }
             matchedSessions = filteredResults.count
+            completedSearchToken = "\(searchID.uuidString)-\(filteredResults.count)-\(matchedMessages)"
             if profileFilter == "all" { status = response.results.isEmpty ? "No matching conversations" : "Found \(response.matchedSessions) conversations" }
             else { status = filteredResults.isEmpty ? "No matching conversations for \(displayProfileName(profileFilter))" : "Found \(filteredResults.count) conversations for \(displayProfileName(profileFilter))" }
         } catch is CancellationError {
@@ -315,7 +337,7 @@ final class HermesDashboardHistorySearchSession {
                 results = []; matchedMessages = 0; matchedSessions = 0; lastErrorMessage = error.localizedDescription; status = "Search failed"
             }
         }
-        if activeSearchID == searchID { isSearching = false; isDashboardHTTPActive = false }
+        if activeSearchID == searchID { isSearching = false; isDashboardHTTPActive = false; activeSearchAttentionToken = "" }
     }
 
     private func filter(_ results: [HermesDashboardConversationResult], profileFilter: String) -> [HermesDashboardConversationResult] {

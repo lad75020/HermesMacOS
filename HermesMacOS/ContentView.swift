@@ -11,6 +11,11 @@ enum HermesAskWorkspaceAttention {
     case failed
 }
 
+enum HermesTopTabAttention {
+    case streaming
+    case completed
+}
+
 enum HermesAppTheme: String, CaseIterable, Identifiable {
     case system
     case light
@@ -80,7 +85,10 @@ final class HermesAskWorkspace: Identifiable {
 struct HermesTopTabSwitcher: View {
     @Binding var selectedTab: HermesMacOSTab
     let askAttention: HermesAskWorkspaceAttention?
+    let historyAttention: HermesTopTabAttention?
+    let onSelectTab: (HermesMacOSTab) -> Void
     @State private var isAskBlinking = false
+    @State private var isHistoryBlinking = false
 
     private var activeAskAttention: HermesAskWorkspaceAttention? {
         switch askAttention {
@@ -98,6 +106,7 @@ struct HermesTopTabSwitcher: View {
             ForEach(HermesMacOSTab.allCases) { tab in
                 Button {
                     selectedTab = tab
+                    onSelectTab(tab)
                 } label: {
                     Label(tab.title, systemImage: tab.systemImage)
                         .font(.subheadline.weight(.semibold))
@@ -127,15 +136,24 @@ struct HermesTopTabSwitcher: View {
         .frame(maxWidth: .infinity)
         .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 0)
         .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isAskBlinking)
-        .onAppear { isAskBlinking = activeAskAttention == .streaming }
+        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isHistoryBlinking)
+        .onAppear {
+            isAskBlinking = activeAskAttention == .streaming
+            isHistoryBlinking = historyAttention == .streaming
+        }
         .onChange(of: activeAskAttention) { _, newValue in
             if newValue == .streaming { isAskBlinking = true }
             else { isAskBlinking = false }
+        }
+        .onChange(of: historyAttention) { _, newValue in
+            if newValue == .streaming { isHistoryBlinking = true }
+            else { isHistoryBlinking = false }
         }
     }
 
     private func foregroundColor(for tab: HermesMacOSTab) -> Color {
         if tab == .ask, activeAskAttention != nil { return .white }
+        if tab == .history, historyAttention != nil { return .white }
         return selectedTab == tab ? .white : .primary
     }
 
@@ -150,11 +168,23 @@ struct HermesTopTabSwitcher: View {
                 break
             }
         }
+        if tab == .history {
+            switch historyAttention {
+            case .completed:
+                return .green
+            case .streaming:
+                return .hermesOrange
+            case nil:
+                break
+            }
+        }
         return selectedTab == tab ? .hermesActionBlue : .hermesSurface.opacity(0.58)
     }
 
     private func backgroundOpacity(for tab: HermesMacOSTab) -> Double {
-        tab == .ask && activeAskAttention == .streaming && isAskBlinking ? 0.45 : 1.0
+        if tab == .ask && activeAskAttention == .streaming && isAskBlinking { return 0.45 }
+        if tab == .history && historyAttention == .streaming && isHistoryBlinking { return 0.45 }
+        return 1.0
     }
 
     private func shadowColor(for tab: HermesMacOSTab) -> Color {
@@ -165,6 +195,16 @@ struct HermesTopTabSwitcher: View {
             case .streaming:
                 return .hermesOrange.opacity(0.24)
             case .failed, nil:
+                break
+            }
+        }
+        if tab == .history {
+            switch historyAttention {
+            case .completed:
+                return .green.opacity(0.24)
+            case .streaming:
+                return .hermesOrange.opacity(0.24)
+            case nil:
                 break
             }
         }
@@ -200,9 +240,18 @@ struct ContentView: View {
         return nil
     }
 
+    private var historyTabAttention: HermesTopTabAttention? {
+        historySearchSession.tabAttention
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            HermesTopTabSwitcher(selectedTab: $selectedTab, askAttention: askTabAttention)
+            HermesTopTabSwitcher(
+                selectedTab: $selectedTab,
+                askAttention: askTabAttention,
+                historyAttention: historyTabAttention,
+                onSelectTab: handleTopTabSelection
+            )
             activeTabContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -310,6 +359,10 @@ struct ContentView: View {
         guard !chatSession.isSending else { return }
         chatSession.resumeConversation(from: result)
         selectedTab = .chat
+    }
+
+    private func handleTopTabSelection(_ tab: HermesMacOSTab) {
+        if tab == .history { historySearchSession.acknowledgeTabAttention() }
     }
 
     private func reviewInstallationWithHermes(_ prompt: String) {
