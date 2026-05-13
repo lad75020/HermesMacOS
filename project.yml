@@ -23,6 +23,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY[sdk=macosx*]: Apple Development
+        CODE_SIGN_ENTITLEMENTS: HermesMacOS/HermesMacOS.entitlements
         DEVELOPMENT_TEAM: RJYVGK9S3F
         ENABLE_HARDENED_RUNTIME: YES
         GENERATE_INFOPLIST_FILE: YES

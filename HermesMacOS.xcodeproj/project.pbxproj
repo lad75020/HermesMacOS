@@ -28,6 +28,7 @@
 /* Begin PBXFileReference section */
 		03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesChatCompletionsAPI.swift; sourceTree = "<group>"; };
 		11CEF196220572F395969711 /* HermesInstallationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesInstallationView.swift; sourceTree = "<group>"; };
+		1ACA6DE022F4184ED70D8DF8 /* HermesMacOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HermesMacOS.entitlements; sourceTree = "<group>"; };
 		1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardHistorySearch.swift; sourceTree = "<group>"; };
 		1EBD3C94B644F20D2E6BD269 /* HermesUtilitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesUtilitiesView.swift; sourceTree = "<group>"; };
 		2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
@@ -78,6 +79,7 @@
 				1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */,
 				37F22943CF56D37CF71DD1CD /* HermesHistoryView.swift */,
 				11CEF196220572F395969711 /* HermesInstallationView.swift */,
+				1ACA6DE022F4184ED70D8DF8 /* HermesMacOS.entitlements */,
 				D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */,
 				EBBF745CBB6AEE27A9D9EB9E /* HermesModelsAPI.swift */,
 				C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */,
@@ -204,6 +206,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HermesMacOS/HermesMacOS.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
@@ -348,6 +351,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HermesMacOS/HermesMacOS.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
