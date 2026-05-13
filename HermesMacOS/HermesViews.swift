@@ -80,7 +80,7 @@ struct HermesResponsesConsoleView: View {
                 }
 
                 HermesStatusCard(title: "Session", value: responseSession.displaySessionTitle, tint: .hermesPurple, minimumWidth: 180, maximumWidth: .infinity)
-                HermesStatusCard(title: "Status", value: responseSession.connectionStatus, tint: .hermesOrange, minimumWidth: 112, maximumWidth: 126)
+                HermesStatusCard(title: "Status", value: responseSession.connectionStatus, tint: .hermesOrange, minimumWidth: 224, maximumWidth: 252)
                 HermesStatusCard(title: "Events", value: "\(responseSession.eventCount)", tint: .hermesActionBlue, minimumWidth: 112, maximumWidth: 126)
             }
 
@@ -450,7 +450,7 @@ struct HermesProfileSelector: View {
             .disabled(isDisabled)
         }
         .padding(12)
-        .frame(minWidth: 170, maxWidth: 260, alignment: .leading)
+        .frame(minWidth: 85, maxWidth: 130, alignment: .leading)
         .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.07))
     }
 }

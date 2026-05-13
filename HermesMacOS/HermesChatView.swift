@@ -69,7 +69,7 @@ struct HermesChatConsoleView: View {
                 }
 
                 HermesStatusCard(title: "Session", value: chatSession.displaySessionTitle, tint: .hermesActionBlue, minimumWidth: 180, maximumWidth: .infinity)
-                HermesStatusCard(title: "Status", value: chatSession.connectionStatus, tint: .hermesOrange, minimumWidth: 112, maximumWidth: 160)
+                HermesStatusCard(title: "Status", value: chatSession.connectionStatus, tint: .hermesOrange, minimumWidth: 224, maximumWidth: 320)
                 HermesStatusCard(title: "Events", value: "\(chatSession.eventCount)", tint: .hermesPurple, minimumWidth: 112, maximumWidth: 126)
             }
 
