@@ -501,9 +501,10 @@ private struct HermesRenderedBubbleImage: Identifiable {
 
     static func extract(from text: String) -> [HermesRenderedBubbleImage] {
         markdownImageMatches(in: text).compactMap { match in
-            guard let imageData = data(from: match.source) else { return nil }
+            guard isPotentiallyRenderableSource(match.source) else { return nil }
+            let imageData = data(from: match.source)
             return HermesRenderedBubbleImage(
-                id: "\(match.altText)::\(match.source.prefix(96))::\(imageData.count)",
+                id: "\(match.altText)::\(match.source.prefix(96))::\(imageData?.count ?? 0)::\(match.source.count)",
                 source: match.source,
                 altText: match.altText.isEmpty ? "Hermes image" : match.altText,
                 data: imageData,
@@ -533,9 +534,19 @@ private struct HermesRenderedBubbleImage: Identifiable {
         guard let regex = try? NSRegularExpression(pattern: #"!\[([^\]]*)\]\(([^\s)]+)\)"#, options: [.dotMatchesLineSeparators]) else { return [] }
         let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
         return regex.matches(in: text, range: nsRange).compactMap { match in
-            guard let tokenRange = Range(match.range, in: text), let sourceRange = Range(match.range(at: 2), in: text), data(from: String(text[sourceRange])) != nil else { return nil }
+            guard let tokenRange = Range(match.range, in: text), let sourceRange = Range(match.range(at: 2), in: text), isPotentiallyRenderableSource(String(text[sourceRange])) else { return nil }
             return tokenRange
         }
+    }
+
+    private static func isPotentiallyRenderableSource(_ source: String) -> Bool {
+        let lower = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lower.localizedCaseInsensitiveContains(";base64,"), let separator = lower.range(of: ";base64,") {
+            return allowedDataImagePrefix(String(lower[..<separator.lowerBound]))
+        }
+        if source.hasPrefix("/"), hermesGeneratedImageURL(fromPath: source) != nil { return true }
+        if source.hasPrefix("file://"), let url = URL(string: source), hermesGeneratedImageURL(fromPath: url.path) != nil { return true }
+        return false
     }
 
     private static func data(from source: String) -> Data? {
@@ -561,7 +572,9 @@ private struct HermesRenderedBubbleImage: Identifiable {
     }
 
     private static func allowedDataImagePrefix(_ prefix: String) -> Bool {
-        ["data:image/png", "data:image/jpeg", "data:image/jpg", "data:image/gif", "data:image/webp", "data:image/heic"].contains { prefix.hasPrefix($0) }
+        guard prefix.lowercased().hasPrefix("data:") else { return false }
+        let mediaType = prefix.dropFirst("data:".count).split(separator: ";", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init) ?? ""
+        return ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/heic"].contains(mediaType.lowercased())
     }
 
     private static func limitedFileData(from url: URL) -> Data? {
