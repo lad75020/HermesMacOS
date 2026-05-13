@@ -34,6 +34,8 @@ struct HermesResponsesConsoleView: View {
         }
         .onChange(of: apiSettings) { _, _ in Task { await refreshAPIProfiles() } }
         .onChange(of: promptText) { _, text in requestDraft.userPrompt = text }
+        .onChange(of: requestDraft.profile) { _, _ in clampReasoningLevelIfNeeded() }
+        .onChange(of: apiProfiles) { _, _ in clampReasoningLevelIfNeeded() }
         .onDisappear { speechToText.stopTranscription() }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
@@ -65,6 +67,13 @@ struct HermesResponsesConsoleView: View {
                     if responseSession.activeProfile != newProfile {
                         responseSession.terminateAndStartNewSession()
                     }
+                }
+
+                if selectedProfileSupportsReasoning {
+                    HermesReasoningLevelPill(
+                        reasoningLevel: $requestDraft.reasoningLevel,
+                        isDisabled: responseSession.isSending
+                    )
                 }
 
                 HermesStatusCard(title: "Session", value: responseSession.displaySessionTitle, tint: .hermesPurple)
@@ -229,6 +238,25 @@ struct HermesResponsesConsoleView: View {
         return !last.isEmpty && responseSession.previousResponseID != last && responseSession.latestResponseID != last
     }
 
+    private var selectedProfileSupportsReasoning: Bool {
+        selectedAPIProfile?.supportsReasoningLevel ?? false
+    }
+
+    private var selectedAPIProfile: HermesAPIProfile? {
+        let locked = responseSession.activeProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selected = requestDraft.profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        let current = locked.isEmpty ? (selected.isEmpty ? "default" : selected) : locked
+        return apiProfiles.first { $0.id == current }
+    }
+
+    private func clampReasoningLevelIfNeeded() {
+        if !selectedProfileSupportsReasoning, requestDraft.reasoningLevel != .off {
+            requestDraft.reasoningLevel = .off
+        } else if selectedProfileSupportsReasoning, requestDraft.reasoningLevel == .off {
+            requestDraft.reasoningLevel = .medium
+        }
+    }
+
     private func isResponsePlaceholder(_ message: HermesResponseMessage) -> Bool {
         responseSession.isSending && message.role != "user" && message.content.isEmpty && responseSession.entries.last?.id == message.id
     }
@@ -237,6 +265,7 @@ struct HermesResponsesConsoleView: View {
         speechToText.stopTranscription()
         var submittedDraft = requestDraft
         submittedDraft.userPrompt = promptText
+        if !selectedProfileSupportsReasoning { submittedDraft.reasoningLevel = .off }
         responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: selectedAttachment, historyStore: promptHistoryStore)
         promptText = ""
         requestDraft.userPrompt = ""
@@ -341,6 +370,39 @@ private struct HermesProfileSelector: View {
         .padding(12)
         .frame(minWidth: 170, maxWidth: 260, alignment: .leading)
         .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.07))
+    }
+}
+
+private struct HermesReasoningLevelPill: View {
+    @Binding var reasoningLevel: HermesReasoningLevel
+    let isDisabled: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("REASONING")
+                .font(.caption2.weight(.bold))
+                .tracking(0.8)
+                .foregroundStyle(Color.hermesSecondaryText)
+            Menu {
+                ForEach(HermesReasoningLevel.allCases.filter { $0 != .off }) { level in
+                    Button(level.title) { reasoningLevel = level }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain")
+                        .font(.caption.weight(.semibold))
+                    Text(reasoningLevel == .off ? HermesReasoningLevel.medium.title : reasoningLevel.title)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .disabled(isDisabled)
+            .help("Reasoning effort sent as reasoning.effort when the selected profile model supports it")
+        }
+        .padding(12)
+        .frame(minWidth: 130, maxWidth: 170, alignment: .leading)
+        .hermesGlassPanel(tint: Color.hermesPurple.opacity(0.08))
     }
 }
 
@@ -698,6 +760,11 @@ struct SettingsView: View {
                 Section("Ask Hermes defaults") {
                     TextField("Default profile", text: $draft.profile)
                     Toggle("Stream Responses API output", isOn: $draft.stream)
+                    Picker("Default reasoning level", selection: $draft.reasoningLevel) {
+                        ForEach(HermesReasoningLevel.allCases.filter { $0 != .off }) { level in
+                            Text(level.title).tag(level)
+                        }
+                    }
                     TextEditor(text: $draft.userPrompt)
                         .frame(minHeight: 100)
                 }
