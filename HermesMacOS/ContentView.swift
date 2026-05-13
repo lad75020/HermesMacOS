@@ -95,7 +95,7 @@ struct HermesSideTabButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: tab.systemImage)
-                .font(.system(size: 19, weight: .semibold))
+                .font(.system(size: 23, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
                 .frame(width: 44, height: 44)
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
