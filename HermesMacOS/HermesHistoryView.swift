@@ -1,0 +1,377 @@
+//
+//  HermesHistoryView.swift
+//  HermesMacOS
+//
+
+import SwiftUI
+
+struct HermesHistoryView: View {
+    @Binding var apiSettings: HermesAPISettings
+    @Bindable var searchSession: HermesDashboardHistorySearchSession
+    let isResponsesStreaming: Bool
+    let onResumeResponses: (HermesDashboardConversationResult) -> Void
+
+    @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
+    @State private var expandedConversationIDs: Set<String> = []
+    @State private var apiProfiles: [HermesAPIProfile] = []
+    @State private var selectedProfileFilter = "all"
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            List {
+                searchSection
+                if searchSession.hasActiveSearch {
+                    resultsSection
+                } else {
+                    ContentUnavailableView(
+                        "Search Hermes History",
+                        systemImage: "text.magnifyingglass",
+                        description: Text("Search the Mac dashboard history to query conversations across all Hermes channels.")
+                    )
+                }
+            }
+            .scrollContentBackground(.hidden)
+        }
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
+        .task(id: apiSettings.baseURL) { await refreshProfileOptions() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Label("History", systemImage: "clock.arrow.circlepath")
+                .font(.title2.weight(.semibold))
+            Spacer()
+            if searchSession.isDashboardHTTPActive {
+                ProgressView().controlSize(.small)
+                Text("Dashboard HTTP")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.hermesSecondaryText)
+            }
+        }
+        .padding(18)
+        .background(.ultraThinMaterial)
+    }
+
+    private var searchSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                TextField("Search all Hermes conversations", text: $searchSession.query, axis: .vertical)
+                    .lineLimit(1...3)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(runDashboardSearch)
+
+                HStack(spacing: 10) {
+                    HStack(spacing: 6) {
+                        Text("Profile")
+                            .font(.subheadline)
+                        Picker("Profile", selection: $selectedProfileFilter) {
+                            ForEach(profileFilterOptions, id: \.value) { option in
+                                Text(option.title).tag(option.value)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .disabled(searchSession.isSearching)
+                    }
+                    .fixedSize()
+
+                    Button(action: runDashboardSearch) {
+                        Label(searchSession.isSearching ? "Searching…" : "Search", systemImage: "magnifyingglass")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(searchSession.isSearching || searchSession.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .keyboardShortcut(.return, modifiers: [.command])
+
+                    if searchSession.isSearching {
+                        Button("Cancel") { searchSession.cancel() }
+                            .buttonStyle(.bordered)
+                            .keyboardShortcut(.cancelAction)
+                    }
+
+                    Spacer()
+
+                    if searchSession.hasActiveSearch {
+                        Button("Clear") {
+                            searchSession.clear()
+                            expandedConversationIDs.removeAll()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(searchSession.status)
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+
+                    if searchSession.matchedMessages > 0 || searchSession.matchedSessions > 0 {
+                        Text("\(searchSession.matchedMessages) matching messages across \(searchSession.matchedSessions) conversations")
+                            .font(.caption2)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
+
+                    if !searchSession.lastErrorMessage.isEmpty {
+                        Text(searchSession.lastErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesDestructive)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            Label("Full-text search", systemImage: "text.magnifyingglass")
+        } footer: {
+            Text("Searches the Mac dashboard server through /api/sessions/search/conversations. Natural words and SQLite FTS-style queries are accepted; matching sessions are returned as full conversations.")
+        }
+    }
+
+    private var resultsSection: some View {
+        Section {
+            if searchSession.isSearching && searchSession.results.isEmpty {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Searching conversations…")
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                .padding(.vertical, 8)
+            } else if searchSession.results.isEmpty {
+                ContentUnavailableView(
+                    "No Matching Conversations",
+                    systemImage: "magnifyingglass",
+                    description: Text("Try fewer words, a quoted phrase, or a broader FTS query.")
+                )
+            } else {
+                ForEach(searchSession.results) { result in
+                    HermesDashboardConversationDisclosure(
+                        result: result,
+                        isExpanded: bindingForConversation(result.id),
+                        isResumeResponsesDisabled: isResponsesStreaming,
+                        onResumeResponses: onResumeResponses
+                    )
+                }
+            }
+        } header: {
+            Label("Search results", systemImage: "bubble.left.and.text.bubble.right")
+        }
+    }
+
+    private func runDashboardSearch() {
+        expandedConversationIDs.removeAll()
+        let limit = selectedProfileFilter == "all" ? 25 : 100
+        searchSession.search(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profileFilter: selectedProfileFilter, limit: limit)
+    }
+
+    private var profileFilterOptions: [HermesHistoryProfileFilterOption] {
+        var seen = Set(["all", "default"])
+        var options = [HermesHistoryProfileFilterOption(title: "All", value: "all"), HermesHistoryProfileFilterOption(title: "Default", value: "default")]
+        let namedProfiles = apiProfiles.filter { !$0.isDefault }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        for profile in namedProfiles {
+            let value = profile.id.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty else { continue }
+            let key = value.lowercased()
+            guard !seen.contains(key) else { continue }
+            let title = profile.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? value : profile.name
+            options.append(HermesHistoryProfileFilterOption(title: title, value: value))
+            seen.insert(key)
+        }
+        return options
+    }
+
+    private func refreshProfileOptions() async {
+        do {
+            apiProfiles = try await HermesAPIProfilesClient.fetchProfiles(apiSettings: apiSettings)
+            let available = Set(profileFilterOptions.map { $0.value.lowercased() })
+            if !available.contains(selectedProfileFilter.lowercased()) { selectedProfileFilter = "all" }
+        } catch {
+            apiProfiles = []
+            if selectedProfileFilter != "all" && selectedProfileFilter != "default" { selectedProfileFilter = "all" }
+        }
+    }
+
+    private func bindingForConversation(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedConversationIDs.contains(id) },
+            set: { isExpanded in
+                if isExpanded { expandedConversationIDs.insert(id) } else { expandedConversationIDs.remove(id) }
+            }
+        )
+    }
+}
+
+private struct HermesHistoryProfileFilterOption: Hashable {
+    let title: String
+    let value: String
+}
+
+private struct HermesDashboardConversationDisclosure: View {
+    let result: HermesDashboardConversationResult
+    @Binding var isExpanded: Bool
+    let isResumeResponsesDisabled: Bool
+    let onResumeResponses: (HermesDashboardConversationResult) -> Void
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Button {
+                        onResumeResponses(result)
+                    } label: {
+                        Label("Resume in Ask Hermes", systemImage: "arrow.uturn.forward.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isResumeResponsesDisabled)
+                    .help(isResumeResponsesDisabled ? "Ask Hermes is streaming a response" : "Resume this conversation in Ask Hermes")
+                }
+
+                ForEach(result.displayMessages) { message in
+                    HermesDashboardConversationMessageRow(message: message)
+                }
+            }
+            .padding(.top, 10)
+        } label: {
+            HStack(alignment: .center, spacing: 12) {
+                HermesDashboardConversationSummary(result: result)
+                Spacer(minLength: 8)
+                Button {
+                    onResumeResponses(result)
+                } label: {
+                    Label("Resume", systemImage: "arrow.uturn.forward")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isResumeResponsesDisabled)
+            }
+        }
+    }
+}
+
+private struct HermesDashboardConversationSummary: View {
+    let result: HermesDashboardConversationResult
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label(result.session.displayTitle, systemImage: result.session.sourceIconName)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(result.matches.count) hit\(result.matches.count == 1 ? "" : "s")")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.hermesActionBlue)
+            }
+
+            HStack(spacing: 8) {
+                Text(result.session.source?.uppercased() ?? "HERMES")
+                if let profile = result.session.profile, !profile.isEmpty { Text(profile) }
+                if let model = result.session.model, !model.isEmpty { Text(model) }
+                Text("\(result.displayMessages.count) shown")
+            }
+            .font(.caption)
+            .foregroundStyle(Color.hermesSecondaryText)
+            .lineLimit(1)
+
+            if let startedAt = result.session.startedAtDate {
+                Text(startedAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(Color.hermesSecondaryText)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct HermesDashboardConversationMessageRow: View {
+    let message: HermesDashboardConversationMessage
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(displayRoleTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(roleColor)
+                if let timestamp = message.timestampDate {
+                    Text(timestamp.formatted(date: .omitted, time: .shortened))
+                        .font(.caption2)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                if let toolName = message.toolName, !toolName.isEmpty {
+                    Text(toolName)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+            }
+
+            Text(message.content.isEmpty ? "—" : message.content)
+                .font(.callout)
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.hermesSurfaceInput.opacity(0.65), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var displayRoleTitle: String {
+        switch message.role.lowercased() {
+        case "user": "Initial prompt"
+        case "assistant": "Final response"
+        default: message.role.capitalized
+        }
+    }
+
+    private var roleColor: Color {
+        switch message.role.lowercased() {
+        case "user": .hermesActionBlue
+        case "assistant": .green
+        case "tool": .hermesOrange
+        default: .hermesSecondaryText
+        }
+    }
+}
+
+private extension HermesDashboardConversationResult {
+    var displayMessages: [HermesDashboardConversationMessage] {
+        let nonEmptyMessages = messages.filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let initialUserPrompt = nonEmptyMessages.first { $0.role.lowercased() == "user" }
+        let finalAgentResponse = nonEmptyMessages.last { $0.role.lowercased() == "assistant" }
+        switch (initialUserPrompt, finalAgentResponse) {
+        case let (user?, assistant?) where user.id != assistant.id: return [user, assistant]
+        case let (user?, nil): return [user]
+        case let (nil, assistant?): return [assistant]
+        case let (user?, assistant?): return [user, assistant]
+        case (nil, nil): return []
+        }
+    }
+}
+
+private extension HermesDashboardSessionInfo {
+    var displayTitle: String {
+        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return title }
+        return id
+    }
+
+    var startedAtDate: Date? {
+        guard let startedAt else { return nil }
+        return Date(timeIntervalSince1970: startedAt)
+    }
+
+    var sourceIconName: String {
+        switch source?.lowercased() {
+        case "telegram", "whatsapp", "signal", "discord", "slack", "matrix": "message"
+        case "cli": "terminal"
+        case "cron": "calendar.badge.clock"
+        case "api", "api_server": "network"
+        default: "bubble.left.and.text.bubble.right"
+        }
+    }
+}
+
+private extension HermesDashboardConversationMessage {
+    var timestampDate: Date? {
+        guard let timestamp else { return nil }
+        return Date(timeIntervalSince1970: timestamp)
+    }
+}
