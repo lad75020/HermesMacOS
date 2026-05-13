@@ -22,10 +22,13 @@ struct HermesUtilitiesView: View {
     let workspaces: [HermesAskWorkspace]
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
     @Bindable var chatSession: HermesChatSession
+    @Bindable var installationSession: HermesInstallationSession
+    var onReviewInstallationWithHermes: (String) -> Void
 
     @AppStorage("hermes.macOS.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
     @AppStorage("hermes.macOS.utilities.messagesHistoryExpanded") private var isMessagesHistoryExpanded = false
     @AppStorage("hermes.macOS.utilities.debuggingExpanded") private var isDebuggingExpanded = false
+    @AppStorage("hermes.macOS.utilities.installationExpanded") private var isInstallationExpanded = false
     @State private var statusMessage = String(localized: "Monitoring the Mac clipboard while HermesMacOS is active.")
     @State private var historyStatusMessage = String(localized: "Capturing prompts and responses sent from Ask Hermes and Chat with Hermes.")
     @State private var messagesHistoryMode: HermesMessagesHistoryMode = .prompt
@@ -70,6 +73,19 @@ struct HermesUtilitiesView: View {
                         utilityDisclosureLabel(title: String(localized: "Debugging"), subtitle: String(localized: "Inspect streamed Responses and Chat JSON"), systemImage: "ladybug")
                     }
                     .tint(.hermesActionBlue)
+
+                    Divider().padding(.vertical, 8)
+
+                    DisclosureGroup(isExpanded: $isInstallationExpanded) {
+                        HermesInstallationView(
+                            session: installationSession,
+                            onReviewWithHermes: onReviewInstallationWithHermes,
+                            presentation: .utilitySection
+                        )
+                    } label: {
+                        utilityDisclosureLabel(title: String(localized: "Hermes Installation"), subtitle: installationSubtitle, systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .tint(.hermesActionBlue)
                 }
                 .padding(18)
                 .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.68), cornerRadius: 24)
@@ -89,10 +105,21 @@ struct HermesUtilitiesView: View {
         }
     }
 
+    private var installationSubtitle: String {
+        if installationSession.isRefreshing || installationSession.isPreviewingMerge || installationSession.isMerging {
+            return String(localized: "Checking or updating the local Hermes agent repository")
+        }
+        if let lastChecked = installationSession.status.lastChecked {
+            return String(localized: "\(installationSession.status.lagSummary) • checked \(lastChecked.formatted(date: .omitted, time: .shortened))")
+        }
+        return String(localized: "Check lag, review conflicts, and stage local update branches")
+    }
+
     private func collapseAllUtilitySections() {
         isClipboardHistoryExpanded = false
         isMessagesHistoryExpanded = false
         isDebuggingExpanded = false
+        isInstallationExpanded = false
     }
 
     private func utilityDisclosureLabel(title: String, subtitle: String, systemImage: String) -> some View {

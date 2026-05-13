@@ -143,26 +143,32 @@ final class HermesInstallationSession {
 }
 
 struct HermesInstallationView: View {
+    enum Presentation {
+        case standalone
+        case utilitySection
+    }
+
     @Bindable var session: HermesInstallationSession
     var onReviewWithHermes: (String) -> Void
+    var presentation: Presentation = .standalone
 
     @AppStorage("hermes.macOS.installation.repositoryPath") private var repositoryPath = NSString(string: "~/.hermes/hermes-agent").expandingTildeInPath
     @State private var selectedOutput = ""
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    repositorySection
-                    statusSection
-                    actionsSection
-                    outputSection
+        Group {
+            switch presentation {
+            case .standalone:
+                VStack(spacing: 0) {
+                    header
+                    ScrollView { installationContent.padding(22) }
                 }
-                .padding(22)
+                .background(HermesLiquidGlassCanvas().ignoresSafeArea())
+            case .utilitySection:
+                installationContent
+                    .padding(.top, 12)
             }
         }
-        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .task {
             if session.status.lastChecked == nil {
                 session.refresh(repositoryPath: repositoryPath)
@@ -173,6 +179,15 @@ struct HermesInstallationView: View {
         }
         .onChange(of: session.status.mergePreview) { _, _ in selectedOutput = displayOutput }
         .onChange(of: session.status.operationOutput) { _, _ in selectedOutput = displayOutput }
+    }
+
+    private var installationContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            repositorySection
+            statusSection
+            actionsSection
+            outputSection
+        }
     }
 
     private var header: some View {

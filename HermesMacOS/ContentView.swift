@@ -185,15 +185,15 @@ struct ContentView: View {
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
             )
-        case .installation:
-            HermesInstallationView(session: installationSession, onReviewWithHermes: reviewInstallationWithHermes)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
                 promptHistory: promptHistory,
                 workspaces: askWorkspaces,
                 selectedWorkspaceID: selectedWorkspaceBinding,
-                chatSession: chatSession
+                chatSession: chatSession,
+                installationSession: installationSession,
+                onReviewInstallationWithHermes: reviewInstallationWithHermes
             )
         }
     }
@@ -262,7 +262,6 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case ask
     case chat
     case history
-    case installation
     case utilities
 
     var id: Self { self }
@@ -272,7 +271,6 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .ask: "Ask Hermes"
         case .chat: "Chat with Hermes"
         case .history: "History"
-        case .installation: "Hermes Installation"
         case .utilities: "Utilities"
         }
     }
@@ -282,7 +280,6 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .ask: "dot.radiowaves.left.and.right"
         case .chat: "text.bubble"
         case .history: "clock.arrow.circlepath"
-        case .installation: "arrow.triangle.2.circlepath"
         case .utilities: "wrench.and.screwdriver"
         }
     }
