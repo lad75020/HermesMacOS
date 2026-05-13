@@ -799,7 +799,7 @@ enum HermesImageJSONFormatter {
     }
 
     private static func imageMarkdown(fromJSONString text: String) -> String? {
-        guard let data = text.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data) else { return nil }
+        guard let data = text.data(using: .utf8), let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) else { return nil }
         return imageMarkdown(fromJSONObject: object)
     }
 
@@ -809,7 +809,10 @@ enum HermesImageJSONFormatter {
             return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
         }
         guard let dict = object as? [String: Any] else {
-            if let string = object as? String, string.contains("![") { return string }
+            if let string = object as? String {
+                if string.contains("![") { return string }
+                return renderableImageMarkdown(from: string)
+            }
             return nil
         }
 
