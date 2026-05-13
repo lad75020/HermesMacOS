@@ -185,6 +185,8 @@ struct ContentView: View {
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
             )
+        case .configuration:
+            HermesConfigurationView()
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
@@ -262,6 +264,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case ask
     case chat
     case history
+    case configuration
     case utilities
 
     var id: Self { self }
@@ -271,6 +274,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .ask: "Ask Hermes"
         case .chat: "Chat with Hermes"
         case .history: "History"
+        case .configuration: "Configuration"
         case .utilities: "Utilities"
         }
     }
@@ -280,6 +284,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .ask: "dot.radiowaves.left.and.right"
         case .chat: "text.bubble"
         case .history: "clock.arrow.circlepath"
+        case .configuration: "gearshape.2"
         case .utilities: "wrench.and.screwdriver"
         }
     }
