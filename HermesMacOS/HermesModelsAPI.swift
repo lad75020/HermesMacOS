@@ -628,10 +628,31 @@ struct HermesLooseJSON {
 enum HermesImageJSONFormatter {
     static func renderableImageMarkdown(from text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.contains("image_base64") || trimmed.contains("b64_json") else { return nil }
-        let mime = firstJSONStringValue(for: "mime_type", in: trimmed) ?? firstJSONStringValue(for: "original_mime_type", in: trimmed) ?? "image/png"
-        guard let base64 = firstJSONStringValue(for: "image_base64", in: trimmed) ?? firstJSONStringValue(for: "b64_json", in: trimmed), !base64.isEmpty else { return nil }
-        return "\n\n![Hermes image](data:\(mime);base64,\(base64.filter { !$0.isWhitespace }))"
+        guard trimmed.hasPrefix("{") || trimmed.hasPrefix("[") else { return nil }
+        if trimmed.contains("image_base64") || trimmed.contains("b64_json") {
+            let rawMime = firstJSONStringValue(for: "mime_type", in: trimmed) ?? firstJSONStringValue(for: "original_mime_type", in: trimmed) ?? "image/png"
+            let mime = allowedImageMIME(rawMime) ?? "image/png"
+            guard let base64 = firstJSONStringValue(for: "image_base64", in: trimmed) ?? firstJSONStringValue(for: "b64_json", in: trimmed), !base64.isEmpty else { return nil }
+            return "\n\n![Hermes image](data:\(mime);base64,\(base64.filter { !$0.isWhitespace }))"
+        }
+        if let embeddedMarkdown = firstJSONStringValue(for: "text", in: trimmed) ?? firstJSONStringValue(for: "content", in: trimmed), embeddedMarkdown.contains("![") {
+            return embeddedMarkdown
+        }
+        if let source = firstJSONStringValue(for: "image_url", in: trimmed) ?? firstJSONStringValue(for: "url", in: trimmed) ?? firstJSONStringValue(for: "file_url", in: trimmed) ?? firstJSONStringValue(for: "path", in: trimmed) ?? firstJSONStringValue(for: "file", in: trimmed), looksLikeImageSource(source) {
+            return "\n\n![Hermes image](\(source))"
+        }
+        return nil
+    }
+    private static func looksLikeImageSource(_ source: String) -> Bool {
+        let lower = source.lowercased()
+        if lower.hasPrefix("data:image/") || lower.hasPrefix("file://") { return true }
+        if lower.hasPrefix("/") || lower.hasPrefix("~/") { return [".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic"].contains { lower.hasSuffix($0) } }
+        return false
+    }
+    private static func allowedImageMIME(_ value: String) -> String? {
+        let lower = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allowed = ["image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/heic"]
+        return allowed.contains(lower) ? (lower == "image/jpg" ? "image/jpeg" : lower) : nil
     }
     private static func firstJSONStringValue(for key: String, in text: String) -> String? { let pattern = #""# + NSRegularExpression.escapedPattern(for: key) + #""\s*:\s*"((?:\\.|[^"\\])*)""#; guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]), let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)), let range = Range(match.range(at: 1), in: text) else { return nil }; let value = String(text[range]); let wrapped = "\"\(value)\""; return wrapped.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) as? String } ?? value }
 }

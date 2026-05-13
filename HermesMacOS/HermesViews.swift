@@ -455,11 +455,188 @@ private struct HermesBubbleMessageText: View {
     let text: String
     let rendersMarkdown: Bool
 
+    private var renderableText: String {
+        guard rendersMarkdown else { return text }
+        return HermesImageJSONFormatter.renderableImageMarkdown(from: text) ?? text
+    }
+
+    private var renderedImages: [HermesRenderedBubbleImage] {
+        rendersMarkdown ? HermesRenderedBubbleImage.extract(from: renderableText) : []
+    }
+
+    private var textWithoutRenderedImages: String {
+        guard rendersMarkdown else { return text }
+        return HermesRenderedBubbleImage.removingImageMarkdown(from: renderableText)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     var body: some View {
-        if rendersMarkdown, let attributedText = try? AttributedString(markdown: text) {
-            Text(attributedText)
+        VStack(alignment: .leading, spacing: 10) {
+            if !textWithoutRenderedImages.isEmpty {
+                if rendersMarkdown, let attributedText = try? AttributedString(markdown: textWithoutRenderedImages) {
+                    Text(attributedText)
+                } else {
+                    Text(textWithoutRenderedImages)
+                }
+            }
+            ForEach(renderedImages) { renderedImage in
+                HermesRenderedBubbleImageView(renderedImage: renderedImage)
+            }
+        }
+    }
+}
+
+private struct HermesRenderedBubbleImage: Identifiable {
+    private static let maxEncodedCharacters = 32_000_000
+    private static let maxImageBytes = 24_000_000
+    private static let dataCache = NSCache<NSString, NSData>()
+
+    let id: String
+    let source: String
+    let altText: String
+    let data: Data?
+    let fileExtension: String
+
+    var nsImage: NSImage? { data.flatMap(NSImage.init(data:)) }
+
+    static func extract(from text: String) -> [HermesRenderedBubbleImage] {
+        markdownImageMatches(in: text).compactMap { match in
+            guard let imageData = data(from: match.source) else { return nil }
+            return HermesRenderedBubbleImage(
+                id: "\(match.altText)::\(match.source.prefix(96))::\(imageData.count)",
+                source: match.source,
+                altText: match.altText.isEmpty ? "Hermes image" : match.altText,
+                data: imageData,
+                fileExtension: fileExtension(from: match.source)
+            )
+        }
+    }
+
+    static func removingImageMarkdown(from text: String) -> String {
+        var result = text
+        for token in renderableImageTokens(in: text).reversed() {
+            result.replaceSubrange(token, with: "")
+        }
+        return result
+    }
+
+    private static func markdownImageMatches(in text: String) -> [(altText: String, source: String)] {
+        guard let regex = try? NSRegularExpression(pattern: #"!\[([^\]]*)\]\(([^\s)]+)\)"#, options: [.dotMatchesLineSeparators]) else { return [] }
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: nsRange).compactMap { match in
+            guard let altRange = Range(match.range(at: 1), in: text), let sourceRange = Range(match.range(at: 2), in: text) else { return nil }
+            return (String(text[altRange]), String(text[sourceRange]))
+        }
+    }
+
+    private static func renderableImageTokens(in text: String) -> [Range<String.Index>] {
+        guard let regex = try? NSRegularExpression(pattern: #"!\[([^\]]*)\]\(([^\s)]+)\)"#, options: [.dotMatchesLineSeparators]) else { return [] }
+        let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: nsRange).compactMap { match in
+            guard let tokenRange = Range(match.range, in: text), let sourceRange = Range(match.range(at: 2), in: text), data(from: String(text[sourceRange])) != nil else { return nil }
+            return tokenRange
+        }
+    }
+
+    private static func data(from source: String) -> Data? {
+        let cacheKey = NSString(string: "\(source.count):\(source.hashValue)")
+        if let cached = dataCache.object(forKey: cacheKey) { return cached as Data }
+        let loaded: Data?
+        if source.localizedCaseInsensitiveContains(";base64,"), let separator = source.range(of: ";base64,") {
+            guard source.count <= maxEncodedCharacters + 512 else { return nil }
+            let prefix = String(source[..<separator.lowerBound]).lowercased()
+            guard allowedDataImagePrefix(prefix) else { return nil }
+            let encoded = source[separator.upperBound...].filter { !$0.isWhitespace }
+            guard encoded.count <= maxEncodedCharacters, let decoded = Data(base64Encoded: String(encoded)), decoded.count <= maxImageBytes else { return nil }
+            loaded = decoded
+        } else if source.hasPrefix("/"), let url = hermesGeneratedImageURL(fromPath: source) {
+            loaded = limitedFileData(from: url)
+        } else if source.hasPrefix("file://"), let url = URL(string: source), let safeURL = hermesGeneratedImageURL(fromPath: url.path) {
+            loaded = limitedFileData(from: safeURL)
         } else {
-            Text(text)
+            loaded = nil
+        }
+        if let loaded { dataCache.setObject(loaded as NSData, forKey: cacheKey) }
+        return loaded
+    }
+
+    private static func allowedDataImagePrefix(_ prefix: String) -> Bool {
+        ["data:image/png", "data:image/jpeg", "data:image/jpg", "data:image/gif", "data:image/webp", "data:image/heic"].contains { prefix.hasPrefix($0) }
+    }
+
+    private static func limitedFileData(from url: URL) -> Data? {
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size <= maxImageBytes else { return nil }
+        guard let data = try? Data(contentsOf: url), data.count <= maxImageBytes else { return nil }
+        return data
+    }
+
+    private static func hermesGeneratedImageURL(fromPath path: String) -> URL? {
+        let candidate = URL(fileURLWithPath: NSString(string: path).expandingTildeInPath).resolvingSymlinksInPath().standardizedFileURL
+        guard FileManager.default.fileExists(atPath: candidate.path) else { return nil }
+        let cache = URL(fileURLWithPath: NSString(string: "~/.hermes/cache/images").expandingTildeInPath).resolvingSymlinksInPath().standardizedFileURL
+        let candidatePath = candidate.path
+        let cachePath = cache.path
+        guard candidatePath == cachePath || candidatePath.hasPrefix(cachePath + "/") else { return nil }
+        return candidate
+    }
+
+    private static func fileExtension(from source: String) -> String {
+        if source.localizedCaseInsensitiveContains("image/jpeg") || source.localizedCaseInsensitiveContains("image/jpg") { return "jpg" }
+        if source.localizedCaseInsensitiveContains("image/webp") { return "webp" }
+        if source.localizedCaseInsensitiveContains("image/gif") { return "gif" }
+        let pathExtension = URL(string: source)?.pathExtension ?? URL(fileURLWithPath: source).pathExtension
+        return pathExtension.isEmpty ? "png" : pathExtension
+    }
+}
+
+private struct HermesRenderedBubbleImageView: View {
+    let renderedImage: HermesRenderedBubbleImage
+    @State private var saveStatus = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let image = renderedImage.nsImage {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: 520, maxHeight: 360)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.white.opacity(0.18), lineWidth: 1))
+                HStack(spacing: 10) {
+                    Button("Copy Image") { copy(image) }
+                    Button("Save Image") { save() }
+                    if !saveStatus.isEmpty {
+                        Text(saveStatus)
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
+                }
+                .font(.caption)
+            } else {
+                Text("Image output received but could not be decoded.")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+            }
+        }
+        .accessibilityLabel(renderedImage.altText)
+    }
+
+    private func copy(_ image: NSImage) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.writeObjects([image])
+        saveStatus = "Copied"
+    }
+
+    private func save() {
+        guard let data = renderedImage.data else { saveStatus = "No image data"; return }
+        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+        let formatter = DateFormatter(); formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let url = folder.appendingPathComponent("hermes-image-\(formatter.string(from: Date())).\(renderedImage.fileExtension)")
+        do {
+            try data.write(to: url, options: .atomic)
+            saveStatus = "Saved to Downloads"
+        } catch {
+            saveStatus = "Save failed"
         }
     }
 }
