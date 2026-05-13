@@ -32,13 +32,16 @@ struct HermesAskWorkspacesView: View {
         AnyView(
             HStack(spacing: 6) {
                 Button(action: onAddWorkspace) {
-                    Image(systemName: "plus")
-                        .font(.caption.weight(.bold))
-                        .frame(width: 22, height: 22)
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.hermesActionBlue)
                 .help("Open a new Ask Hermes workspace")
+                .accessibilityLabel("Open a new Ask Hermes workspace")
 
                 if workspaces.count > 1 {
                     ForEach(workspaces) { workspace in
