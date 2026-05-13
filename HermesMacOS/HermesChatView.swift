@@ -179,39 +179,34 @@ struct HermesChatConsoleView: View {
                     }
 
                 VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        Spacer(minLength: 0)
-                        Button { isImportingAttachment = true } label: {
-                            HermesComposerCircleButtonLabel(systemImage: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(chatSession.isSending)
-                        .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
+                    Button { isImportingAttachment = true } label: {
+                        HermesComposerCircleButtonLabel(systemImage: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
                     }
+                    .buttonStyle(.plain)
+                    .disabled(chatSession.isSending)
+                    .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
 
-                    HStack(spacing: 8) {
-                        Button {
-                            speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
-                                promptText = updatedPrompt
-                            }
-                        } label: {
-                            HermesComposerCircleButtonLabel(
-                                systemImage: speechToText.buttonSystemImage,
-                                foreground: speechToText.isRecording ? Color.hermesDestructive : Color.primary
-                            )
+                    Button {
+                        speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
+                            promptText = updatedPrompt
                         }
-                        .buttonStyle(.plain)
-                        .disabled(chatSession.isSending || chatSession.isStreaming)
-                        .help(speechToText.buttonTitle)
-
-                        Button { submitPrompt() } label: {
-                            HermesComposerSendButtonLabel()
-                        }
-                        .buttonStyle(.plain)
-                        .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
-                        .keyboardShortcut(.return, modifiers: [.command])
-                        .help("Send message (⌘↩)")
+                    } label: {
+                        HermesComposerCircleButtonLabel(
+                            systemImage: speechToText.buttonSystemImage,
+                            foreground: speechToText.isRecording ? Color.hermesDestructive : Color.primary
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .disabled(chatSession.isSending || chatSession.isStreaming)
+                    .help(speechToText.buttonTitle)
+
+                    Button { submitPrompt() } label: {
+                        HermesComposerSendButtonLabel()
+                    }
+                    .buttonStyle(.plain)
+                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .help("Send message (⌘↩)")
                 }
             }
         }

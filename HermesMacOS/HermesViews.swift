@@ -12,7 +12,6 @@ struct HermesResponsesConsoleView: View {
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var promptHistoryStore: HermesPromptHistoryStore
     var workspaceControls = AnyView(EmptyView())
-    var composerAccessoryControls = AnyView(EmptyView())
 
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
@@ -193,42 +192,36 @@ struct HermesResponsesConsoleView: View {
                     }
 
                 VStack(spacing: 8) {
-                    HStack(spacing: 8) {
-                        composerAccessoryControls
-
-                        Button { isImportingAttachment = true } label: {
-                            HermesComposerCircleButtonLabel(systemImage: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(responseSession.isSending)
-                        .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
+                    Button { isImportingAttachment = true } label: {
+                        HermesComposerCircleButtonLabel(systemImage: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
                     }
+                    .buttonStyle(.plain)
+                    .disabled(responseSession.isSending)
+                    .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
 
-                    HStack(spacing: 8) {
-                        Button {
-                            speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
-                                promptText = updatedPrompt
-                            }
-                        } label: {
-                            HermesComposerCircleButtonLabel(
-                                systemImage: speechToText.buttonSystemImage,
-                                foreground: speechToText.isRecording ? Color.hermesDestructive : Color.primary
-                            )
+                    Button {
+                        speechToText.toggleTranscription(currentPrompt: promptText) { updatedPrompt in
+                            promptText = updatedPrompt
                         }
-                        .buttonStyle(.plain)
-                        .disabled(responseSession.isSending || responseSession.isStreaming)
-                        .help(speechToText.buttonTitle)
-
-                        Button {
-                            submitPrompt()
-                        } label: {
-                            HermesComposerSendButtonLabel()
-                        }
-                        .buttonStyle(.plain)
-                        .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
-                        .keyboardShortcut(.return, modifiers: [.command])
-                        .help("Send prompt (⌘↩)")
+                    } label: {
+                        HermesComposerCircleButtonLabel(
+                            systemImage: speechToText.buttonSystemImage,
+                            foreground: speechToText.isRecording ? Color.hermesDestructive : Color.primary
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .disabled(responseSession.isSending || responseSession.isStreaming)
+                    .help(speechToText.buttonTitle)
+
+                    Button {
+                        submitPrompt()
+                    } label: {
+                        HermesComposerSendButtonLabel()
+                    }
+                    .buttonStyle(.plain)
+                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .help("Send prompt (⌘↩)")
                 }
             }
         }

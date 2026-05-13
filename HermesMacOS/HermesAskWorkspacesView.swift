@@ -23,27 +23,21 @@ struct HermesAskWorkspacesView: View {
             apiSettings: $apiSettings,
             workspace: selectedWorkspace,
             promptHistory: promptHistory,
-            workspaceControls: workspaceControls,
-            composerAccessoryControls: composerAccessoryControls
+            workspaceControls: workspaceControls
         )
         .id(selectedWorkspace.id)
-    }
-
-    private var composerAccessoryControls: AnyView {
-        AnyView(
-            Button(action: onAddWorkspace) {
-                HermesComposerCircleButtonLabel(systemImage: "plus")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.hermesActionBlue)
-            .help("Open a new Ask Hermes workspace")
-            .accessibilityLabel("Open a new Ask Hermes workspace")
-        )
     }
 
     private var workspaceControls: AnyView {
         AnyView(
             HStack(spacing: 6) {
+                Button(action: onAddWorkspace) {
+                    HermesComposerCircleButtonLabel(systemImage: "plus", foreground: Color.hermesActionBlue, size: 24)
+                }
+                .buttonStyle(.plain)
+                .help("Open a new Ask Hermes workspace")
+                .accessibilityLabel("Open a new Ask Hermes workspace")
+
                 if workspaces.count > 1 {
                     ForEach(workspaces) { workspace in
                         Button {
@@ -122,7 +116,6 @@ private struct HermesAskWorkspaceHost: View {
     @Bindable var workspace: HermesAskWorkspace
     @Bindable var promptHistory: HermesPromptHistoryStore
     let workspaceControls: AnyView
-    let composerAccessoryControls: AnyView
 
     var body: some View {
         HermesResponsesConsoleView(
@@ -130,8 +123,7 @@ private struct HermesAskWorkspaceHost: View {
             requestDraft: $workspace.draft,
             responseSession: workspace.session,
             promptHistoryStore: promptHistory,
-            workspaceControls: workspaceControls,
-            composerAccessoryControls: composerAccessoryControls
+            workspaceControls: workspaceControls
         )
         .onChange(of: workspace.draft) { _, newValue in
             HermesSettingsStore.saveDraft(newValue)
