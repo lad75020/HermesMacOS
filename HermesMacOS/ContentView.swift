@@ -14,6 +14,7 @@ enum HermesAskWorkspaceAttention {
 enum HermesTopTabAttention {
     case streaming
     case completed
+    case failed
 }
 
 enum HermesAppTheme: String, CaseIterable, Identifiable {
@@ -119,9 +120,11 @@ struct HermesSideTabButton: View {
 struct HermesSideTabSwitcher: View {
     @Binding var selectedTab: HermesMacOSTab
     let askAttention: HermesAskWorkspaceAttention?
+    let chatAttention: HermesTopTabAttention?
     let historyAttention: HermesTopTabAttention?
     let onSelectTab: (HermesMacOSTab) -> Void
     @State private var isAskBlinking = false
+    @State private var isChatBlinking = false
     @State private var isHistoryBlinking = false
 
     private var activeAskAttention: HermesAskWorkspaceAttention? {
@@ -158,14 +161,20 @@ struct HermesSideTabSwitcher: View {
         .frame(maxHeight: .infinity)
         .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 0)
         .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isAskBlinking)
+        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isChatBlinking)
         .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isHistoryBlinking)
         .onAppear {
             isAskBlinking = activeAskAttention == .streaming
+            isChatBlinking = chatAttention == .streaming
             isHistoryBlinking = historyAttention == .streaming
         }
         .onChange(of: activeAskAttention) { _, newValue in
             if newValue == .streaming { isAskBlinking = true }
             else { isAskBlinking = false }
+        }
+        .onChange(of: chatAttention) { _, newValue in
+            if newValue == .streaming { isChatBlinking = true }
+            else { isChatBlinking = false }
         }
         .onChange(of: historyAttention) { _, newValue in
             if newValue == .streaming { isHistoryBlinking = true }
@@ -175,6 +184,7 @@ struct HermesSideTabSwitcher: View {
 
     private func foregroundColor(for tab: HermesMacOSTab) -> Color {
         if tab == .ask, activeAskAttention != nil { return .white }
+        if tab == .chat, chatAttention != nil { return .white }
         if tab == .history, historyAttention != nil { return .white }
         return selectedTab == tab ? .white : .primary
     }
@@ -190,12 +200,26 @@ struct HermesSideTabSwitcher: View {
                 break
             }
         }
+        if tab == .chat {
+            switch chatAttention {
+            case .completed:
+                return .green
+            case .streaming:
+                return .hermesOrange
+            case .failed:
+                return .hermesDestructive
+            case nil:
+                break
+            }
+        }
         if tab == .history {
             switch historyAttention {
             case .completed:
                 return .green
             case .streaming:
                 return .hermesOrange
+            case .failed:
+                return .hermesDestructive
             case nil:
                 break
             }
@@ -205,6 +229,7 @@ struct HermesSideTabSwitcher: View {
 
     private func backgroundOpacity(for tab: HermesMacOSTab) -> Double {
         if tab == .ask && activeAskAttention == .streaming && isAskBlinking { return 0.45 }
+        if tab == .chat && chatAttention == .streaming && isChatBlinking { return 0.45 }
         if tab == .history && historyAttention == .streaming && isHistoryBlinking { return 0.45 }
         return 1.0
     }
@@ -220,12 +245,26 @@ struct HermesSideTabSwitcher: View {
                 break
             }
         }
+        if tab == .chat {
+            switch chatAttention {
+            case .completed:
+                return .green.opacity(0.24)
+            case .streaming:
+                return .hermesOrange.opacity(0.24)
+            case .failed:
+                return .hermesDestructive.opacity(0.24)
+            case nil:
+                break
+            }
+        }
         if tab == .history {
             switch historyAttention {
             case .completed:
                 return .green.opacity(0.24)
             case .streaming:
                 return .hermesOrange.opacity(0.24)
+            case .failed:
+                return .hermesDestructive.opacity(0.24)
             case nil:
                 break
             }
@@ -247,6 +286,8 @@ struct ContentView: View {
     @State private var installationSession = HermesInstallationSession()
     @State private var configurationWebViewStore = HermesDashboardWebViewStore()
     @State private var selectedTab = HermesMacOSTab.ask
+    @State private var acknowledgedChatCompletionToken = ""
+    @State private var acknowledgedChatFailureToken = ""
 
     private var selectedAskWorkspace: HermesAskWorkspace {
         if let selectedAskWorkspaceID,
@@ -266,11 +307,33 @@ struct ContentView: View {
         historySearchSession.tabAttention
     }
 
+    private var chatTabAttention: HermesTopTabAttention? {
+        if chatSession.isStreaming { return .streaming }
+        if let token = chatFailureToken, token != acknowledgedChatFailureToken { return .failed }
+        if let token = chatCompletionToken, token != acknowledgedChatCompletionToken { return .completed }
+        return nil
+    }
+
+    private var chatCompletionToken: String? {
+        guard chatSession.connectionStatus == "Completed", !chatSession.entries.isEmpty else { return nil }
+        let sessionID = chatSession.activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sessionPart = sessionID.isEmpty ? "chat" : sessionID
+        return "completed-\(sessionPart)-\(chatSession.entries.count)-\(chatSession.eventCount)"
+    }
+
+    private var chatFailureToken: String? {
+        guard chatSession.connectionStatus == "Failed" || !chatSession.lastErrorMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let error = chatSession.lastErrorMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !error.isEmpty { return error }
+        return "failed-\(chatSession.entries.count)-\(chatSession.eventCount)"
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             HermesSideTabSwitcher(
                 selectedTab: $selectedTab,
                 askAttention: askTabAttention,
+                chatAttention: chatTabAttention,
                 historyAttention: historyTabAttention,
                 onSelectTab: handleTopTabSelection
             )
@@ -384,7 +447,13 @@ struct ContentView: View {
     }
 
     private func handleTopTabSelection(_ tab: HermesMacOSTab) {
+        if tab == .chat { acknowledgeChatTabAttention() }
         if tab == .history { historySearchSession.acknowledgeTabAttention() }
+    }
+
+    private func acknowledgeChatTabAttention() {
+        if let token = chatCompletionToken { acknowledgedChatCompletionToken = token }
+        if let token = chatFailureToken { acknowledgedChatFailureToken = token }
     }
 
     private func reviewInstallationWithHermes(_ prompt: String) {
