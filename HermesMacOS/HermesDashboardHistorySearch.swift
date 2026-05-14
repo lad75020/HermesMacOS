@@ -6,7 +6,7 @@
 import Foundation
 import Observation
 
-let defaultHermesDashboardURL = "https://mac-studio.tail4d2ab4.ts.net:9120"
+let defaultHermesDashboardURL = "http://localhost:9119"
 let hermesDashboardURLStorageKey = "hermes.macOS.dashboardURL"
 
 struct HermesDashboardConversationSearchResponse: Decodable {

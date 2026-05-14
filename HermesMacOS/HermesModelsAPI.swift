@@ -7,7 +7,7 @@ import Foundation
 import Observation
 import UniformTypeIdentifiers
 
-let defaultHermesMacHost = "mac-studio.tail4d2ab4.ts.net"
+let defaultHermesMacHost = "localhost"
 let defaultHermesAPIPort = "8642"
 
 enum HermesHostEndpoints {
@@ -15,7 +15,7 @@ enum HermesHostEndpoints {
         let normalizedHost = normalizedHost(host)
         let normalizedPort = tcpPort(from: port, fallback: defaultHermesAPIPort)
         let normalizedPath = path.isEmpty ? "" : (path.hasPrefix("/") ? path : "/\(path)")
-        return "https://\(normalizedHost):\(normalizedPort)\(normalizedPath)"
+        return "http://\(normalizedHost):\(normalizedPort)\(normalizedPath)"
     }
 
     static func normalizedHost(_ host: String) -> String {
