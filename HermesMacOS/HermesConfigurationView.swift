@@ -7,9 +7,9 @@ import SwiftUI
 import WebKit
 
 struct HermesConfigurationView: View {
-    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
     let webViewStore: HermesDashboardWebViewStore
+    let colorScheme: ColorScheme
     @State private var reloadToken = UUID()
 
     private var normalizedDashboardURL: URL? {
@@ -83,7 +83,7 @@ private enum HermesConfigurationWebURL {
         return themedURL(from: baseURL, colorScheme: colorScheme)
     }
 
-    private static let darkDashboardThemeName = "MONO"
+    private static let darkDashboardThemeName = "mono"
     private static let lightDashboardThemeName = "solarized-light"
 
     private static func themedURL(from url: URL, colorScheme: ColorScheme) -> URL? {

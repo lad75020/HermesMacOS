@@ -300,6 +300,7 @@ struct HermesSideTabSwitcher: View {
 }
 
 struct ContentView: View {
+    @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var askWorkspaces = [HermesAskWorkspace(number: 1)]
@@ -338,6 +339,10 @@ struct ContentView: View {
         if let token = chatFailureToken, token != acknowledgedChatFailureToken { return .failed }
         if let token = chatCompletionToken, token != acknowledgedChatCompletionToken { return .completed }
         return nil
+    }
+
+    private var effectiveColorScheme: ColorScheme {
+        appTheme.colorScheme ?? systemColorScheme
     }
 
     private var chatCompletionToken: String? {
@@ -409,7 +414,7 @@ struct ContentView: View {
                 onResumeChat: resumeConversationInChat
             )
         case .configuration:
-            HermesConfigurationView(webViewStore: configurationWebViewStore)
+            HermesConfigurationView(webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
