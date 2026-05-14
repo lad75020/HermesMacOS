@@ -15,7 +15,10 @@ targets:
     type: application
     platform: macOS
     sources:
-      - HermesMacOS
+      - path: HermesMacOS
+        excludes:
+          - Resources/HermesLogoDark.png
+          - Resources/HermesLogoLight.png
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: fr.dubertrand.HermesMacOS

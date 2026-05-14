@@ -69,7 +69,7 @@ struct HermesMacOSApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            HermesMacOSRootView()
                 .frame(minWidth: 920, minHeight: 680)
                 .environment(\.locale, appLanguage.locale)
         }
@@ -78,6 +78,29 @@ struct HermesMacOSApp: App {
         Settings {
             SettingsView()
                 .environment(\.locale, appLanguage.locale)
+        }
+    }
+}
+
+private struct HermesMacOSRootView: View {
+    @State private var isShowingSplash = true
+
+    var body: some View {
+        Group {
+            if isShowingSplash {
+                SplashView()
+                    .transition(.opacity)
+            } else {
+                ContentView()
+                    .transition(.opacity)
+            }
+        }
+        .task {
+            guard isShowingSplash else { return }
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation(.easeOut(duration: 0.25)) {
+                isShowingSplash = false
+            }
         }
     }
 }
