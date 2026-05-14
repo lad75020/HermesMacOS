@@ -951,9 +951,9 @@ struct HermesLiquidGlassCanvas: View {
         if colorScheme == .light {
             LinearGradient(
                 colors: [
-                    Color(nsColor: .windowBackgroundColor),
-                    Color(nsColor: .underPageBackgroundColor).opacity(0.42),
-                    Color(nsColor: .controlBackgroundColor).opacity(0.58),
+                    Color.white,
+                    Color.hermesLightGlassPaleBlue.opacity(0.58),
+                    Color.hermesLightGlassGrey.opacity(0.64),
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -1005,9 +1005,33 @@ extension Color {
     static let hermesPurple = Color(red: 0.55, green: 0.36, blue: 0.95)
     static let hermesOrange = Color(red: 1.0, green: 0.55, blue: 0.16)
     static let hermesDestructive = Color(red: 0.93, green: 0.19, blue: 0.25)
-    static let hermesSecondaryText = Color.secondary
-    static let hermesSurface = Color(nsColor: .controlBackgroundColor)
-    static let hermesSurfaceInput = Color(nsColor: .textBackgroundColor)
-    static let hermesLightGlassPaleBlue = Color(red: 0.90, green: 0.95, blue: 1.0).opacity(0.74)
-    static let hermesLightGlassNeutral = Color(nsColor: .controlBackgroundColor).opacity(0.78)
+    static let hermesSecondaryText = hermesDynamicColor(
+        name: "HermesSecondaryText",
+        light: NSColor(calibratedRed: 0.32, green: 0.40, blue: 0.48, alpha: 1.0),
+        dark: .secondaryLabelColor
+    )
+    static let hermesSurface = hermesDynamicColor(
+        name: "HermesSurface",
+        light: NSColor(calibratedRed: 0.93, green: 0.97, blue: 1.0, alpha: 0.90),
+        dark: .controlBackgroundColor
+    )
+    static let hermesSurfaceInput = hermesDynamicColor(
+        name: "HermesSurfaceInput",
+        light: NSColor(calibratedRed: 0.97, green: 0.99, blue: 1.0, alpha: 0.94),
+        dark: .textBackgroundColor
+    )
+    static let hermesLightGlassPaleBlue = Color(red: 0.90, green: 0.95, blue: 1.0)
+    static let hermesLightGlassGrey = Color(red: 0.95, green: 0.97, blue: 0.99)
+    static let hermesLightGlassNeutral = hermesDynamicColor(
+        name: "HermesLightGlassNeutral",
+        light: NSColor(calibratedRed: 0.94, green: 0.96, blue: 0.98, alpha: 0.88),
+        dark: .controlBackgroundColor
+    )
+
+    private static func hermesDynamicColor(name: String, light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: NSColor.Name(name)) { appearance in
+            let bestMatch = appearance.bestMatch(from: [.aqua, .darkAqua])
+            return bestMatch == .darkAqua ? dark : light
+        })
+    }
 }
