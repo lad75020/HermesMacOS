@@ -101,9 +101,51 @@ final class HermesDashboardWebViewStore {
     private var lastLoadedURL: URL?
     private var lastReloadToken: UUID?
 
+    private static let themeOverrideScript = """
+    (() => {
+      const desiredTheme = new URLSearchParams(window.location.search).get('theme');
+      if (!desiredTheme) return;
+
+      const storageKey = 'hermes-dashboard-theme';
+      window.localStorage.setItem(storageKey, desiredTheme);
+
+      const originalFetch = window.fetch;
+      if (typeof originalFetch !== 'function' || window.__hermesConfigurationThemeFetchPatched) return;
+      window.__hermesConfigurationThemeFetchPatched = true;
+
+      window.fetch = (...args) => {
+        return originalFetch(...args).then(async (response) => {
+          try {
+            const input = args[0];
+            const url = typeof input === 'string' ? input : (input && input.url) || '';
+            if (url.includes('/api/dashboard/themes') && response.ok) {
+              const body = await response.clone().json();
+              body.active = desiredTheme;
+              const headers = new Headers(response.headers);
+              headers.set('content-type', 'application/json');
+              return new Response(JSON.stringify(body), {
+                status: response.status,
+                statusText: response.statusText,
+                headers,
+              });
+            }
+          } catch (_) {}
+          return response;
+        });
+      };
+    })();
+    """
+
     init() {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: Self.themeOverrideScript,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
     }
