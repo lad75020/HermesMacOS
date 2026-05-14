@@ -839,6 +839,7 @@ private struct HermesRenderedBubbleImageView: View {
 
 struct SettingsView: View {
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
+    @AppStorage("hermes.appLanguage") private var appLanguage: HermesAppLanguageSelection = .automatic
     @AppStorage("hermes.macOS.titleFont") private var titleFont: HermesWebsiteFont = .rulesExpanded
     @AppStorage("hermes.macOS.labelFont") private var labelFont: HermesWebsiteFont = .mondwest
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
@@ -860,6 +861,16 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     Text("Choose a fixed light or dark appearance, or follow the macOS system theme.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                    Divider()
+                    Picker("App language", selection: $appLanguage) {
+                        Text("Automatic (System)").tag(HermesAppLanguageSelection.automatic)
+                        ForEach(HermesAppLanguageSelection.forcedLanguages) { language in
+                            Text(language.title).tag(language)
+                        }
+                    }
+                    Text("Automatic uses the macOS language when Hermes supports it, otherwise English. You can force any supported language.")
                         .font(.caption)
                         .foregroundStyle(Color.hermesSecondaryText)
                     Divider()
