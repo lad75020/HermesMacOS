@@ -942,8 +942,30 @@ struct SettingsView: View {
 }
 
 struct HermesLiquidGlassCanvas: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        LinearGradient(colors: [Color(nsColor: .windowBackgroundColor), Color.hermesActionBlue.opacity(0.09), Color.hermesPurple.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        if colorScheme == .light {
+            LinearGradient(
+                colors: [
+                    Color(nsColor: .windowBackgroundColor),
+                    Color(nsColor: .underPageBackgroundColor).opacity(0.42),
+                    Color(nsColor: .controlBackgroundColor).opacity(0.58),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        } else {
+            LinearGradient(
+                colors: [
+                    Color(nsColor: .windowBackgroundColor),
+                    Color.hermesActionBlue.opacity(0.09),
+                    Color.hermesPurple.opacity(0.08),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
     }
 }
 
