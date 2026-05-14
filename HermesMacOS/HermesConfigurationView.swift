@@ -83,10 +83,13 @@ private enum HermesConfigurationWebURL {
         return themedURL(from: baseURL, colorScheme: colorScheme)
     }
 
+    private static let darkDashboardThemeName = "MONO"
+    private static let lightDashboardThemeName = "solarized-light"
+
     private static func themedURL(from url: URL, colorScheme: ColorScheme) -> URL? {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         var queryItems = components.queryItems?.filter { $0.name.lowercased() != "theme" } ?? []
-        queryItems.append(URLQueryItem(name: "theme", value: colorScheme == .dark ? "MONO" : "TEAL"))
+        queryItems.append(URLQueryItem(name: "theme", value: colorScheme == .dark ? darkDashboardThemeName : lightDashboardThemeName))
         components.queryItems = queryItems
         return components.url
     }
