@@ -38,29 +38,27 @@ struct HermesAskWorkspacesView: View {
                 .help("Open a new Ask Hermes workspace")
                 .accessibilityLabel("Open a new Ask Hermes workspace")
 
-                if workspaces.count > 1 {
-                    ForEach(workspaces) { workspace in
-                        Button {
-                            onSelectWorkspace(workspace)
-                        } label: {
-                            HermesAskWorkspaceButtonLabel(
-                                number: workspace.number,
-                                isSelected: workspace.id == selectedWorkspaceID,
-                                attention: workspace.attention
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .controlSize(.small)
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                onDeleteWorkspace(workspace)
-                            } label: {
-                                Label("Delete Workspace", systemImage: "trash")
-                            }
-                            .disabled(workspace.session.isStreaming)
-                        }
-                        .help("Switch to workspace \(workspace.number)")
+                ForEach(workspaces) { workspace in
+                    Button {
+                        onSelectWorkspace(workspace)
+                    } label: {
+                        HermesAskWorkspaceButtonLabel(
+                            number: workspace.number,
+                            isSelected: workspace.id == selectedWorkspaceID,
+                            attention: workspace.attention
+                        )
                     }
+                    .buttonStyle(.plain)
+                    .controlSize(.small)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            onDeleteWorkspace(workspace)
+                        } label: {
+                            Label("Delete Workspace", systemImage: "trash")
+                        }
+                        .disabled(workspace.session.isStreaming)
+                    }
+                    .help("Switch to workspace \(workspace.number)")
                 }
             }
         )
