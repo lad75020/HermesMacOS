@@ -7,12 +7,13 @@ import SwiftUI
 import WebKit
 
 struct HermesConfigurationView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
     let webViewStore: HermesDashboardWebViewStore
     @State private var reloadToken = UUID()
 
     private var normalizedDashboardURL: URL? {
-        HermesConfigurationWebURL.normalizedURL(from: dashboardURL)
+        HermesConfigurationWebURL.normalizedURL(from: dashboardURL, colorScheme: colorScheme)
     }
 
     var body: some View {
@@ -67,13 +68,27 @@ struct HermesConfigurationView: View {
 }
 
 private enum HermesConfigurationWebURL {
-    static func normalizedURL(from string: String) -> URL? {
+    static func normalizedURL(from string: String, colorScheme: ColorScheme) -> URL? {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+
+        let baseURL: URL?
         if let url = URL(string: trimmed), url.scheme != nil, url.host != nil {
-            return url
+            baseURL = url
+        } else {
+            baseURL = URL(string: "https://\(trimmed)").flatMap { $0.host == nil ? nil : $0 }
         }
-        return URL(string: "https://\(trimmed)").flatMap { $0.host == nil ? nil : $0 }
+
+        guard let baseURL else { return nil }
+        return themedURL(from: baseURL, colorScheme: colorScheme)
+    }
+
+    private static func themedURL(from url: URL, colorScheme: ColorScheme) -> URL? {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        var queryItems = components.queryItems?.filter { $0.name.lowercased() != "theme" } ?? []
+        queryItems.append(URLQueryItem(name: "theme", value: colorScheme == .dark ? "MONO" : "TEAL"))
+        components.queryItems = queryItems
+        return components.url
     }
 }
 
