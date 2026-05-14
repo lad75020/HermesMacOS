@@ -427,6 +427,7 @@ struct HermesComposerSendButtonLabel: View {
 }
 
 struct HermesProfileSelector: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var selectedProfile: String
     let apiProfiles: [HermesAPIProfile]
     let lockedProfile: String
@@ -477,11 +478,12 @@ struct HermesProfileSelector: View {
         }
         .padding(12)
         .frame(minWidth: 85, maxWidth: 130, alignment: .leading)
-        .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.07))
+        .hermesGlassPanel(tint: colorScheme == .light ? Color.hermesLightGlassPaleBlue : Color.hermesActionBlue.opacity(0.07))
     }
 }
 
 private struct HermesReasoningLevelPill: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var reasoningLevel: HermesReasoningLevel
     let isDisabled: Bool
 
@@ -510,11 +512,12 @@ private struct HermesReasoningLevelPill: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 11)
         .frame(minWidth: 118, maxWidth: 142, alignment: .leading)
-        .hermesGlassPanel(tint: Color.hermesPurple.opacity(0.08))
+        .hermesGlassPanel(tint: colorScheme == .light ? Color.hermesLightGlassNeutral : Color.hermesPurple.opacity(0.08))
     }
 }
 
 struct HermesStatusCard: View {
+    @Environment(\.colorScheme) private var colorScheme
     let title: String
     let value: String
     let tint: Color
@@ -531,7 +534,7 @@ struct HermesStatusCard: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 11)
         .frame(minWidth: minimumWidth, maxWidth: maximumWidth, alignment: .leading)
-        .hermesGlassPanel(tint: tint.opacity(0.09))
+        .hermesGlassPanel(tint: colorScheme == .light ? Color.hermesLightGlassPaleBlue : tint.opacity(0.09))
     }
 }
 
@@ -1005,4 +1008,6 @@ extension Color {
     static let hermesSecondaryText = Color.secondary
     static let hermesSurface = Color(nsColor: .controlBackgroundColor)
     static let hermesSurfaceInput = Color(nsColor: .textBackgroundColor)
+    static let hermesLightGlassPaleBlue = Color(red: 0.90, green: 0.95, blue: 1.0).opacity(0.74)
+    static let hermesLightGlassNeutral = Color(nsColor: .controlBackgroundColor).opacity(0.78)
 }
