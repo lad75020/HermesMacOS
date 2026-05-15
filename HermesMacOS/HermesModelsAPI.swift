@@ -503,6 +503,7 @@ enum HermesRequestFailureClassifier {
 @Observable
 final class HermesResponsesSession {
     var entries: [HermesResponseMessage] = []
+    var streamOutputBubbles: [HermesStreamOutputBubble] = []
     var streamedText = ""
     var isSending = false
     var isStreaming = false
@@ -522,6 +523,7 @@ final class HermesResponsesSession {
 
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
+    private var activeStreamOutputBubbleID: UUID?
     private var activeHistoryStore: HermesPromptHistoryStore?
     private var activeCancellationRequestID = ""
     private var activeCancellationAPISettings: HermesAPISettings?
@@ -543,7 +545,11 @@ final class HermesResponsesSession {
 
     var hasActiveConversation: Bool { !previousResponseID.isEmpty || !latestResponseID.isEmpty || !activeHermesSessionID.isEmpty || !entries.isEmpty || isSending }
 
-    func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment? = nil, historyStore: HermesPromptHistoryStore? = nil) {
+    func streamOutputBubble(after userMessageID: UUID) -> HermesStreamOutputBubble? {
+        streamOutputBubbles.first { $0.userMessageID == userMessageID }
+    }
+
+    func submit(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment? = nil, historyStore: HermesPromptHistoryStore? = nil, showsStreamOutputBubble: Bool = false) {
         cancelActiveRequest()
         requestTask?.cancel()
         activeHistoryStore = historyStore
@@ -554,7 +560,7 @@ final class HermesResponsesSession {
         let cancellationRequestID = HermesRequestCancellation.makeRequestID()
         activeCancellationRequestID = cancellationRequestID
         activeCancellationAPISettings = apiSettings
-        requestTask = Task { await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment, cancellationRequestID: cancellationRequestID) }
+        requestTask = Task { await runRequest(apiSettings: apiSettings, draft: lockedDraft, attachment: attachment, cancellationRequestID: cancellationRequestID, showsStreamOutputBubble: showsStreamOutputBubble) }
     }
 
     func cancel() {
@@ -570,8 +576,10 @@ final class HermesResponsesSession {
         cancelActiveRequest()
         requestTask?.cancel()
         entries = []
+        streamOutputBubbles = []
         streamedText = ""
         activeAssistantEntryID = nil
+        activeStreamOutputBubbleID = nil
         isSending = false
         isStreaming = false
         activeProfile = ""
@@ -594,6 +602,7 @@ final class HermesResponsesSession {
         entries = [HermesResponseMessage(role: "assistant", content: String(localized: "Resumed last Responses session \(Self.shortResponseID(sessionID)). Send a new prompt to continue."))]
         streamedText = ""
         activeAssistantEntryID = nil
+        activeStreamOutputBubbleID = nil
         isSending = false
         isStreaming = false
         latestResponseID = ""
@@ -613,6 +622,7 @@ final class HermesResponsesSession {
         requestTask = nil
         streamedText = ""
         activeAssistantEntryID = nil
+        activeStreamOutputBubbleID = nil
         isSending = false
         isStreaming = false
         latestResponseID = ""
@@ -669,7 +679,7 @@ final class HermesResponsesSession {
         activeCancellationAPISettings = nil
     }
 
-    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, cancellationRequestID: String) async {
+    private func runRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, cancellationRequestID: String, showsStreamOutputBubble: Bool) async {
         defer { clearActiveCancellationRequest(id: cancellationRequestID) }
         let continuationID = previousResponseID
         let hermesSessionID = activeHermesSessionID
@@ -677,7 +687,7 @@ final class HermesResponsesSession {
         if sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { sessionTitle = Self.userFriendlySessionTitle(from: prompt, fallback: attachment?.filename ?? String(localized: "New response")) }
         persistLastResponseTitle(sessionTitle)
         resetForRequest()
-        appendExchange(prompt: displayPrompt(prompt, attachment: attachment))
+        appendExchange(prompt: displayPrompt(prompt, attachment: attachment), includeStreamOutputBubble: showsStreamOutputBubble && draft.stream)
         isSending = true
         isStreaming = draft.stream
         connectionStatus = continuationID.isEmpty ? (draft.stream ? "Connecting to SSE stream" : "Sending request") : (draft.stream ? "Continuing SSE stream" : "Continuing request")
@@ -701,15 +711,22 @@ final class HermesResponsesSession {
         }
         isSending = false
         isStreaming = false
+        completeActiveStreamOutputBubble()
     }
 
     private func resetForRequest() {
-        streamedText = ""; latestResponseID = ""; lastErrorMessage = ""; lastErrorWasTimeoutOrNetworkLoss = false; latestMessageType = ""; eventCount = 0; rawStreamedJSON = ""; activeAssistantEntryID = nil
+        streamedText = ""; latestResponseID = ""; lastErrorMessage = ""; lastErrorWasTimeoutOrNetworkLoss = false; latestMessageType = ""; eventCount = 0; rawStreamedJSON = ""; activeAssistantEntryID = nil; activeStreamOutputBubbleID = nil
     }
 
-    private func appendExchange(prompt: String) {
+    private func appendExchange(prompt: String, includeStreamOutputBubble: Bool) {
         guard !prompt.isEmpty else { return }
-        entries.append(HermesResponseMessage(role: "user", content: prompt))
+        let user = HermesResponseMessage(role: "user", content: prompt)
+        entries.append(user)
+        if includeStreamOutputBubble {
+            let bubble = HermesStreamOutputBubble(userMessageID: user.id)
+            activeStreamOutputBubbleID = bubble.id
+            streamOutputBubbles.append(bubble)
+        }
         let assistant = HermesResponseMessage(role: "assistant", content: "")
         activeAssistantEntryID = assistant.id
         entries.append(assistant)
@@ -724,6 +741,24 @@ final class HermesResponsesSession {
     private func updateActiveAssistantEntry(with content: String) {
         guard let activeAssistantEntryID, let index = entries.firstIndex(where: { $0.id == activeAssistantEntryID }) else { return }
         entries[index].content = HermesStreamTextFormatter.lineBreakAfterStatementDots(content)
+    }
+
+    private func appendActiveStreamOutputBubble(lines: [String]) {
+        guard let activeStreamOutputBubbleID, !lines.isEmpty,
+              let index = streamOutputBubbles.firstIndex(where: { $0.id == activeStreamOutputBubbleID }) else { return }
+        let cleaned = lines.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard !cleaned.isEmpty else { return }
+        var bubble = streamOutputBubbles[index]
+        let addition = cleaned.joined(separator: "\n")
+        bubble.text = bubble.text.isEmpty ? addition : bubble.text + "\n" + addition
+        streamOutputBubbles[index] = bubble
+    }
+
+    private func completeActiveStreamOutputBubble() {
+        guard let activeStreamOutputBubbleID,
+              let index = streamOutputBubbles.firstIndex(where: { $0.id == activeStreamOutputBubbleID }) else { return }
+        streamOutputBubbles[index].isComplete = true
+        self.activeStreamOutputBubbleID = nil
     }
 
     private func streamResponse(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, previousResponseID: String, hermesSessionID: String, cancellationRequestID: String) async throws {
@@ -780,6 +815,7 @@ final class HermesResponsesSession {
         if event.data == "[DONE]" { connectionStatus = "Completed"; return }
         eventCount += 1
         let summary = HermesEventSummaryBuilder.summary(for: event)
+        appendActiveStreamOutputBubble(lines: HermesLooseJSON(json: event.data).streamOutputTexts())
         latestMessageType = summary.messageType
         if let responseID = summary.responseID, !responseID.isEmpty { latestResponseID = responseID; persistLastResponseID(responseID) }
         if let delta = summary.outputDelta, !delta.isEmpty {
@@ -819,6 +855,13 @@ struct HermesResponseMessage: Identifiable, Equatable {
     let id = UUID()
     let role: String
     var content: String
+}
+
+struct HermesStreamOutputBubble: Identifiable, Equatable {
+    let id = UUID()
+    let userMessageID: UUID
+    var text = ""
+    var isComplete = false
 }
 
 private enum HermesResponsesInput: Encodable {
@@ -924,8 +967,31 @@ struct HermesLooseJSON {
     func string(at path: [String]) -> String? { guard let value = value(at: path) else { return nil }; if let string = value as? String { return string }; if let number = value as? NSNumber { return number.stringValue }; return nil }
     func texts(at path: [String]) -> [String] { value(at: path).map(extractTexts(from:)) ?? [] }
     func messageOutputTexts(at path: [String]) -> [String] { value(at: path).map(extractMessageOutputTexts(from:)) ?? [] }
+    func streamOutputTexts() -> [String] {
+        var texts: [String] = []
+        texts.append(contentsOf: value(at: ["response", "output", "text"]).map(extractTexts(from:)) ?? [])
+        texts.append(contentsOf: value(at: ["response", "output"]).map(extractDirectOutputTexts(from:)) ?? [])
+        texts.append(contentsOf: value(at: ["item", "output", "text"]).map(extractTexts(from:)) ?? [])
+        texts.append(contentsOf: value(at: ["item", "output"]).map(extractDirectOutputTexts(from:)) ?? [])
+        return texts.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
     private func value(at path: [String]) -> Any? { var current = object; for key in path { if let index = Int(key), let array = current as? [Any], array.indices.contains(index) { current = array[index] } else if let dict = current as? [String: Any] { current = dict[key] } else { return nil } }; return current }
-    private func extractMessageOutputTexts(from value: Any) -> [String] { if let array = value as? [Any] { return array.flatMap(extractMessageOutputTexts) }; guard let dict = value as? [String: Any] else { return [] }; if let type = dict["type"] as? String, type != "message" { return [] }; return extractTexts(from: dict["content"] ?? dict["output"] ?? dict) }
+    private func extractDirectOutputTexts(from value: Any) -> [String] {
+        if let string = value as? String { return [string] }
+        if let array = value as? [Any] { return array.flatMap(extractDirectOutputTexts) }
+        guard let dict = value as? [String: Any] else { return [] }
+        var texts: [String] = []
+        if let text = dict["text"] as? String { texts.append(text) }
+        if let outputText = dict["output_text"] as? String { texts.append(outputText) }
+        if texts.isEmpty, let content = dict["content"] { texts.append(contentsOf: extractDirectOutputTexts(from: content)) }
+        return texts
+    }
+    private func extractMessageOutputTexts(from value: Any) -> [String] {
+        if let array = value as? [Any] { return array.flatMap(extractMessageOutputTexts) }
+        guard let dict = value as? [String: Any] else { return [] }
+        if let type = dict["type"] as? String, type != "message" { return [] }
+        return extractTexts(from: dict["content"] ?? dict["output"] ?? dict)
+    }
     private func extractTexts(from value: Any) -> [String] { if let string = value as? String { return [string] }; if let array = value as? [Any] { return array.flatMap(extractTexts) }; if let dict = value as? [String: Any] { if let text = dict["text"] as? String { return [text] }; if let outputText = dict["output_text"] as? String { return [outputText] }; return dict.values.flatMap(extractTexts) }; return [] }
 }
 

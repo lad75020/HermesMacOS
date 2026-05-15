@@ -7,6 +7,7 @@ import SwiftUI
 
 struct HermesAskWorkspacesView: View {
     @Binding var apiSettings: HermesAPISettings
+    @AppStorage("hermes.macOS.askStreamOutputBubbleEnabled") private var showsStreamOutputBubbles = false
     let workspaces: [HermesAskWorkspace]
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
     @Bindable var promptHistory: HermesPromptHistoryStore
@@ -25,6 +26,7 @@ struct HermesAskWorkspacesView: View {
             workspace: selectedWorkspace,
             promptHistory: promptHistory,
             connectedHostName: connectedHostName,
+            showsStreamOutputBubbles: $showsStreamOutputBubbles,
             workspaceControls: workspaceControls
         )
         .id(selectedWorkspace.id)
@@ -33,6 +35,16 @@ struct HermesAskWorkspacesView: View {
     private var workspaceControls: AnyView {
         AnyView(
             HStack(spacing: 6) {
+                Toggle(isOn: $showsStreamOutputBubbles) {
+                    Image(systemName: showsStreamOutputBubbles ? "text.bubble.fill" : "text.bubble")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .controlSize(.mini)
+                .help(showsStreamOutputBubbles ? "Hide streamed output text bubbles" : "Show streamed output text bubbles")
+                .accessibilityLabel("Show streamed output text bubbles")
+
                 Button(action: onAddWorkspace) {
                     HermesComposerCircleButtonLabel(systemImage: "plus", foreground: Color.hermesActionBlue, size: 24)
                 }
@@ -135,6 +147,7 @@ private struct HermesAskWorkspaceHost: View {
     @Bindable var workspace: HermesAskWorkspace
     @Bindable var promptHistory: HermesPromptHistoryStore
     let connectedHostName: String
+    @Binding var showsStreamOutputBubbles: Bool
     let workspaceControls: AnyView
 
     var body: some View {
@@ -143,6 +156,7 @@ private struct HermesAskWorkspaceHost: View {
             requestDraft: $workspace.draft,
             responseSession: workspace.session,
             promptHistoryStore: promptHistory,
+            showsStreamOutputBubbles: $showsStreamOutputBubbles,
             workspaceControls: workspaceControls,
             connectedHostName: connectedHostName
         )

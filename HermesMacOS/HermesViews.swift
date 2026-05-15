@@ -27,6 +27,7 @@ struct HermesResponsesConsoleView: View {
     @Binding var requestDraft: HermesRequestDraft
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var promptHistoryStore: HermesPromptHistoryStore
+    @Binding var showsStreamOutputBubbles: Bool
     var workspaceControls = AnyView(EmptyView())
     let connectedHostName: String
 
@@ -134,6 +135,17 @@ struct HermesResponsesConsoleView: View {
                         ForEach(responseSession.entries) { message in
                             HermesResponseBubble(message: message, fontSize: chatBubbleFontSize, isResponding: isResponsePlaceholder(message))
                                 .id(message.id)
+                            if showsStreamOutputBubbles,
+                               message.role == "user",
+                               let outputBubble = responseSession.streamOutputBubble(after: message.id),
+                               !outputBubble.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                HermesStreamOutputBubbleView(
+                                    text: outputBubble.text,
+                                    isComplete: outputBubble.isComplete,
+                                    fontSize: max(11, chatBubbleFontSize - 1)
+                                )
+                                .id(outputBubble.id)
+                            }
                         }
                     }
                     Color.clear.frame(height: 1).id(Self.transcriptBottomID)
@@ -144,6 +156,7 @@ struct HermesResponsesConsoleView: View {
             .onAppear { scrollToLatest(proxy, animated: false) }
             .onChange(of: responseSession.entries.count) { _, _ in scrollToLatest(proxy) }
             .onChange(of: responseSession.streamedText) { _, _ in scrollToLatest(proxy) }
+            .onChange(of: responseSession.streamOutputBubbles) { _, _ in scrollToLatest(proxy) }
         }
     }
 
@@ -285,7 +298,13 @@ struct HermesResponsesConsoleView: View {
         var submittedDraft = requestDraft
         submittedDraft.userPrompt = promptText
         if !selectedProfileSupportsReasoning { submittedDraft.reasoningLevel = .off }
-        responseSession.submit(apiSettings: apiSettings, draft: submittedDraft, attachment: selectedAttachment, historyStore: promptHistoryStore)
+        responseSession.submit(
+            apiSettings: apiSettings,
+            draft: submittedDraft,
+            attachment: selectedAttachment,
+            historyStore: promptHistoryStore,
+            showsStreamOutputBubble: showsStreamOutputBubbles
+        )
         promptText = ""
         requestDraft.userPrompt = ""
         selectedAttachment = nil
@@ -601,6 +620,43 @@ struct HermesResponseBubble: View {
 
     private var isUser: Bool { message.role == "user" }
     private var displayContent: String { message.content }
+}
+
+private struct HermesStreamOutputBubbleView: View {
+    let text: String
+    let isComplete: Bool
+    let fontSize: Double
+
+    private var displayText: String {
+        let normalized = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return normalized.isEmpty ? "…" : normalized
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom) {
+            Spacer(minLength: 80)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Stream output")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color.hermesSecondaryText)
+                Text(displayText)
+                    .font(.system(size: fontSize, design: .monospaced))
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .lineLimit(isComplete ? 1 : nil)
+                    .truncationMode(.tail)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(10)
+            .frame(maxWidth: 680, alignment: .leading)
+            .background(Color.gray.opacity(0.18), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.gray.opacity(0.20), lineWidth: 1))
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
 }
 
 struct HermesCopyableBubbleContent: View {
