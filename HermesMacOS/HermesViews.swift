@@ -849,7 +849,9 @@ struct SettingsView: View {
     @State private var chatDraft = HermesSettingsStore.loadChatDraft()
     @State private var savedEndpoints = HermesSettingsStore.loadSavedEndpoints()
     @State private var selectedEndpointID = HermesSettingsStore.loadSelectedEndpointID()
+    @State private var selectedWindowID = ""
     @State private var isApplyingSavedEndpoint = false
+    @State private var connectionCenter = HermesWindowConnectionCenter.shared
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
 
     var body: some View {
@@ -907,6 +909,21 @@ struct SettingsView: View {
                 }
 
                 Section("Hermes API") {
+                    if !connectionCenter.windowConnections.isEmpty {
+                        Picker("Apply host to window", selection: $selectedWindowID) {
+                            ForEach(connectionCenter.windowConnections) { window in
+                                Text(window.title).tag(window.id.uuidString)
+                            }
+                        }
+                        Text("Changes below apply only to the selected Hermes window. Other open windows keep their current host.")
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    } else {
+                        Text("Open a Hermes window to target a host from Settings.")
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
+
                     if !savedEndpoints.isEmpty {
                         Picker("Saved connection", selection: $selectedEndpointID) {
                             Text("Choose saved URL…").tag("")
@@ -934,7 +951,7 @@ struct SettingsView: View {
                             announceConnectionEndpointChange()
                         }
                     }
-                    Text("Saved connections store an API URL together with its matching dashboard URL. Selecting one switches Hermes API, Chat, History, and Dashboard connections to that saved host.")
+                    Text("Saved connections store an API URL together with its matching dashboard URL. Selecting one switches the selected Hermes window, not every open window.")
                         .font(.caption)
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
@@ -975,14 +992,29 @@ struct SettingsView: View {
         .preferredColorScheme(appTheme.colorScheme)
         .padding()
         .frame(minWidth: 560, minHeight: 420)
+        .onAppear {
+            ensureSelectedWindowTarget()
+        }
+        .onChange(of: activeWindowIDs) { _, _ in
+            ensureSelectedWindowTarget()
+        }
+        .onChange(of: selectedWindowID) { _, _ in
+            loadSelectedWindowConnection()
+        }
         .onChange(of: apiSettings) { _, value in
             HermesSettingsStore.saveAPISettings(value)
-            if !isApplyingSavedEndpoint { syncSelectedEndpointWithCurrentURLs() }
-            announceConnectionEndpointChange()
+            if !isApplyingSavedEndpoint {
+                syncSelectedEndpointWithCurrentURLs()
+                applyCurrentSettingsToSelectedWindow()
+                announceConnectionEndpointChange()
+            }
         }
         .onChange(of: dashboardURL) { _, _ in
-            if !isApplyingSavedEndpoint { syncSelectedEndpointWithCurrentURLs() }
-            announceConnectionEndpointChange()
+            if !isApplyingSavedEndpoint {
+                syncSelectedEndpointWithCurrentURLs()
+                applyCurrentSettingsToSelectedWindow()
+                announceConnectionEndpointChange()
+            }
         }
         .onChange(of: selectedEndpointID) { _, newValue in
             HermesSettingsStore.saveSelectedEndpointID(newValue)
@@ -996,13 +1028,55 @@ struct SettingsView: View {
         savedEndpoints.first { $0.id == selectedEndpointID }
     }
 
+    private var activeWindowIDs: [String] {
+        connectionCenter.windowConnections.map { $0.id.uuidString }
+    }
+
+    private var selectedWindowUUID: UUID? {
+        UUID(uuidString: selectedWindowID)
+    }
+
+    private var selectedWindowConnection: HermesWindowConnection? {
+        guard let selectedWindowUUID else { return nil }
+        return connectionCenter.connection(id: selectedWindowUUID)
+    }
+
     private var selectedEndpointDescription: String {
-        selectedSavedEndpoint?.subtitle ?? "Pick a saved API/dashboard URL pair to switch the app connection."
+        let fallback = selectedWindowConnection.map { "Pick a saved API/dashboard URL pair to switch \($0.title)." } ?? "Pick a saved API/dashboard URL pair, then choose a window to apply it."
+        return selectedSavedEndpoint?.subtitle ?? fallback
     }
 
     private var currentEndpointURLsAreEmpty: Bool {
         apiSettings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         && dashboardURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func ensureSelectedWindowTarget() {
+        if selectedWindowConnection != nil { return }
+        if let firstWindow = connectionCenter.windowConnections.first {
+            selectedWindowID = firstWindow.id.uuidString
+            loadConnection(firstWindow)
+        }
+    }
+
+    private func loadSelectedWindowConnection() {
+        guard let connection = selectedWindowConnection else { return }
+        loadConnection(connection)
+    }
+
+    private func loadConnection(_ connection: HermesWindowConnection) {
+        isApplyingSavedEndpoint = true
+        apiSettings = connection.apiSettings
+        dashboardURL = connection.dashboardURL
+        syncSelectedEndpointWithCurrentURLs()
+        DispatchQueue.main.async {
+            isApplyingSavedEndpoint = false
+        }
+    }
+
+    private func applyCurrentSettingsToSelectedWindow() {
+        guard let selectedWindowUUID else { return }
+        connectionCenter.applyEndpoint(to: selectedWindowUUID, apiSettings: apiSettings, dashboardURL: dashboardURL)
     }
 
     private func saveCurrentEndpoint() {
@@ -1038,6 +1112,7 @@ struct SettingsView: View {
         if dashboardURL != endpoint.dashboardURL { dashboardURL = endpoint.dashboardURL }
         HermesSettingsStore.saveAPISettings(apiSettings)
         HermesSettingsStore.saveSelectedEndpointID(id)
+        applyCurrentSettingsToSelectedWindow()
         announceConnectionEndpointChange()
         DispatchQueue.main.async {
             isApplyingSavedEndpoint = false

@@ -7,7 +7,7 @@ import SwiftUI
 import WebKit
 
 struct HermesConfigurationView: View {
-    @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
+    let dashboardURL: String
     let webViewStore: HermesDashboardWebViewStore
     let colorScheme: ColorScheme
     @State private var reloadToken = UUID()

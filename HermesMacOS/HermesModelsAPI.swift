@@ -111,6 +111,62 @@ struct HermesSavedEndpoint: Codable, Equatable, Identifiable {
 
 extension Notification.Name {
     static let hermesConnectionEndpointDidChange = Notification.Name("hermesConnectionEndpointDidChange")
+    static let hermesWindowConnectionDidChange = Notification.Name("hermesWindowConnectionDidChange")
+}
+
+struct HermesWindowConnection: Identifiable, Equatable {
+    let id: UUID
+    var title: String
+    var apiSettings: HermesAPISettings
+    var dashboardURL: String
+}
+
+@MainActor
+@Observable
+final class HermesWindowConnectionCenter {
+    static let shared = HermesWindowConnectionCenter()
+
+    private(set) var windowConnections: [HermesWindowConnection] = []
+    private var nextWindowNumber = 1
+
+    private init() {}
+
+    func registerWindow(id: UUID, apiSettings: HermesAPISettings, dashboardURL: String) -> HermesWindowConnection {
+        if let existing = windowConnections.first(where: { $0.id == id }) { return existing }
+        let connection = HermesWindowConnection(
+            id: id,
+            title: "Window \(nextWindowNumber)",
+            apiSettings: apiSettings,
+            dashboardURL: dashboardURL
+        )
+        nextWindowNumber += 1
+        windowConnections.append(connection)
+        return connection
+    }
+
+    func unregisterWindow(id: UUID) {
+        windowConnections.removeAll { $0.id == id }
+    }
+
+    func connection(id: UUID) -> HermesWindowConnection? {
+        windowConnections.first { $0.id == id }
+    }
+
+    func updateWindow(id: UUID, apiSettings: HermesAPISettings, dashboardURL: String, notify: Bool = false) {
+        guard let index = windowConnections.firstIndex(where: { $0.id == id }) else { return }
+        windowConnections[index].apiSettings = apiSettings
+        windowConnections[index].dashboardURL = dashboardURL
+        if notify { announceWindowConnectionChange(id: id) }
+    }
+
+    func applyEndpoint(to id: UUID, apiSettings: HermesAPISettings, dashboardURL: String) {
+        updateWindow(id: id, apiSettings: apiSettings, dashboardURL: dashboardURL, notify: true)
+    }
+
+    private func announceWindowConnectionChange(id: UUID) {
+        NotificationCenter.default.post(name: .hermesWindowConnectionDidChange, object: id)
+        NotificationCenter.default.post(name: .hermesConnectionEndpointDidChange, object: id)
+    }
 }
 
 enum HermesRequestCancellation {

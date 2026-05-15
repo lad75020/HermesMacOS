@@ -68,16 +68,32 @@ struct HermesMacOSApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("HermesMacOS", id: "main") {
             HermesMacOSRootView()
                 .frame(minWidth: 920, minHeight: 680)
                 .environment(\.locale, appLanguage.locale)
         }
         .windowStyle(.titleBar)
+        .commands {
+            HermesWindowCommands()
+        }
 
         Settings {
             SettingsView()
                 .environment(\.locale, appLanguage.locale)
+        }
+    }
+}
+
+private struct HermesWindowCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some Commands {
+        CommandGroup(replacing: .newItem) {
+            Button("New Hermes Window") {
+                openWindow(id: "main")
+            }
+            .keyboardShortcut("n", modifiers: [.command])
         }
     }
 }

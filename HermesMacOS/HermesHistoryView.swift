@@ -7,13 +7,13 @@ import SwiftUI
 
 struct HermesHistoryView: View {
     @Binding var apiSettings: HermesAPISettings
+    let dashboardURL: String
     @Bindable var searchSession: HermesDashboardHistorySearchSession
     let isResponsesStreaming: Bool
     let isChatStreaming: Bool
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
     let onResumeChat: (HermesDashboardConversationResult) -> Void
 
-    @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
     @State private var expandedConversationIDs: Set<String> = []
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var selectedProfileFilter = "all"

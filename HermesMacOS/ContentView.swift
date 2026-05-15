@@ -303,6 +303,9 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
+    @State private var dashboardURL = UserDefaults.standard.string(forKey: hermesDashboardURLStorageKey) ?? defaultHermesDashboardURL
+    @State private var windowID = UUID()
+    @State private var connectionCenter = HermesWindowConnectionCenter.shared
     @State private var askWorkspaces = [HermesAskWorkspace(number: 1)]
     @State private var selectedAskWorkspaceID: HermesAskWorkspace.ID?
     @State private var chatDraft = HermesSettingsStore.loadChatDraft()
@@ -375,15 +378,30 @@ struct ContentView: View {
         .preferredColorScheme(appTheme.colorScheme)
         .tint(.hermesActionBlue)
         .onAppear {
+            _ = connectionCenter.registerWindow(id: windowID, apiSettings: apiSettings, dashboardURL: dashboardURL)
             if selectedAskWorkspaceID == nil { selectedAskWorkspaceID = askWorkspaces.first?.id }
+        }
+        .onDisappear {
+            connectionCenter.unregisterWindow(id: windowID)
         }
         .task {
             await clipboardHistory.runMonitoringLoop()
         }
-        .onChange(of: apiSettings) { _, newValue in HermesSettingsStore.saveAPISettings(newValue) }
+        .onChange(of: apiSettings) { _, newValue in
+            HermesSettingsStore.saveAPISettings(newValue)
+            connectionCenter.updateWindow(id: windowID, apiSettings: newValue, dashboardURL: dashboardURL)
+        }
+        .onChange(of: dashboardURL) { _, newValue in
+            UserDefaults.standard.set(newValue, forKey: hermesDashboardURLStorageKey)
+            connectionCenter.updateWindow(id: windowID, apiSettings: apiSettings, dashboardURL: newValue)
+        }
         .onChange(of: chatDraft) { _, newValue in HermesSettingsStore.saveChatDraft(newValue) }
-        .onReceive(NotificationCenter.default.publisher(for: .hermesConnectionEndpointDidChange)) { _ in
-            apiSettings = HermesSettingsStore.loadAPISettings()
+        .onReceive(NotificationCenter.default.publisher(for: .hermesWindowConnectionDidChange)) { notification in
+            guard let changedWindowID = notification.object as? UUID, changedWindowID == windowID,
+                  let connection = connectionCenter.connection(id: windowID)
+            else { return }
+            apiSettings = connection.apiSettings
+            dashboardURL = connection.dashboardURL
         }
     }
 
@@ -410,6 +428,7 @@ struct ContentView: View {
         case .history:
             HermesHistoryView(
                 apiSettings: $apiSettings,
+                dashboardURL: dashboardURL,
                 searchSession: historySearchSession,
                 isResponsesStreaming: askWorkspaces.contains(where: { $0.session.isSending }),
                 isChatStreaming: chatSession.isSending,
@@ -417,7 +436,7 @@ struct ContentView: View {
                 onResumeChat: resumeConversationInChat
             )
         case .configuration:
-            HermesConfigurationView(webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme)
+            HermesConfigurationView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
