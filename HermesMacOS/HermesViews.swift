@@ -847,6 +847,9 @@ struct SettingsView: View {
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var draft = HermesSettingsStore.loadDraft()
     @State private var chatDraft = HermesSettingsStore.loadChatDraft()
+    @State private var savedEndpoints = HermesSettingsStore.loadSavedEndpoints()
+    @State private var selectedEndpointID = HermesSettingsStore.loadSelectedEndpointID()
+    @State private var isApplyingSavedEndpoint = false
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
 
     var body: some View {
@@ -904,14 +907,36 @@ struct SettingsView: View {
                 }
 
                 Section("Hermes API") {
+                    if !savedEndpoints.isEmpty {
+                        Picker("Saved connection", selection: $selectedEndpointID) {
+                            Text("Choose saved URL…").tag("")
+                            ForEach(savedEndpoints) { endpoint in
+                                Text(endpoint.title).tag(endpoint.id)
+                            }
+                        }
+                        Text(selectedEndpointDescription)
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
                     TextField("Base URL", text: $apiSettings.baseURL)
                         .textFieldStyle(.roundedBorder)
                     SecureField("API key", text: $apiSettings.apiKey)
                         .textFieldStyle(.roundedBorder)
                     Toggle("Allow self-signed certificates", isOn: $apiSettings.allowSelfSignedCertificates)
-                    Button("Restore default endpoint") {
-                        apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesAPIPort, path: "/v1")
+                    HStack {
+                        Button("Save current URLs") { saveCurrentEndpoint() }
+                            .disabled(currentEndpointURLsAreEmpty)
+                        if selectedSavedEndpoint != nil {
+                            Button("Remove selected URL") { removeSelectedEndpoint() }
+                        }
+                        Button("Restore default endpoint") {
+                            apiSettings.baseURL = HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesAPIPort, path: "/v1")
+                            announceConnectionEndpointChange()
+                        }
                     }
+                    Text("Saved connections store an API URL together with its matching dashboard URL. Selecting one switches Hermes API, Chat, History, and Dashboard connections to that saved host.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
                 }
 
                 Section("Hermes Dashboard") {
@@ -919,6 +944,7 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                     Button("Restore default dashboard") {
                         dashboardURL = defaultHermesDashboardURL
+                        announceConnectionEndpointChange()
                     }
                 }
 
@@ -949,9 +975,99 @@ struct SettingsView: View {
         .preferredColorScheme(appTheme.colorScheme)
         .padding()
         .frame(minWidth: 560, minHeight: 420)
-        .onChange(of: apiSettings) { _, value in HermesSettingsStore.saveAPISettings(value) }
+        .onChange(of: apiSettings) { _, value in
+            HermesSettingsStore.saveAPISettings(value)
+            if !isApplyingSavedEndpoint { syncSelectedEndpointWithCurrentURLs() }
+            announceConnectionEndpointChange()
+        }
+        .onChange(of: dashboardURL) { _, _ in
+            if !isApplyingSavedEndpoint { syncSelectedEndpointWithCurrentURLs() }
+            announceConnectionEndpointChange()
+        }
+        .onChange(of: selectedEndpointID) { _, newValue in
+            HermesSettingsStore.saveSelectedEndpointID(newValue)
+            applySelectedEndpoint(id: newValue)
+        }
         .onChange(of: draft) { _, value in HermesSettingsStore.saveDraft(value) }
         .onChange(of: chatDraft) { _, value in HermesSettingsStore.saveChatDraft(value) }
+    }
+
+    private var selectedSavedEndpoint: HermesSavedEndpoint? {
+        savedEndpoints.first { $0.id == selectedEndpointID }
+    }
+
+    private var selectedEndpointDescription: String {
+        selectedSavedEndpoint?.subtitle ?? "Pick a saved API/dashboard URL pair to switch the app connection."
+    }
+
+    private var currentEndpointURLsAreEmpty: Bool {
+        apiSettings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && dashboardURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func saveCurrentEndpoint() {
+        let apiURL = apiSettings.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentDashboardURL = dashboardURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiURL.isEmpty || !currentDashboardURL.isEmpty else { return }
+
+        if let existing = savedEndpoints.first(where: { $0.matches(apiURL: apiURL, dashboardURL: currentDashboardURL) }) {
+            selectedEndpointID = existing.id
+            HermesSettingsStore.saveSelectedEndpointID(existing.id)
+            return
+        }
+
+        let endpoint = HermesSavedEndpoint(apiURL: apiURL, dashboardURL: currentDashboardURL)
+        savedEndpoints.append(endpoint)
+        saveSavedEndpoints()
+        selectedEndpointID = endpoint.id
+        HermesSettingsStore.saveSelectedEndpointID(endpoint.id)
+    }
+
+    private func removeSelectedEndpoint() {
+        guard !selectedEndpointID.isEmpty else { return }
+        savedEndpoints.removeAll { $0.id == selectedEndpointID }
+        selectedEndpointID = ""
+        saveSavedEndpoints()
+        HermesSettingsStore.saveSelectedEndpointID("")
+    }
+
+    private func applySelectedEndpoint(id: String) {
+        guard let endpoint = savedEndpoints.first(where: { $0.id == id }) else { return }
+        isApplyingSavedEndpoint = true
+        if apiSettings.baseURL != endpoint.apiURL { apiSettings.baseURL = endpoint.apiURL }
+        if dashboardURL != endpoint.dashboardURL { dashboardURL = endpoint.dashboardURL }
+        HermesSettingsStore.saveAPISettings(apiSettings)
+        HermesSettingsStore.saveSelectedEndpointID(id)
+        announceConnectionEndpointChange()
+        DispatchQueue.main.async {
+            isApplyingSavedEndpoint = false
+            syncSelectedEndpointWithCurrentURLs()
+        }
+    }
+
+    private func syncSelectedEndpointWithCurrentURLs() {
+        guard let matchingEndpoint = savedEndpoints.first(where: { $0.matches(apiURL: apiSettings.baseURL, dashboardURL: dashboardURL) }) else {
+            if !selectedEndpointID.isEmpty {
+                selectedEndpointID = ""
+                HermesSettingsStore.saveSelectedEndpointID("")
+            }
+            return
+        }
+        if selectedEndpointID != matchingEndpoint.id {
+            selectedEndpointID = matchingEndpoint.id
+            HermesSettingsStore.saveSelectedEndpointID(matchingEndpoint.id)
+        }
+    }
+
+    private func saveSavedEndpoints() {
+        savedEndpoints.sort { left, right in
+            left.title.localizedStandardCompare(right.title) == .orderedAscending
+        }
+        HermesSettingsStore.saveSavedEndpoints(savedEndpoints)
+    }
+
+    private func announceConnectionEndpointChange() {
+        NotificationCenter.default.post(name: .hermesConnectionEndpointDidChange, object: nil)
     }
 }
 

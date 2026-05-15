@@ -382,6 +382,9 @@ struct ContentView: View {
         }
         .onChange(of: apiSettings) { _, newValue in HermesSettingsStore.saveAPISettings(newValue) }
         .onChange(of: chatDraft) { _, newValue in HermesSettingsStore.saveChatDraft(newValue) }
+        .onReceive(NotificationCenter.default.publisher(for: .hermesConnectionEndpointDidChange)) { _ in
+            apiSettings = HermesSettingsStore.loadAPISettings()
+        }
     }
 
     @ViewBuilder

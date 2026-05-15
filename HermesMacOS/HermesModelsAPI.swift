@@ -62,6 +62,57 @@ struct HermesAPISettings: Codable, Equatable {
     }
 }
 
+struct HermesSavedEndpoint: Codable, Equatable, Identifiable {
+    let id: String
+    var apiURL: String
+    var dashboardURL: String
+    var savedAt: Date
+
+    init(id: String = UUID().uuidString, apiURL: String, dashboardURL: String, savedAt: Date = Date()) {
+        self.id = id
+        self.apiURL = apiURL
+        self.dashboardURL = dashboardURL
+        self.savedAt = savedAt
+    }
+
+    var title: String {
+        let host = Self.hostLabel(apiURL) ?? Self.hostLabel(dashboardURL) ?? "Saved endpoint"
+        return host
+    }
+
+    var subtitle: String {
+        let api = apiURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dashboard = dashboardURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if api.isEmpty { return dashboard }
+        if dashboard.isEmpty { return api }
+        return "API: \(api) • Dashboard: \(dashboard)"
+    }
+
+    func matches(apiURL candidateAPIURL: String, dashboardURL candidateDashboardURL: String) -> Bool {
+        Self.normalizedURLString(apiURL) == Self.normalizedURLString(candidateAPIURL)
+        && Self.normalizedURLString(dashboardURL) == Self.normalizedURLString(candidateDashboardURL)
+    }
+
+    static func normalizedURLString(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    private static func hostLabel(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let components = URLComponents(string: trimmed), let host = components.host, !host.isEmpty {
+            if let port = components.port { return "\(host):\(port)" }
+            return host
+        }
+        let normalizedHost = HermesHostEndpoints.normalizedHost(trimmed)
+        return normalizedHost.isEmpty ? nil : normalizedHost
+    }
+}
+
+extension Notification.Name {
+    static let hermesConnectionEndpointDidChange = Notification.Name("hermesConnectionEndpointDidChange")
+}
+
 enum HermesRequestCancellation {
     static func makeRequestID() -> String {
         "hermes-macos-\(UUID().uuidString.lowercased())"
@@ -141,6 +192,8 @@ enum HermesSettingsStore {
     private static let chatDraftKey = "hermes.macOS.chatDraft"
     private static let lastChatSessionIDKey = "hermes.macOS.lastChatSessionID"
     private static let lastChatSessionTitleKey = "hermes.macOS.lastChatSessionTitle"
+    private static let savedEndpointsKey = "hermes.macOS.savedConnectionEndpoints"
+    private static let selectedEndpointIDKey = "hermes.macOS.selectedConnectionEndpointID"
 
     static func loadAPISettings() -> HermesAPISettings { load(HermesAPISettings.self, forKey: apiSettingsKey) ?? HermesAPISettings() }
     static func saveAPISettings(_ value: HermesAPISettings) { save(value, forKey: apiSettingsKey) }
@@ -156,6 +209,10 @@ enum HermesSettingsStore {
     static func saveLastChatSessionID(_ value: String) { UserDefaults.standard.set(value, forKey: lastChatSessionIDKey) }
     static func loadLastChatSessionTitle() -> String { UserDefaults.standard.string(forKey: lastChatSessionTitleKey) ?? "" }
     static func saveLastChatSessionTitle(_ value: String) { UserDefaults.standard.set(value, forKey: lastChatSessionTitleKey) }
+    static func loadSavedEndpoints() -> [HermesSavedEndpoint] { load([HermesSavedEndpoint].self, forKey: savedEndpointsKey) ?? [] }
+    static func saveSavedEndpoints(_ value: [HermesSavedEndpoint]) { save(value, forKey: savedEndpointsKey) }
+    static func loadSelectedEndpointID() -> String { UserDefaults.standard.string(forKey: selectedEndpointIDKey) ?? "" }
+    static func saveSelectedEndpointID(_ value: String) { UserDefaults.standard.set(value, forKey: selectedEndpointIDKey) }
 
     private static func load<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
