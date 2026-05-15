@@ -12,6 +12,7 @@ struct HermesChatConsoleView: View {
     @Bindable var chatSession: HermesChatSession
     @Bindable var promptHistoryStore: HermesPromptHistoryStore
     let connectedHostName: String
+    let connectedWindowID: UUID
 
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
@@ -49,7 +50,7 @@ struct HermesChatConsoleView: View {
                 Label("Chat with Hermes", systemImage: "text.bubble")
                     .hermesWebsiteTitleFont(size: 22, weight: .bold)
                 Spacer()
-                HermesConnectedHostLabel(hostName: connectedHostName)
+                HermesConnectedHostLabel(hostName: connectedHostName, windowID: connectedWindowID)
                 if chatSession.isStreaming {
                     ProgressView().controlSize(.small)
                     Text("Streaming")

@@ -12,6 +12,7 @@ struct HermesAskWorkspacesView: View {
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
     @Bindable var promptHistory: HermesPromptHistoryStore
     let connectedHostName: String
+    let connectedWindowID: UUID
     let onSelectWorkspace: (HermesAskWorkspace) -> Void
     let onAddWorkspace: () -> Void
     let onDeleteWorkspace: (HermesAskWorkspace) -> Void
@@ -26,6 +27,7 @@ struct HermesAskWorkspacesView: View {
             workspace: selectedWorkspace,
             promptHistory: promptHistory,
             connectedHostName: connectedHostName,
+            connectedWindowID: connectedWindowID,
             showsStreamOutputBubbles: $showsStreamOutputBubbles,
             workspaceControls: workspaceControls
         )
@@ -147,6 +149,7 @@ private struct HermesAskWorkspaceHost: View {
     @Bindable var workspace: HermesAskWorkspace
     @Bindable var promptHistory: HermesPromptHistoryStore
     let connectedHostName: String
+    let connectedWindowID: UUID
     @Binding var showsStreamOutputBubbles: Bool
     let workspaceControls: AnyView
 
@@ -158,7 +161,8 @@ private struct HermesAskWorkspaceHost: View {
             promptHistoryStore: promptHistory,
             showsStreamOutputBubbles: $showsStreamOutputBubbles,
             workspaceControls: workspaceControls,
-            connectedHostName: connectedHostName
+            connectedHostName: connectedHostName,
+            connectedWindowID: connectedWindowID
         )
         .onChange(of: workspace.draft) { _, newValue in
             HermesSettingsStore.saveDraft(newValue)

@@ -419,6 +419,7 @@ struct ContentView: View {
                 selectedWorkspaceID: selectedWorkspaceBinding,
                 promptHistory: promptHistory,
                 connectedHostName: connectedHostName,
+                connectedWindowID: windowID,
                 onSelectWorkspace: selectAskWorkspace,
                 onAddWorkspace: addAskWorkspace,
                 onDeleteWorkspace: deleteAskWorkspace
@@ -429,7 +430,8 @@ struct ContentView: View {
                 chatDraft: $chatDraft,
                 chatSession: chatSession,
                 promptHistoryStore: promptHistory,
-                connectedHostName: connectedHostName
+                connectedHostName: connectedHostName,
+                connectedWindowID: windowID
             )
         case .history:
             HermesHistoryView(
@@ -439,11 +441,12 @@ struct ContentView: View {
                 isResponsesStreaming: askWorkspaces.contains(where: { $0.session.isSending }),
                 isChatStreaming: chatSession.isSending,
                 connectedHostName: connectedHostName,
+                connectedWindowID: windowID,
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
             )
         case .configuration:
-            HermesConfigurationView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName)
+            HermesConfigurationView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
@@ -453,6 +456,7 @@ struct ContentView: View {
                 chatSession: chatSession,
                 installationSession: installationSession,
                 connectedHostName: connectedHostName,
+                connectedWindowID: windowID,
                 onReviewInstallationWithHermes: reviewInstallationWithHermes
             )
         }

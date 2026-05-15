@@ -8,8 +8,42 @@ import SwiftUI
 
 struct HermesConnectedHostLabel: View {
     let hostName: String
+    let windowID: UUID
+
+    @State private var savedEndpoints = HermesSettingsStore.loadSavedEndpoints()
+    @State private var selectedEndpointID = ""
+    @State private var connectionCenter = HermesWindowConnectionCenter.shared
 
     var body: some View {
+        Group {
+            if savedEndpoints.isEmpty {
+                hostText
+            } else {
+                Picker("Connected host", selection: $selectedEndpointID) {
+                    Text(hostName).tag("")
+                    ForEach(savedEndpoints) { endpoint in
+                        Text(endpoint.title).tag(endpoint.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .frame(maxWidth: 240, alignment: .trailing)
+                .onChange(of: selectedEndpointID) { _, newValue in
+                    applyEndpoint(id: newValue)
+                }
+            }
+        }
+        .accessibilityLabel("Connected host: \(hostName)")
+        .help("Connected host: \(hostName)")
+        .onAppear { reloadSavedEndpoints() }
+        .onChange(of: hostName) { _, _ in syncSelectedEndpoint() }
+        .onReceive(NotificationCenter.default.publisher(for: .hermesConnectionEndpointDidChange)) { _ in
+            reloadSavedEndpoints()
+        }
+    }
+
+    private var hostText: some View {
         Text(hostName)
             .hermesWebsiteLabelFont(size: 10, weight: .semibold)
             .foregroundStyle(Color.hermesSecondaryText)
@@ -17,8 +51,33 @@ struct HermesConnectedHostLabel: View {
             .truncationMode(.middle)
             .multilineTextAlignment(.trailing)
             .frame(maxWidth: 240, alignment: .trailing)
-            .accessibilityLabel("Connected host: \(hostName)")
-            .help("Connected host: \(hostName)")
+    }
+
+    private func reloadSavedEndpoints() {
+        savedEndpoints = HermesSettingsStore.loadSavedEndpoints()
+        syncSelectedEndpoint()
+    }
+
+    private func syncSelectedEndpoint() {
+        guard let connection = connectionCenter.connection(id: windowID),
+              let matchingEndpoint = savedEndpoints.first(where: { endpoint in
+                  endpoint.matches(apiURL: connection.apiSettings.baseURL, dashboardURL: connection.dashboardURL)
+              })
+        else {
+            if !selectedEndpointID.isEmpty { selectedEndpointID = "" }
+            return
+        }
+        if selectedEndpointID != matchingEndpoint.id { selectedEndpointID = matchingEndpoint.id }
+    }
+
+    private func applyEndpoint(id: String) {
+        guard !id.isEmpty,
+              let endpoint = savedEndpoints.first(where: { $0.id == id })
+        else { return }
+        var newAPISettings = connectionCenter.connection(id: windowID)?.apiSettings ?? HermesSettingsStore.loadAPISettings()
+        newAPISettings.baseURL = endpoint.apiURL
+        HermesSettingsStore.saveSelectedEndpointID(id)
+        connectionCenter.applyEndpoint(to: windowID, apiSettings: newAPISettings, dashboardURL: endpoint.dashboardURL)
     }
 }
 
@@ -30,6 +89,7 @@ struct HermesResponsesConsoleView: View {
     @Binding var showsStreamOutputBubbles: Bool
     var workspaceControls = AnyView(EmptyView())
     let connectedHostName: String
+    let connectedWindowID: UUID
 
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
@@ -70,7 +130,7 @@ struct HermesResponsesConsoleView: View {
                     .hermesWebsiteTitleFont(size: 22, weight: .bold)
                 workspaceControls
                 Spacer()
-                HermesConnectedHostLabel(hostName: connectedHostName)
+                HermesConnectedHostLabel(hostName: connectedHostName, windowID: connectedWindowID)
                 if responseSession.isStreaming {
                     ProgressView().controlSize(.small)
                     Text("Streaming")
