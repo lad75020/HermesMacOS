@@ -23,6 +23,7 @@ struct HermesUtilitiesView: View {
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
     @Bindable var chatSession: HermesChatSession
     @Bindable var installationSession: HermesInstallationSession
+    let connectedHostName: String
     var onReviewInstallationWithHermes: (String) -> Void
 
     @AppStorage("hermes.macOS.utilities.clipboardHistoryExpanded") private var isClipboardHistoryExpanded = false
@@ -46,6 +47,8 @@ struct HermesUtilitiesView: View {
                         .foregroundStyle(Color.hermesActionBlue)
                     Text("Utilities")
                         .hermesWebsiteTitleFont(size: 22, weight: .bold)
+                    Spacer()
+                    HermesConnectedHostLabel(hostName: connectedHostName)
                 }
 
                 VStack(spacing: 0) {

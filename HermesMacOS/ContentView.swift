@@ -348,6 +348,10 @@ struct ContentView: View {
         appTheme.colorScheme ?? systemColorScheme
     }
 
+    private var connectedHostName: String {
+        HermesHostEndpoints.displayHost(from: apiSettings.baseURL)
+    }
+
     private var chatCompletionToken: String? {
         guard chatSession.connectionStatus == "Completed", !chatSession.entries.isEmpty else { return nil }
         let sessionID = chatSession.activeChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -414,6 +418,7 @@ struct ContentView: View {
                 workspaces: askWorkspaces,
                 selectedWorkspaceID: selectedWorkspaceBinding,
                 promptHistory: promptHistory,
+                connectedHostName: connectedHostName,
                 onSelectWorkspace: selectAskWorkspace,
                 onAddWorkspace: addAskWorkspace,
                 onDeleteWorkspace: deleteAskWorkspace
@@ -423,7 +428,8 @@ struct ContentView: View {
                 apiSettings: $apiSettings,
                 chatDraft: $chatDraft,
                 chatSession: chatSession,
-                promptHistoryStore: promptHistory
+                promptHistoryStore: promptHistory,
+                connectedHostName: connectedHostName
             )
         case .history:
             HermesHistoryView(
@@ -432,11 +438,12 @@ struct ContentView: View {
                 searchSession: historySearchSession,
                 isResponsesStreaming: askWorkspaces.contains(where: { $0.session.isSending }),
                 isChatStreaming: chatSession.isSending,
+                connectedHostName: connectedHostName,
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
             )
         case .configuration:
-            HermesConfigurationView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme)
+            HermesConfigurationView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
@@ -445,6 +452,7 @@ struct ContentView: View {
                 selectedWorkspaceID: selectedWorkspaceBinding,
                 chatSession: chatSession,
                 installationSession: installationSession,
+                connectedHostName: connectedHostName,
                 onReviewInstallationWithHermes: reviewInstallationWithHermes
             )
         }

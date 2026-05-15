@@ -29,6 +29,11 @@ enum HermesHostEndpoints {
         return withoutPath
     }
 
+    static func displayHost(from value: String) -> String {
+        let normalizedHost = normalizedHost(value).trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedHost.isEmpty ? defaultHermesMacHost : normalizedHost
+    }
+
     static func tcpPort(from value: String, fallback: String) -> String {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return fallback }

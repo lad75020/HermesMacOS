@@ -10,6 +10,7 @@ struct HermesConfigurationView: View {
     let dashboardURL: String
     let webViewStore: HermesDashboardWebViewStore
     let colorScheme: ColorScheme
+    let connectedHostName: String
     @State private var reloadToken = UUID()
 
     private var normalizedDashboardURL: URL? {
@@ -58,6 +59,7 @@ struct HermesConfigurationView: View {
             .help("Reload")
             .accessibilityLabel("Reload")
             Spacer()
+            HermesConnectedHostLabel(hostName: connectedHostName)
             Text("Hermes Dashboard")
                 .hermesWebsiteLabelFont(size: 11, weight: .bold)
                 .foregroundStyle(Color.hermesSecondaryText)

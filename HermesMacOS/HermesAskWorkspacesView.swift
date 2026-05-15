@@ -10,6 +10,7 @@ struct HermesAskWorkspacesView: View {
     let workspaces: [HermesAskWorkspace]
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
     @Bindable var promptHistory: HermesPromptHistoryStore
+    let connectedHostName: String
     let onSelectWorkspace: (HermesAskWorkspace) -> Void
     let onAddWorkspace: () -> Void
     let onDeleteWorkspace: (HermesAskWorkspace) -> Void
@@ -23,6 +24,7 @@ struct HermesAskWorkspacesView: View {
             apiSettings: $apiSettings,
             workspace: selectedWorkspace,
             promptHistory: promptHistory,
+            connectedHostName: connectedHostName,
             workspaceControls: workspaceControls
         )
         .id(selectedWorkspace.id)
@@ -132,6 +134,7 @@ private struct HermesAskWorkspaceHost: View {
     @Binding var apiSettings: HermesAPISettings
     @Bindable var workspace: HermesAskWorkspace
     @Bindable var promptHistory: HermesPromptHistoryStore
+    let connectedHostName: String
     let workspaceControls: AnyView
 
     var body: some View {
@@ -140,7 +143,8 @@ private struct HermesAskWorkspaceHost: View {
             requestDraft: $workspace.draft,
             responseSession: workspace.session,
             promptHistoryStore: promptHistory,
-            workspaceControls: workspaceControls
+            workspaceControls: workspaceControls,
+            connectedHostName: connectedHostName
         )
         .onChange(of: workspace.draft) { _, newValue in
             HermesSettingsStore.saveDraft(newValue)

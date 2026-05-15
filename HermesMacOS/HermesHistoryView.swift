@@ -11,6 +11,7 @@ struct HermesHistoryView: View {
     @Bindable var searchSession: HermesDashboardHistorySearchSession
     let isResponsesStreaming: Bool
     let isChatStreaming: Bool
+    let connectedHostName: String
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
     let onResumeChat: (HermesDashboardConversationResult) -> Void
 
@@ -44,6 +45,7 @@ struct HermesHistoryView: View {
             Label("History", systemImage: "clock.arrow.circlepath")
                 .hermesWebsiteTitleFont(size: 22, weight: .bold)
             Spacer()
+            HermesConnectedHostLabel(hostName: connectedHostName)
             if searchSession.isDashboardHTTPActive {
                 ProgressView().controlSize(.small)
                 Text("Dashboard HTTP")

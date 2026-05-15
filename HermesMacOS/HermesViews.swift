@@ -6,12 +6,29 @@
 import AppKit
 import SwiftUI
 
+struct HermesConnectedHostLabel: View {
+    let hostName: String
+
+    var body: some View {
+        Text(hostName)
+            .hermesWebsiteLabelFont(size: 10, weight: .semibold)
+            .foregroundStyle(Color.hermesSecondaryText)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .multilineTextAlignment(.trailing)
+            .frame(maxWidth: 240, alignment: .trailing)
+            .accessibilityLabel("Connected host: \(hostName)")
+            .help("Connected host: \(hostName)")
+    }
+}
+
 struct HermesResponsesConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
     @Binding var requestDraft: HermesRequestDraft
     @Bindable var responseSession: HermesResponsesSession
     @Bindable var promptHistoryStore: HermesPromptHistoryStore
     var workspaceControls = AnyView(EmptyView())
+    let connectedHostName: String
 
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
@@ -52,6 +69,7 @@ struct HermesResponsesConsoleView: View {
                     .hermesWebsiteTitleFont(size: 22, weight: .bold)
                 workspaceControls
                 Spacer()
+                HermesConnectedHostLabel(hostName: connectedHostName)
                 if responseSession.isStreaming {
                     ProgressView().controlSize(.small)
                     Text("Streaming")
