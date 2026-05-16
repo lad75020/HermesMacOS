@@ -289,7 +289,7 @@ final class HermesChatSession {
               let index = entries.firstIndex(where: { $0.id == activeAssistantEntryID })
         else { return }
         var updatedEntries = entries
-        updatedEntries[index].content = HermesStreamTextFormatter.lineBreakAfterStatementDots(content)
+        updatedEntries[index].content = content
         entries = updatedEntries
     }
 

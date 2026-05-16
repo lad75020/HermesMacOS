@@ -740,7 +740,7 @@ final class HermesResponsesSession {
 
     private func updateActiveAssistantEntry(with content: String) {
         guard let activeAssistantEntryID, let index = entries.firstIndex(where: { $0.id == activeAssistantEntryID }) else { return }
-        entries[index].content = HermesStreamTextFormatter.lineBreakAfterStatementDots(content)
+        entries[index].content = content
     }
 
     private func appendActiveStreamOutputBubble(lines: [String]) {
@@ -1127,22 +1127,6 @@ enum HermesImageJSONFormatter {
     }
 
     private static func firstJSONStringValue(for key: String, in text: String) -> String? { let pattern = #""# + NSRegularExpression.escapedPattern(for: key) + #""\s*:\s*"((?:\\.|[^"\\])*)""#; guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]), let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..<text.endIndex, in: text)), let range = Range(match.range(at: 1), in: text) else { return nil }; let value = String(text[range]); let wrapped = "\"\(value)\""; return wrapped.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) as? String } ?? value }
-}
-
-enum HermesStreamTextFormatter {
-    static func lineBreakAfterStatementDots(_ text: String) -> String {
-        if let imageMarkdown = HermesImageJSONFormatter.renderableImageMarkdown(from: text) { return imageMarkdown }
-        guard text.contains("."), !text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") else { return text }
-        var output = ""
-        for (idx, char) in text.enumerated() {
-            output.append(char)
-            if char == "." {
-                let next = text.dropFirst(idx + 1).first
-                if next != "." && next != "\n" && next != "\r" { output.append("\n") }
-            }
-        }
-        return output
-    }
 }
 
 enum HermesResponsesError: LocalizedError {
