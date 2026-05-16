@@ -688,7 +688,8 @@ private struct HermesStreamOutputBubbleView: View {
     let fontSize: Double
 
     private var displayText: String {
-        let normalized = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let displayLineFeeds = HermesBubbleTextFormatter.displayLineFeeds(in: text)
+        let normalized = displayLineFeeds.split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
@@ -728,8 +729,10 @@ struct HermesCopyableBubbleContent: View {
     let isResponding: Bool
 
     private var renderableText: String {
-        guard rendersMarkdown else { return text }
-        return HermesImageJSONFormatter.renderableImageMarkdown(from: text) ?? text
+        if rendersMarkdown, let imageMarkdown = HermesImageJSONFormatter.renderableImageMarkdown(from: text) {
+            return imageMarkdown
+        }
+        return HermesBubbleTextFormatter.displayLineFeeds(in: text)
     }
 
     var body: some View {
@@ -771,8 +774,10 @@ private struct HermesBubbleMessageText: View {
     let fontSize: Double
 
     private var renderableText: String {
-        guard rendersMarkdown else { return text }
-        return HermesImageJSONFormatter.renderableImageMarkdown(from: text) ?? text
+        if rendersMarkdown, let imageMarkdown = HermesImageJSONFormatter.renderableImageMarkdown(from: text) {
+            return imageMarkdown
+        }
+        return HermesBubbleTextFormatter.displayLineFeeds(in: text)
     }
 
     private var renderedImages: [HermesRenderedBubbleImage] {
@@ -800,6 +805,15 @@ private struct HermesBubbleMessageText: View {
                 HermesRenderedBubbleImageView(renderedImage: renderedImage)
             }
         }
+    }
+}
+
+enum HermesBubbleTextFormatter {
+    static func displayLineFeeds(in text: String) -> String {
+        text
+            .replacingOccurrences(of: "\\r\\n", with: "\n")
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "\\r", with: "\n")
     }
 }
 
