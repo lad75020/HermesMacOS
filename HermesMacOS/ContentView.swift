@@ -415,6 +415,7 @@ struct ContentView: View {
         case .ask:
             HermesAskWorkspacesView(
                 apiSettings: $apiSettings,
+                dashboardURL: dashboardURL,
                 workspaces: askWorkspaces,
                 selectedWorkspaceID: selectedWorkspaceBinding,
                 promptHistory: promptHistory,
@@ -430,6 +431,7 @@ struct ContentView: View {
                 chatDraft: $chatDraft,
                 chatSession: chatSession,
                 promptHistoryStore: promptHistory,
+                dashboardURL: dashboardURL,
                 connectedHostName: connectedHostName,
                 connectedWindowID: windowID
             )

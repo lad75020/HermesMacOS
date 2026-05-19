@@ -7,6 +7,7 @@ import SwiftUI
 
 struct HermesAskWorkspacesView: View {
     @Binding var apiSettings: HermesAPISettings
+    let dashboardURL: String
     @AppStorage("hermes.macOS.askStreamOutputBubbleEnabled") private var showsStreamOutputBubbles = false
     let workspaces: [HermesAskWorkspace]
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
@@ -24,6 +25,7 @@ struct HermesAskWorkspacesView: View {
     var body: some View {
         HermesAskWorkspaceHost(
             apiSettings: $apiSettings,
+            dashboardURL: dashboardURL,
             workspace: selectedWorkspace,
             promptHistory: promptHistory,
             connectedHostName: connectedHostName,
@@ -146,6 +148,7 @@ private struct HermesAskWorkspaceButtonLabel: View {
 
 private struct HermesAskWorkspaceHost: View {
     @Binding var apiSettings: HermesAPISettings
+    let dashboardURL: String
     @Bindable var workspace: HermesAskWorkspace
     @Bindable var promptHistory: HermesPromptHistoryStore
     let connectedHostName: String
@@ -156,6 +159,7 @@ private struct HermesAskWorkspaceHost: View {
     var body: some View {
         HermesResponsesConsoleView(
             apiSettings: $apiSettings,
+            dashboardURL: dashboardURL,
             requestDraft: $workspace.draft,
             responseSession: workspace.session,
             promptHistoryStore: promptHistory,

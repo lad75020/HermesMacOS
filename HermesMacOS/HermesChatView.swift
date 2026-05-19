@@ -11,6 +11,7 @@ struct HermesChatConsoleView: View {
     @Binding var chatDraft: HermesChatDraft
     @Bindable var chatSession: HermesChatSession
     @Bindable var promptHistoryStore: HermesPromptHistoryStore
+    let dashboardURL: String
     let connectedHostName: String
     let connectedWindowID: UUID
 
@@ -23,6 +24,8 @@ struct HermesChatConsoleView: View {
     @State private var promptText = ""
     @State private var profileRefreshError = ""
     @State private var speechToText = HermesSpeechToTextSession()
+    @State private var dashboardSkills = HermesDashboardSkillsStore()
+    @State private var selectedSkillIndex = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,7 +40,10 @@ struct HermesChatConsoleView: View {
             await refreshAPIProfiles()
         }
         .onChange(of: apiSettings) { _, _ in Task { await refreshAPIProfiles() } }
-        .onChange(of: promptText) { _, text in chatDraft.userPrompt = text }
+        .onChange(of: promptText) { _, text in
+            chatDraft.userPrompt = text
+            handlePromptSkillQueryChange()
+        }
         .onDisappear { speechToText.stopTranscription() }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
@@ -162,24 +168,51 @@ struct HermesChatConsoleView: View {
             }
 
             HStack(alignment: .bottom, spacing: 12) {
-                TextEditor(text: $promptText)
-                    .font(.system(size: promptFontSize))
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 78, maxHeight: 150)
-                    .padding(8)
-                    .hermesGlassInput(tint: Color.hermesSurfaceInput.opacity(chatSession.isStreaming ? 0.42 : 0.70))
-                    .disabled(chatSession.isStreaming)
-                    .help(chatSession.isStreaming ? "This chat is streaming a response" : "Prompt")
-                    .overlay(alignment: .topLeading) {
-                        if promptText.isEmpty {
-                            Text("Ask Hermes something...")
-                                .font(.system(size: promptFontSize))
-                                .foregroundStyle(Color.hermesSecondaryText)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 16)
-                                .allowsHitTesting(false)
-                        }
+                VStack(alignment: .leading, spacing: 8) {
+                    if shouldShowSkillPicker {
+                        HermesSkillSlashPicker(
+                            skills: filteredSkillSuggestions,
+                            selectedIndex: selectedSkillIndex,
+                            isLoading: dashboardSkills.isLoading,
+                            errorMessage: dashboardSkills.lastErrorMessage,
+                            onSelect: selectSkillSuggestion
+                        )
                     }
+
+                    TextEditor(text: $promptText)
+                        .font(.system(size: promptFontSize))
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 78, maxHeight: 150)
+                        .padding(8)
+                        .hermesGlassInput(tint: Color.hermesSurfaceInput.opacity(chatSession.isStreaming ? 0.42 : 0.70))
+                        .disabled(chatSession.isStreaming)
+                        .help(chatSession.isStreaming ? "This chat is streaming a response" : "Prompt")
+                        .onKeyPress(.upArrow) {
+                            guard shouldShowSkillPicker else { return .ignored }
+                            moveSkillSelection(delta: -1)
+                            return .handled
+                        }
+                        .onKeyPress(.downArrow) {
+                            guard shouldShowSkillPicker else { return .ignored }
+                            moveSkillSelection(delta: 1)
+                            return .handled
+                        }
+                        .onKeyPress(.return) {
+                            guard shouldShowSkillPicker, let skill = selectedSkillSuggestion else { return .ignored }
+                            selectSkillSuggestion(skill)
+                            return .handled
+                        }
+                        .overlay(alignment: .topLeading) {
+                            if promptText.isEmpty {
+                                Text("Ask Hermes something...")
+                                    .font(.system(size: promptFontSize))
+                                    .foregroundStyle(Color.hermesSecondaryText)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 16)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                }
 
                 VStack(spacing: 8) {
                     Button { isImportingAttachment = true } label: {
@@ -221,6 +254,42 @@ struct HermesChatConsoleView: View {
     }
 
     private static let transcriptBottomID = "chat-transcript-bottom"
+
+    private var activeSkillQuery: String? { promptText.hermesActiveSlashSkillQuery }
+
+    private var filteredSkillSuggestions: [HermesDashboardSkill] {
+        guard let query = activeSkillQuery else { return [] }
+        if query.isEmpty { return dashboardSkills.skills }
+        return dashboardSkills.skills.filter { $0.name.range(of: query, options: [.caseInsensitive, .anchored]) != nil }
+    }
+
+    private var shouldShowSkillPicker: Bool {
+        activeSkillQuery != nil && (dashboardSkills.isLoading || !dashboardSkills.lastErrorMessage.isEmpty || !filteredSkillSuggestions.isEmpty)
+    }
+
+    private var selectedSkillSuggestion: HermesDashboardSkill? {
+        let suggestions = filteredSkillSuggestions
+        guard suggestions.indices.contains(selectedSkillIndex) else { return suggestions.first }
+        return suggestions[selectedSkillIndex]
+    }
+
+    private func handlePromptSkillQueryChange() {
+        guard activeSkillQuery != nil else { return }
+        dashboardSkills.refreshIfNeeded(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        let suggestions = filteredSkillSuggestions
+        if suggestions.isEmpty || selectedSkillIndex >= suggestions.count { selectedSkillIndex = 0 }
+    }
+
+    private func moveSkillSelection(delta: Int) {
+        let suggestions = filteredSkillSuggestions
+        guard !suggestions.isEmpty else { return }
+        selectedSkillIndex = (selectedSkillIndex + delta + suggestions.count) % suggestions.count
+    }
+
+    private func selectSkillSuggestion(_ skill: HermesDashboardSkill) {
+        promptText = promptText.replacingActiveSlashSkillQuery(with: skill.name)
+        selectedSkillIndex = 0
+    }
 
     private var canResumeLastChatSession: Bool {
         let last = chatSession.lastKnownChatSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
