@@ -55,12 +55,8 @@ final class HermesInstallationSession {
 
     private let runner = HermesGitCommandRunner()
 
-    var canMergeFromMain: Bool {
-        !isRefreshing && !isPreviewingMerge && !isMerging && status.behindCount > 0 && !status.isDirty
-    }
-
-    var canPreviewMerge: Bool {
-        !isRefreshing && !isPreviewingMerge && !isMerging && status.behindCount > 0
+    var canUpdateHermes: Bool {
+        !isRefreshing && !isPreviewingMerge && !isMerging && !status.isDirty
     }
 
     func refresh(repositoryPath: String? = nil) {
@@ -95,15 +91,13 @@ final class HermesInstallationSession {
         }
     }
 
-    func mergeFromMainIntoLocalBranch() {
+    func updateHermes() {
         isMerging = true
         lastErrorMessage = ""
         let path = status.repositoryPath
         Task {
             do {
-                var refreshed = try await runner.mergeOriginMainIntoUpdateBranch(repositoryPath: path)
-                refreshed.mergePreview = status.mergePreview
-                status = refreshed
+                status = try await runner.updateHermesFromUpstream(repositoryPath: path)
             } catch {
                 lastErrorMessage = error.localizedDescription
                 do { status = try await runner.status(repositoryPath: path) } catch { }
@@ -292,27 +286,14 @@ struct HermesInstallationView: View {
                 .buttonStyle(.bordered)
                 .disabled(session.isRefreshing || session.isPreviewingMerge || session.isMerging)
 
-                Button { session.previewMergeFromMain() } label: {
-                    Label("Review conflicts", systemImage: "doc.text.magnifyingglass")
-                }
-                .buttonStyle(.bordered)
-                .disabled(!session.canPreviewMerge)
-                .help(session.status.behindCount == 0 ? "No upstream changes to review." : "Run a dry merge preview against origin/main.")
-
-                Button { onReviewWithHermes(session.hermesReviewPrompt()) } label: {
-                    Label("Ask Hermes", systemImage: "sparkles")
-                }
-                .buttonStyle(.bordered)
-                .disabled(session.status.mergePreview.isEmpty && session.status.operationOutput.isEmpty && session.status.conflictFiles.isEmpty)
-
-                Button { session.mergeFromMainIntoLocalBranch() } label: {
-                    Label("Merge into local branch", systemImage: "arrow.triangle.merge")
+                Button { session.updateHermes() } label: {
+                    Label("Update Hermes", systemImage: "arrow.triangle.merge")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!session.canMergeFromMain)
-                .help(mergeHelpText)
+                .disabled(!session.canUpdateHermes)
+                .help(updateHelpText)
             }
-            Text("Merge creates a new local branch from the current HEAD, fetches origin/main, then runs git merge --no-ff --no-commit origin/main. If conflicts occur, the branch is left in conflict state for manual resolution.")
+            Text("Update fetches NousResearch/hermes-agent main into upstream-latest, switches local main, merges upstream-latest, stops on conflicts, and pushes main to the lad75020 fork when the merge succeeds.")
                 .font(.caption)
                 .foregroundStyle(Color.hermesSecondaryText)
         }
@@ -332,7 +313,7 @@ struct HermesInstallationView: View {
                 }
             }
             ScrollView {
-                Text(displayOutput.isEmpty ? "Run a refresh, conflict review, or merge to see command output here." : displayOutput)
+                Text(displayOutput.isEmpty ? "Run a refresh or update to see command output here." : displayOutput)
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(displayOutput.isEmpty ? Color.hermesSecondaryText : Color.primary)
                     .textSelection(.enabled)
@@ -354,27 +335,27 @@ struct HermesInstallationView: View {
     }
 
     private var activeOperationLabel: String {
-        if session.isMerging { return "Merging" }
+        if session.isMerging { return "Updating" }
         if session.isPreviewingMerge { return "Reviewing" }
         return "Refreshing"
     }
 
-    private var mergeHelpText: String {
-        if session.status.behindCount == 0 { return "Already up to date with origin/main." }
-        if session.status.isDirty { return "Commit or stash local changes before creating the update branch." }
-        return "Create a local update branch and merge origin/main without committing."
+    private var updateHelpText: String {
+        if session.status.isDirty { return "Commit or stash local changes before updating Hermes." }
+        return "Fetch NousResearch main into upstream-latest, merge it into local main, then push main to the lad75020 fork."
     }
 }
 
 private final class HermesGitCommandRunner: @unchecked Sendable {
     func status(repositoryPath: String) async throws -> HermesInstallationStatus {
-        try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "origin", "main"])
+        try await ensureRemote(repositoryPath: repositoryPath, name: "upstream", url: Self.upstreamRemoteURL)
+        try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "upstream", "main"])
         let root = try await output(repositoryPath: repositoryPath, arguments: ["rev-parse", "--show-toplevel"])
         let branch = (try? await output(repositoryPath: repositoryPath, arguments: ["branch", "--show-current"])) ?? ""
         let head = (try? await output(repositoryPath: repositoryPath, arguments: ["rev-parse", "--short", "HEAD"])) ?? ""
         let remote = (try? await output(repositoryPath: repositoryPath, arguments: ["remote", "get-url", "origin"])) ?? ""
-        let behind = Int(((try? await output(repositoryPath: repositoryPath, arguments: ["rev-list", "--count", "HEAD..origin/main"])) ?? "0")) ?? 0
-        let ahead = Int(((try? await output(repositoryPath: repositoryPath, arguments: ["rev-list", "--count", "origin/main..HEAD"])) ?? "0")) ?? 0
+        let behind = Int(((try? await output(repositoryPath: repositoryPath, arguments: ["rev-list", "--count", "HEAD..upstream/main"])) ?? "0")) ?? 0
+        let ahead = Int(((try? await output(repositoryPath: repositoryPath, arguments: ["rev-list", "--count", "upstream/main..HEAD"])) ?? "0")) ?? 0
         let dirty = (try? await output(repositoryPath: repositoryPath, arguments: ["status", "--porcelain"])) ?? ""
         let conflicts = (try? await output(repositoryPath: repositoryPath, arguments: ["diff", "--name-only", "--diff-filter=U"])) ?? ""
 
@@ -402,31 +383,53 @@ private final class HermesGitCommandRunner: @unchecked Sendable {
         return trimmed.isEmpty ? "Dry merge preview found conflicts." : trimmed
     }
 
-    func mergeOriginMainIntoUpdateBranch(repositoryPath: String) async throws -> HermesInstallationStatus {
-        var current = try await status(repositoryPath: repositoryPath)
+    func updateHermesFromUpstream(repositoryPath: String) async throws -> HermesInstallationStatus {
+        let current = try await status(repositoryPath: repositoryPath)
         guard !current.isDirty else {
-            throw HermesInstallationError.commandFailed("Working tree has local changes. Commit or stash them before creating the update branch.")
-        }
-        guard current.behindCount > 0 else {
-            current.operationOutput = "Already up to date with origin/main."
-            return current
+            throw HermesInstallationError.commandFailed("Working tree has local changes. Commit or stash them before updating Hermes.")
         }
 
-        let stamp = Self.branchStampFormatter.string(from: Date())
-        let branchName = "hermes-update-\(stamp)"
         var outputLines: [String] = []
-        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["switch", "-c", branchName]).combinedOutput)
-        let merge = try await run(repositoryPath: repositoryPath, arguments: ["merge", "--no-ff", "--no-commit", "origin/main"], allowFailure: true)
+        outputLines.append("Ensuring upstream remote points to \(Self.upstreamRemoteURL)")
+        try await ensureRemote(repositoryPath: repositoryPath, name: "upstream", url: Self.upstreamRemoteURL)
+
+        outputLines.append("Fetching NousResearch main")
+        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "upstream", "main"]).combinedOutput)
+
+        outputLines.append("Updating local branch upstream-latest from upstream/main")
+        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["switch", "-C", "upstream-latest", "upstream/main"]).combinedOutput)
+
+        outputLines.append("Switching to local main")
+        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["switch", "main"]).combinedOutput)
+
+        outputLines.append("Merging upstream-latest into main")
+        let merge = try await run(repositoryPath: repositoryPath, arguments: ["merge", "--no-ff", "upstream-latest"], allowFailure: true)
         outputLines.append(merge.combinedOutput)
 
         var refreshed = try await status(repositoryPath: repositoryPath)
-        refreshed.operationOutput = "Created local branch \(branchName).\n" + outputLines.joined(separator: "\n")
-        if merge.exitCode != 0 {
-            refreshed.operationOutput += "\nMerge stopped with conflicts. Resolve the files above, then commit the merge manually."
-        } else {
-            refreshed.operationOutput += "\nMerge applied without committing. Review the changes, run tests, then commit manually when ready."
+        if merge.exitCode != 0 || !refreshed.conflictFiles.isEmpty {
+            refreshed.operationOutput = outputLines.joined(separator: "\n") + "\nConflicts detected. Update stopped before push; resolve the listed conflicts on local main."
+            return refreshed
         }
+
+        outputLines.append("Pushing main to origin (expected: \(Self.forkRemoteURL))")
+        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["push", "origin", "main"]).combinedOutput)
+
+        refreshed = try await status(repositoryPath: repositoryPath)
+        refreshed.operationOutput = outputLines.joined(separator: "\n") + "\nHermes update completed: upstream-latest merged into local main and main pushed to origin."
         return refreshed
+    }
+
+    private func ensureRemote(repositoryPath: String, name: String, url: String) async throws {
+        let existing = try await run(repositoryPath: repositoryPath, arguments: ["remote", "get-url", name], allowFailure: true)
+        if existing.exitCode == 0 {
+            let currentURL = existing.combinedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            if currentURL != url {
+                try await runGit(repositoryPath: repositoryPath, arguments: ["remote", "set-url", name, url])
+            }
+        } else {
+            try await runGit(repositoryPath: repositoryPath, arguments: ["remote", "add", name, url])
+        }
     }
 
     @discardableResult
@@ -472,12 +475,8 @@ private final class HermesGitCommandRunner: @unchecked Sendable {
         }.value
     }
 
-    private static let branchStampFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter
-    }()
+    private static let upstreamRemoteURL = "https://github.com/NousResearch/hermes-agent.git"
+    private static let forkRemoteURL = "https://github.com/lad75020/hermes-agent.git"
 }
 
 private struct HermesGitCommandResult {
