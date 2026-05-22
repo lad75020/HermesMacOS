@@ -319,6 +319,14 @@ struct HermesResponsesConsoleView: View {
                             }
                             return .ignored
                         }
+                        .onKeyPress(.tab) {
+                            guard shouldShowPathPicker,
+                                  let path = selectedPathSuggestion,
+                                  path.isDirectory
+                            else { return .ignored }
+                            selectPathSuggestion(path)
+                            return .handled
+                        }
                         .overlay(alignment: .topLeading) {
                             if promptText.isEmpty {
                                 Text("Ask Hermes something...")
