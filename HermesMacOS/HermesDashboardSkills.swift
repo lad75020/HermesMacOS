@@ -177,17 +177,176 @@ struct HermesSkillSlashPicker: View {
     }
 }
 
+struct HermesLocalPathSuggestion: Identifiable, Equatable {
+    let url: URL
+    let displayName: String
+    let isDirectory: Bool
+
+    var id: String { url.path }
+    var subtitle: String { isDirectory ? "Folder" : "File" }
+    var insertedPath: String { isDirectory ? url.path + "/" : url.path + " " }
+}
+
+@Observable
+final class HermesLocalPathSuggestionsStore {
+    var suggestions: [HermesLocalPathSuggestion] = []
+    var lastErrorMessage = ""
+    private var lastQuery = ""
+
+    func refresh(pathToken: String) {
+        guard pathToken != lastQuery else { return }
+        lastQuery = pathToken
+        load(pathToken: pathToken)
+    }
+
+    func clear() {
+        lastQuery = ""
+        suggestions = []
+        lastErrorMessage = ""
+    }
+
+    private func load(pathToken: String) {
+        let expandedToken = NSString(string: pathToken).expandingTildeInPath
+        let folderPath: String
+        let partialName: String
+
+        if expandedToken.hasSuffix("/") {
+            folderPath = expandedToken
+            partialName = ""
+        } else {
+            let nsPath = expandedToken as NSString
+            folderPath = nsPath.deletingLastPathComponent.isEmpty ? "/" : nsPath.deletingLastPathComponent
+            partialName = nsPath.lastPathComponent
+        }
+
+        do {
+            let folderURL = URL(fileURLWithPath: folderPath, isDirectory: true)
+            let entries = try FileManager.default.contentsOfDirectory(
+                at: folderURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .isHiddenKey],
+                options: partialName.hasPrefix(".") ? [] : [.skipsHiddenFiles]
+            )
+            suggestions = entries.compactMap { url in
+                let name = url.lastPathComponent
+                guard partialName.isEmpty || name.range(of: partialName, options: [.caseInsensitive, .anchored]) != nil else { return nil }
+                let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+                return HermesLocalPathSuggestion(url: url, displayName: name, isDirectory: values?.isDirectory == true)
+            }
+            .sorted { lhs, rhs in
+                if lhs.isDirectory != rhs.isDirectory { return lhs.isDirectory && !rhs.isDirectory }
+                return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
+            }
+            lastErrorMessage = ""
+        } catch {
+            suggestions = []
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct HermesPathSlashPicker: View {
+    let pathToken: String
+    let paths: [HermesLocalPathSuggestion]
+    let selectedIndex: Int
+    let errorMessage: String
+    let onSelect: (HermesLocalPathSuggestion) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !errorMessage.isEmpty && paths.isEmpty {
+                dropdownRow(title: "Path unavailable", subtitle: errorMessage, isSelected: false, systemImage: "exclamationmark.triangle")
+            } else if paths.isEmpty {
+                dropdownRow(title: "No matching paths", subtitle: pathToken, isSelected: false, systemImage: "folder")
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical) {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(paths.enumerated()), id: \.element.id) { index, path in
+                                Button { onSelect(path) } label: {
+                                    dropdownRow(
+                                        title: path.displayName,
+                                        subtitle: path.subtitle,
+                                        isSelected: index == selectedIndex,
+                                        systemImage: path.isDirectory ? "folder.fill" : "doc"
+                                    )
+                                }
+                                .id(path.id)
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .frame(height: 176)
+                    .onChange(of: selectedIndex) { _, newIndex in
+                        guard paths.indices.contains(newIndex) else { return }
+                        withAnimation(.easeInOut(duration: 0.12)) { proxy.scrollTo(paths[newIndex].id, anchor: .center) }
+                    }
+                    .onAppear {
+                        guard paths.indices.contains(selectedIndex) else { return }
+                        proxy.scrollTo(paths[selectedIndex].id, anchor: .center)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 1))
+        .shadow(color: Color.black.opacity(0.24), radius: 18, x: 0, y: 10)
+    }
+
+    private func dropdownRow(title: String, subtitle: String?, isSelected: Bool, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.white : Color.hermesSecondaryText)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+                    .lineLimit(1)
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.82) : Color.hermesSecondaryText)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 35, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? Color.hermesActionBlue.opacity(0.86) : Color.clear)
+        .contentShape(Rectangle())
+    }
+}
+
 extension String {
+    var hermesActiveSlashCompletionToken: String? {
+        let tokenStart = lastIndex(where: { $0.isWhitespace }).map { index(after: $0) } ?? startIndex
+        guard tokenStart < endIndex else { return nil }
+        let token = self[tokenStart...]
+        guard token.first == "/" else { return nil }
+        return String(token)
+    }
+
     var hermesActiveSlashSkillQuery: String? {
-        guard let slashIndex = lastIndex(of: "/") else { return nil }
-        let suffix = self[index(after: slashIndex)...]
-        if suffix.contains(where: { $0.isWhitespace || $0 == "/" }) { return nil }
+        guard let token = hermesActiveSlashCompletionToken else { return nil }
+        let suffix = token.dropFirst()
+        if suffix.contains("/") { return nil }
         return String(suffix)
     }
 
     func replacingActiveSlashSkillQuery(with skillName: String) -> String {
-        guard let slashIndex = lastIndex(of: "/") else { return self }
-        let prefix = self[..<slashIndex]
+        let tokenStart = lastIndex(where: { $0.isWhitespace }).map { index(after: $0) } ?? startIndex
+        guard tokenStart < endIndex, self[tokenStart] == "/" else { return self }
+        let prefix = self[..<tokenStart]
         return "\(prefix)/\(skillName) "
+    }
+
+    func replacingActiveSlashCompletionToken(with replacement: String) -> String {
+        let tokenStart = lastIndex(where: { $0.isWhitespace }).map { index(after: $0) } ?? startIndex
+        guard tokenStart < endIndex, self[tokenStart] == "/" else { return self }
+        let prefix = self[..<tokenStart]
+        return "\(prefix)\(replacement)"
     }
 }

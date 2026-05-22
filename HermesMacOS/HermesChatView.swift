@@ -25,6 +25,7 @@ struct HermesChatConsoleView: View {
     @State private var profileRefreshError = ""
     @State private var speechToText = HermesSpeechToTextSession()
     @State private var dashboardSkills = HermesDashboardSkillsStore()
+    @State private var localPathSuggestions = HermesLocalPathSuggestionsStore()
     @State private var selectedSkillIndex = 0
 
     var body: some View {
@@ -183,6 +184,14 @@ struct HermesChatConsoleView: View {
                             errorMessage: dashboardSkills.lastErrorMessage,
                             onSelect: selectSkillSuggestion
                         )
+                    } else if shouldShowPathPicker, let activePathToken {
+                        HermesPathSlashPicker(
+                            pathToken: activePathToken,
+                            paths: localPathSuggestions.suggestions,
+                            selectedIndex: selectedSkillIndex,
+                            errorMessage: localPathSuggestions.lastErrorMessage,
+                            onSelect: selectPathSuggestion
+                        )
                     }
 
                     TextEditor(text: $promptText)
@@ -194,19 +203,26 @@ struct HermesChatConsoleView: View {
                         .disabled(chatSession.isStreaming)
                         .help(chatSession.isStreaming ? "This chat is streaming a response" : "Prompt")
                         .onKeyPress(.upArrow) {
-                            guard shouldShowSkillPicker else { return .ignored }
+                            guard shouldShowCompletionPicker else { return .ignored }
                             moveSkillSelection(delta: -1)
                             return .handled
                         }
                         .onKeyPress(.downArrow) {
-                            guard shouldShowSkillPicker else { return .ignored }
+                            guard shouldShowCompletionPicker else { return .ignored }
                             moveSkillSelection(delta: 1)
                             return .handled
                         }
                         .onKeyPress(.return) {
-                            guard shouldShowSkillPicker, let skill = selectedSkillSuggestion else { return .ignored }
-                            selectSkillSuggestion(skill)
-                            return .handled
+                            guard shouldShowCompletionPicker else { return .ignored }
+                            if shouldShowSkillPicker, let skill = selectedSkillSuggestion {
+                                selectSkillSuggestion(skill)
+                                return .handled
+                            }
+                            if shouldShowPathPicker, let path = selectedPathSuggestion {
+                                selectPathSuggestion(path)
+                                return .handled
+                            }
+                            return .ignored
                         }
                         .overlay(alignment: .topLeading) {
                             if promptText.isEmpty {
@@ -261,6 +277,7 @@ struct HermesChatConsoleView: View {
 
     private static let transcriptBottomID = "chat-transcript-bottom"
 
+    private var activeSlashToken: String? { promptText.hermesActiveSlashCompletionToken }
     private var activeSkillQuery: String? { promptText.hermesActiveSlashSkillQuery }
 
     private var filteredSkillSuggestions: [HermesDashboardSkill] {
@@ -269,9 +286,20 @@ struct HermesChatConsoleView: View {
         return dashboardSkills.skills.filter { $0.name.range(of: query, options: [.caseInsensitive, .anchored]) != nil }
     }
 
-    private var shouldShowSkillPicker: Bool {
-        activeSkillQuery != nil && (dashboardSkills.isLoading || !dashboardSkills.lastErrorMessage.isEmpty || !filteredSkillSuggestions.isEmpty)
+    private var activePathToken: String? {
+        guard let token = activeSlashToken else { return nil }
+        let pathText = token.dropFirst()
+        guard !pathText.isEmpty, !dashboardSkills.isLoading, filteredSkillSuggestions.isEmpty else { return nil }
+        return token
     }
+
+    private var shouldShowSkillPicker: Bool {
+        activeSkillQuery != nil && (dashboardSkills.isLoading || (!dashboardSkills.lastErrorMessage.isEmpty && activePathToken == nil) || !filteredSkillSuggestions.isEmpty)
+    }
+
+    private var shouldShowPathPicker: Bool { activePathToken != nil }
+
+    private var shouldShowCompletionPicker: Bool { shouldShowSkillPicker || shouldShowPathPicker }
 
     private var selectedSkillSuggestion: HermesDashboardSkill? {
         let suggestions = filteredSkillSuggestions
@@ -279,21 +307,42 @@ struct HermesChatConsoleView: View {
         return suggestions[selectedSkillIndex]
     }
 
+    private var selectedPathSuggestion: HermesLocalPathSuggestion? {
+        let suggestions = localPathSuggestions.suggestions
+        guard suggestions.indices.contains(selectedSkillIndex) else { return suggestions.first }
+        return suggestions[selectedSkillIndex]
+    }
+
     private func handlePromptSkillQueryChange() {
-        guard activeSkillQuery != nil else { return }
+        guard activeSlashToken != nil else {
+            localPathSuggestions.clear()
+            selectedSkillIndex = 0
+            return
+        }
         dashboardSkills.refreshIfNeeded(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
-        let suggestions = filteredSkillSuggestions
-        if suggestions.isEmpty || selectedSkillIndex >= suggestions.count { selectedSkillIndex = 0 }
+        if let activePathToken {
+            localPathSuggestions.refresh(pathToken: activePathToken)
+        } else {
+            localPathSuggestions.clear()
+        }
+        let count = shouldShowSkillPicker ? filteredSkillSuggestions.count : localPathSuggestions.suggestions.count
+        if count == 0 || selectedSkillIndex >= count { selectedSkillIndex = 0 }
     }
 
     private func moveSkillSelection(delta: Int) {
-        let suggestions = filteredSkillSuggestions
-        guard !suggestions.isEmpty else { return }
-        selectedSkillIndex = (selectedSkillIndex + delta + suggestions.count) % suggestions.count
+        let count = shouldShowSkillPicker ? filteredSkillSuggestions.count : localPathSuggestions.suggestions.count
+        guard count > 0 else { return }
+        selectedSkillIndex = (selectedSkillIndex + delta + count) % count
     }
 
     private func selectSkillSuggestion(_ skill: HermesDashboardSkill) {
         promptText = promptText.replacingActiveSlashSkillQuery(with: skill.name)
+        localPathSuggestions.clear()
+        selectedSkillIndex = 0
+    }
+
+    private func selectPathSuggestion(_ path: HermesLocalPathSuggestion) {
+        promptText = promptText.replacingActiveSlashCompletionToken(with: path.insertedPath)
         selectedSkillIndex = 0
     }
 
