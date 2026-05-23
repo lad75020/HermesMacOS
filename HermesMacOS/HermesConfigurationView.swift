@@ -193,14 +193,17 @@ struct HermesConfigurationView: View {
     @AppStorage("hermes.macOS.configuration.mcpServersExpanded") private var isMCPServersExpanded = true
     @AppStorage("hermes.macOS.configuration.schedulesExpanded") private var isSchedulesExpanded = true
     @AppStorage("hermes.macOS.configuration.modelsExpanded") private var isModelsExpanded = true
+    @AppStorage("hermes.macOS.configuration.pluginsExpanded") private var isPluginsExpanded = true
     @StateObject private var runtime = HermesLocalConfigurationRuntime()
     @State private var dashboardSkills = HermesDashboardSkillsStore()
+    @State private var dashboardPlugins = HermesDashboardPluginsStore()
     @State private var dashboardToolsets = HermesDashboardToolsetsStore()
     @State private var dashboardMCPServers = HermesDashboardMCPServersStore()
     @State private var dashboardSchedules = HermesDashboardSchedulesStore()
     @State private var localRuntimeModels = HermesLocalRuntimeModelsStore()
     @State private var localProfiles = HermesLocalProfilesStore()
     @State private var skillQuery = ""
+    @State private var pluginQuery = ""
     @State private var toolsetQuery = ""
     @State private var mcpQuery = ""
     @State private var scheduleQuery = ""
@@ -231,6 +234,8 @@ struct HermesConfigurationView: View {
                 header
                 localSystemBanner
                 dashboardSkillsSection
+
+                dashboardPluginsSection
 
                 localProfilesSection
 
@@ -272,6 +277,19 @@ struct HermesConfigurationView: View {
             (skill.description ?? "").localizedCaseInsensitiveContains(query) ||
             (skill.category ?? "").localizedCaseInsensitiveContains(query) ||
             skill.statusLabel.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var filteredDashboardPlugins: [HermesDashboardPlugin] {
+        let query = pluginQuery.trimmedForHermes
+        guard !query.isEmpty else { return dashboardPlugins.plugins }
+        return dashboardPlugins.plugins.filter { plugin in
+            plugin.name.localizedCaseInsensitiveContains(query) ||
+            plugin.description.localizedCaseInsensitiveContains(query) ||
+            plugin.version.localizedCaseInsensitiveContains(query) ||
+            plugin.source.localizedCaseInsensitiveContains(query) ||
+            plugin.statusLabel.localizedCaseInsensitiveContains(query) ||
+            plugin.path.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -412,6 +430,136 @@ struct HermesConfigurationView: View {
                 .frame(minHeight: 180, maxHeight: 360)
             }
         }
+    }
+
+    private var dashboardPluginsSection: some View {
+        configurationSection(
+            title: "Plugins",
+            subtitle: "List, enable, and disable Hermes Agent plugins through Hermes Dashboard plugin APIs.",
+            systemImage: "puzzlepiece.extension",
+            isExpanded: $isPluginsExpanded
+        ) {
+            if dashboardPlugins.isLoading { ProgressView().controlSize(.small) }
+            Button {
+                dashboardPlugins.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.bordered)
+            .help("Refresh plugins from Hermes Dashboard")
+        } content: {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    TextField("Filter by name, description, source, status, version, or path", text: $pluginQuery)
+                        .textFieldStyle(.roundedBorder)
+                    Text("\(filteredDashboardPlugins.count)/\(dashboardPlugins.plugins.count)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+
+                if !dashboardPlugins.lastErrorMessage.isEmpty {
+                    Label(dashboardPlugins.lastErrorMessage, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesDestructive)
+                }
+
+                if dashboardPlugins.isLoading && dashboardPlugins.plugins.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading plugins from Hermes Dashboard…")
+                            .font(.callout)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
+                } else if filteredDashboardPlugins.isEmpty {
+                    Text(dashboardPlugins.plugins.isEmpty ? "No Hermes Agent plugins reported by the Dashboard." : "No matching plugins.")
+                        .font(.callout)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                        .padding(.vertical, 8)
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(filteredDashboardPlugins) { plugin in
+                                dashboardPluginRow(plugin)
+                            }
+                        }
+                        .padding(2)
+                    }
+                    .frame(minHeight: 180, maxHeight: 360)
+                }
+
+                Text("Plugins are loaded from GET /api/dashboard/plugins/hub and toggled with the dashboard agent-plugin enable/disable endpoints. Restart or reset Hermes sessions if a plugin change needs runtime reload.")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+            }
+        }
+    }
+
+    private func dashboardPluginRow(_ plugin: HermesDashboardPlugin) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Toggle(isOn: Binding(
+                get: { plugin.isEnabled },
+                set: { enabled in
+                    dashboardPlugins.setPluginEnabled(plugin, enabled: enabled, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(plugin.name)
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .lineLimit(1)
+                        if !plugin.version.isEmpty {
+                            Text("v\(plugin.version)")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(Color.hermesSecondaryText)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Color.white.opacity(0.08), in: Capsule())
+                        }
+                        Text(plugin.sourceLabel)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.hermesSecondaryText)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.08), in: Capsule())
+                        Text(plugin.statusLabel)
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(plugin.statusColor)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(plugin.statusColor.opacity(0.14), in: Capsule())
+                    }
+                    if !plugin.description.isEmpty {
+                        Text(plugin.description)
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                            .lineLimit(2)
+                    }
+                    if !plugin.path.isEmpty {
+                        Text(plugin.path)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(Color.hermesSecondaryText.opacity(0.85))
+                            .lineLimit(1)
+                    }
+                    HStack(spacing: 12) {
+                        if plugin.hasDashboardManifest {
+                            Label("Dashboard", systemImage: "rectangle.3.group")
+                        }
+                        if plugin.authRequired {
+                            Label(plugin.authCommand.isEmpty ? "Auth required" : plugin.authCommand, systemImage: "key")
+                        }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(Color.orange)
+                }
+            }
+            .toggleStyle(.switch)
+            .disabled(dashboardPlugins.isLoading || !plugin.canToggle)
+            .help(plugin.isEnabled ? "Disable \(plugin.name)" : "Enable \(plugin.name)")
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var skillInstallSource: String? {
@@ -558,6 +706,7 @@ struct HermesConfigurationView: View {
 
     private func refreshConfiguration() {
         dashboardSkills.refreshForManagement(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        dashboardPlugins.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         dashboardToolsets.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         dashboardMCPServers.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         dashboardSchedules.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
@@ -1404,6 +1553,183 @@ struct HermesConfigurationView: View {
         .tint(Color.hermesActionBlue)
         .padding(16)
         .hermesGlassPanel(cornerRadius: 18)
+    }
+}
+
+struct HermesDashboardPlugin: Decodable, Identifiable, Equatable {
+    let name: String
+    let version: String
+    let description: String
+    let source: String
+    let runtimeStatus: String
+    let hasDashboardManifest: Bool
+    let path: String
+    let authRequired: Bool
+    let authCommand: String
+
+    var id: String { name }
+    var isEnabled: Bool { runtimeStatus == "enabled" }
+    var canToggle: Bool { !name.isEmpty }
+    var statusLabel: String {
+        switch runtimeStatus {
+        case "enabled": return "Enabled"
+        case "disabled": return "Disabled"
+        case "inactive": return "Inactive"
+        default: return runtimeStatus.isEmpty ? "Unknown" : runtimeStatus.capitalized
+        }
+    }
+    var sourceLabel: String { source.isEmpty ? "bundled" : source }
+    var statusColor: Color {
+        switch runtimeStatus {
+        case "enabled": return .green
+        case "disabled": return .orange
+        default: return Color.hermesSecondaryText
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case version
+        case description
+        case source
+        case runtimeStatus = "runtime_status"
+        case hasDashboardManifest = "has_dashboard_manifest"
+        case path
+        case authRequired = "auth_required"
+        case authCommand = "auth_command"
+    }
+}
+
+@Observable
+final class HermesDashboardPluginsStore {
+    var plugins: [HermesDashboardPlugin] = []
+    var isLoading = false
+    var lastErrorMessage = ""
+
+    private var activeTask: Task<Void, Never>?
+    private var cachedTokenByBaseURL: [String: String] = [:]
+
+    func refresh(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
+        activeTask?.cancel()
+        activeTask = Task { await loadPlugins(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
+    }
+
+    func setPluginEnabled(_ plugin: HermesDashboardPlugin, enabled: Bool, dashboardBaseURL: String, apiSettings: HermesAPISettings) {
+        activeTask?.cancel()
+        activeTask = Task { await togglePlugin(plugin, enabled: enabled, dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
+    }
+
+    private func loadPlugins(dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
+        isLoading = true
+        lastErrorMessage = ""
+        defer { isLoading = false }
+
+        do {
+            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            let hub = try await fetchPluginsHub(baseURL: baseURL, token: token, apiSettings: apiSettings)
+            plugins = hub.plugins.sorted { lhs, rhs in
+                lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func togglePlugin(_ plugin: HermesDashboardPlugin, enabled: Bool, dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
+        isLoading = true
+        lastErrorMessage = ""
+        defer { isLoading = false }
+
+        do {
+            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            try await togglePluginRequest(name: plugin.name, enabled: enabled, baseURL: baseURL, token: token, apiSettings: apiSettings)
+            await loadPlugins(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
+        let cacheKey = baseURL.absoluteString
+        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
+
+        let session = HermesNetworkSessionFactory.session(for: apiSettings)
+        let (data, response) = try await session.data(from: baseURL)
+        try HermesNetworkSessionFactory.validate(response: response)
+        let html = String(decoding: data, as: UTF8.self)
+        let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#
+        let regex = try NSRegularExpression(pattern: pattern)
+        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
+        guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else {
+            throw HermesDashboardPluginsError.missingDashboardSessionToken
+        }
+        let token = String(html[tokenRange])
+        cachedTokenByBaseURL[cacheKey] = token
+        return token
+    }
+
+    private func fetchPluginsHub(baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws -> HermesDashboardPluginsHubResponse {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/dashboard/plugins/hub"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        let session = HermesNetworkSessionFactory.session(for: apiSettings)
+        let (data, response) = try await session.data(for: request)
+        try HermesNetworkSessionFactory.validate(response: response)
+        return try JSONDecoder().decode(HermesDashboardPluginsHubResponse.self, from: data)
+    }
+
+    private func togglePluginRequest(name: String, enabled: Bool, baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws {
+        var url = baseURL.appendingPathComponent("api/dashboard/agent-plugins")
+        for component in name.split(separator: "/").map(String.init) {
+            url.appendPathComponent(component)
+        }
+        url.appendPathComponent(enabled ? "enable" : "disable")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        let session = HermesNetworkSessionFactory.session(for: apiSettings)
+        let (_, response) = try await session.data(for: request)
+        try HermesNetworkSessionFactory.validate(response: response)
+    }
+
+    private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
+        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
+        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
+        guard let url = normalizedBaseURL(from: fallback) else { throw HermesDashboardPluginsError.invalidDashboardURL }
+        return url
+    }
+
+    private func normalizedBaseURL(from value: String) -> URL? {
+        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        return URL(string: trimmed)
+    }
+}
+
+private struct HermesDashboardPluginsHubResponse: Decodable {
+    let plugins: [HermesDashboardPlugin]
+}
+
+enum HermesDashboardPluginsError: LocalizedError {
+    case invalidDashboardURL
+    case missingDashboardSessionToken
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidDashboardURL:
+            return "The Hermes dashboard URL is invalid."
+        case .missingDashboardSessionToken:
+            return "The dashboard session token was not found in the dashboard HTML."
+        }
     }
 }
 
