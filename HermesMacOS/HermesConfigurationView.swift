@@ -191,9 +191,11 @@ struct HermesConfigurationView: View {
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var dashboardToolsets = HermesDashboardToolsetsStore()
     @State private var dashboardMCPServers = HermesDashboardMCPServersStore()
+    @State private var dashboardSchedules = HermesDashboardSchedulesStore()
     @State private var skillQuery = ""
     @State private var toolsetQuery = ""
     @State private var mcpQuery = ""
+    @State private var scheduleQuery = ""
     @State private var skillInstallURL = ""
     @State private var selectedSkillFileURL: URL?
     @State private var skillInstallValidationMessage = ""
@@ -206,7 +208,7 @@ struct HermesConfigurationView: View {
     @State private var scheduleName = ""
     @State private var scheduleExpression = ""
     @State private var schedulePrompt = ""
-    @State private var scheduleID = ""
+    @State private var scheduleSkillName = ""
     @State private var modelProvider = ""
     @State private var modelName = ""
     let apiSettings: HermesAPISettings
@@ -263,36 +265,7 @@ struct HermesConfigurationView: View {
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
 
-                runtimeSection(
-                    title: "Schedules",
-                    subtitle: "Manage local Hermes cron jobs.",
-                    systemImage: "calendar.badge.clock",
-                    output: runtime.outputs[.schedules]
-                ) {
-                    HStack {
-                        TextField("Job ID", text: $scheduleID)
-                        Button("List") { runtime.run(.schedules, ["cron", "list", "--all"]) }
-                        Button("Run") { runtime.run(.schedules, ["cron", "run", scheduleID]) }
-                            .disabled(scheduleID.trimmedForHermes.isEmpty)
-                        Button("Pause") { runtime.run(.schedules, ["cron", "pause", scheduleID]) }
-                            .disabled(scheduleID.trimmedForHermes.isEmpty)
-                        Button("Resume") { runtime.run(.schedules, ["cron", "resume", scheduleID]) }
-                            .disabled(scheduleID.trimmedForHermes.isEmpty)
-                        Button("Remove") { runtime.run(.schedules, ["cron", "remove", scheduleID]) }
-                            .disabled(scheduleID.trimmedForHermes.isEmpty)
-                    }
-                    HStack {
-                        TextField("Name", text: $scheduleName)
-                        TextField("Schedule, e.g. every 2h", text: $scheduleExpression)
-                        TextField("Prompt", text: $schedulePrompt)
-                        Button("Create") {
-                            var args = ["cron", "create", scheduleExpression, schedulePrompt]
-                            if !scheduleName.trimmedForHermes.isEmpty { args += ["--name", scheduleName] }
-                            runtime.run(.schedules, args)
-                        }
-                        .disabled(scheduleExpression.trimmedForHermes.isEmpty || schedulePrompt.trimmedForHermes.isEmpty)
-                    }
-                }
+                dashboardSchedulesSection
 
                 runtimeSection(
                     title: "Models",
@@ -351,6 +324,19 @@ struct HermesConfigurationView: View {
             server.primaryDetail.localizedCaseInsensitiveContains(query) ||
             server.transportLabel.localizedCaseInsensitiveContains(query) ||
             server.statusLabel.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var filteredDashboardSchedules: [HermesDashboardScheduleJob] {
+        let query = scheduleQuery.trimmedForHermes
+        guard !query.isEmpty else { return dashboardSchedules.jobs }
+        return dashboardSchedules.jobs.filter { job in
+            job.displayName.localizedCaseInsensitiveContains(query) ||
+            job.scheduleLabel.localizedCaseInsensitiveContains(query) ||
+            job.statusLabel.localizedCaseInsensitiveContains(query) ||
+            job.profileLabel.localizedCaseInsensitiveContains(query) ||
+            job.skillLabel.localizedCaseInsensitiveContains(query) ||
+            job.contentPreview.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -614,6 +600,7 @@ struct HermesConfigurationView: View {
         dashboardSkills.refreshForManagement(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         dashboardToolsets.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         dashboardMCPServers.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        dashboardSchedules.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         runtime.refreshAll()
     }
 
@@ -817,8 +804,144 @@ struct HermesConfigurationView: View {
         }
     }
 
+    private var dashboardSchedulesSection: some View {
+        runtimeSection(
+            title: "Schedules",
+            subtitle: "Loaded from Hermes Dashboard /api/cron/jobs. Enable, disable, and create cron schedules without hermes cron list.",
+            systemImage: "calendar.badge.clock",
+            output: dashboardSchedules.lastErrorMessage
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    TextField("Search schedules", text: $scheduleQuery)
+                    Button {
+                        dashboardSchedules.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(dashboardSchedules.isLoading)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        TextField("Name", text: $scheduleName)
+                        TextField("Schedule, e.g. every 2h or 0 9 * * *", text: $scheduleExpression)
+                    }
+                    TextField("Content / prompt", text: $schedulePrompt, axis: .vertical)
+                        .lineLimit(2...5)
+                    HStack {
+                        TextField("Optional skill name to execute", text: $scheduleSkillName)
+                        Button {
+                            addSchedule()
+                        } label: {
+                            Label("Add schedule", systemImage: "plus.circle.fill")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(scheduleName.trimmedForHermes.isEmpty || scheduleExpression.trimmedForHermes.isEmpty || (schedulePrompt.trimmedForHermes.isEmpty && scheduleSkillName.trimmedForHermes.isEmpty) || dashboardSchedules.isLoading)
+                    }
+                    Text("Provide content, a skill name, or both. Skill-backed jobs are created through the dashboard API and annotated with the selected skill.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                .padding(12)
+                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                if dashboardSchedules.isLoading && dashboardSchedules.jobs.isEmpty {
+                    ProgressView("Loading schedules from Hermes Dashboard…")
+                        .controlSize(.small)
+                } else if !dashboardSchedules.lastErrorMessage.isEmpty {
+                    Text(dashboardSchedules.lastErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                } else if filteredDashboardSchedules.isEmpty {
+                    Text(dashboardSchedules.jobs.isEmpty ? "No schedules reported by the Hermes Dashboard." : "No matching schedules.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(filteredDashboardSchedules) { job in
+                            dashboardScheduleRow(job)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func addSchedule() {
+        dashboardSchedules.createSchedule(
+            name: scheduleName,
+            schedule: scheduleExpression,
+            prompt: schedulePrompt,
+            skillName: scheduleSkillName,
+            dashboardBaseURL: dashboardURL,
+            apiSettings: apiSettings
+        )
+        scheduleName = ""
+        scheduleExpression = ""
+        schedulePrompt = ""
+        scheduleSkillName = ""
+    }
+
+    private func dashboardScheduleRow(_ job: HermesDashboardScheduleJob) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Toggle(isOn: Binding(
+                get: { job.isEnabled },
+                set: { enabled in
+                    dashboardSchedules.setJobEnabled(job, enabled: enabled, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(job.displayName)
+                            .font(.headline)
+                        Text(job.statusLabel)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background((job.isEnabled ? Color.green : Color.gray).opacity(0.16), in: Capsule())
+                            .foregroundStyle(job.isEnabled ? Color.green : Color.hermesSecondaryText)
+                        Text(job.profileLabel)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
+                    Text(job.scheduleLabel)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Color.hermesSecondaryText)
+                    if !job.skillLabel.isEmpty {
+                        Text("Skill: \(job.skillLabel)")
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesActionBlue)
+                    }
+                    Text(job.contentPreview)
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                        .lineLimit(2)
+                    HStack(spacing: 12) {
+                        Text("Next: \(job.nextRunAt ?? "—")")
+                        Text("Last: \(job.lastRunAt ?? "—")")
+                    }
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(Color.hermesSecondaryText.opacity(0.85))
+                    if let lastError = job.lastError, !lastError.isEmpty {
+                        Text(lastError)
+                            .font(.caption)
+                            .foregroundStyle(Color.orange)
+                            .lineLimit(2)
+                    }
+                }
+            }
+            .toggleStyle(.switch)
+            .disabled(dashboardSchedules.isLoading)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+
     private var localSystemBanner: some View {
-        Label("Configuration uses the Hermes Dashboard for skills and direct local system calls for the remaining macOS runtime controls, without HermesHostCompanion.", systemImage: "desktopcomputer")
+        Label("Configuration uses the Hermes Dashboard for skills, tools, MCP servers, and schedules, with direct local system calls only where needed on this Mac.", systemImage: "desktopcomputer")
             .font(.callout)
             .foregroundStyle(Color.hermesSecondaryText)
             .padding(14)
@@ -901,7 +1024,6 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
     func refreshAll() {
         run(.profiles, ["profile", "list"])
         searchKnowledge("")
-        run(.schedules, ["cron", "list", "--all"])
         run(.models, ["config"])
     }
 
