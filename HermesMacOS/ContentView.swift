@@ -450,7 +450,7 @@ struct ContentView: View {
         case .dashboard:
             HermesDashboardView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .configuration:
-            HermesConfigurationView(connectedHostName: connectedHostName, connectedWindowID: windowID)
+            HermesConfigurationView(apiSettings: apiSettings, dashboardURL: dashboardURL, connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,

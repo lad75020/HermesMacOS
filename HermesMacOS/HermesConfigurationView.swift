@@ -186,8 +186,8 @@ struct HermesDashboardWebView: NSViewRepresentable {
 
 struct HermesConfigurationView: View {
     @StateObject private var runtime = HermesLocalConfigurationRuntime()
+    @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var skillQuery = ""
-    @State private var skillInstallID = ""
     @State private var profileName = ""
     @State private var selectedTool = ""
     @State private var mcpName = ""
@@ -200,6 +200,8 @@ struct HermesConfigurationView: View {
     @State private var scheduleID = ""
     @State private var modelProvider = ""
     @State private var modelName = ""
+    let apiSettings: HermesAPISettings
+    let dashboardURL: String
     let connectedHostName: String
     let connectedWindowID: UUID
 
@@ -208,28 +210,7 @@ struct HermesConfigurationView: View {
             VStack(alignment: .leading, spacing: 16) {
                 header
                 localSystemBanner
-                runtimeSection(
-                    title: "Skills",
-                    subtitle: "List, search, install, update, and remove local Hermes skills.",
-                    systemImage: "square.stack.3d.up.fill",
-                    output: runtime.outputs[.skills]
-                ) {
-                    HStack {
-                        TextField("Search skills", text: $skillQuery)
-                        Button("Search") { runtime.run(.skills, ["skills", "search", skillQuery]) }
-                            .disabled(skillQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        Button("List") { runtime.run(.skills, ["skills", "list"]) }
-                        Button("Check Updates") { runtime.run(.skills, ["skills", "check"]) }
-                        Button("Update") { runtime.run(.skills, ["skills", "update"]) }
-                    }
-                    HStack {
-                        TextField("Skill ID or URL", text: $skillInstallID)
-                        Button("Install") { runtime.run(.skills, ["skills", "install", skillInstallID]) }
-                            .disabled(skillInstallID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        Button("Uninstall") { runtime.run(.skills, ["skills", "uninstall", skillInstallID]) }
-                            .disabled(skillInstallID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }
-                }
+                dashboardSkillsSection
 
                 runtimeSection(
                     title: "Profiles",
@@ -365,7 +346,128 @@ struct HermesConfigurationView: View {
             .padding(18)
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
-        .onAppear { runtime.refreshAll() }
+        .onAppear { refreshConfiguration() }
+    }
+
+    private var filteredDashboardSkills: [HermesDashboardSkill] {
+        let query = skillQuery.trimmedForHermes
+        guard !query.isEmpty else { return dashboardSkills.skills }
+        return dashboardSkills.skills.filter { skill in
+            skill.name.localizedCaseInsensitiveContains(query) ||
+            (skill.description ?? "").localizedCaseInsensitiveContains(query) ||
+            (skill.category ?? "").localizedCaseInsensitiveContains(query) ||
+            skill.statusLabel.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var dashboardSkillsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.hermesActionBlue)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Skills")
+                        .hermesWebsiteTitleFont(size: 17, weight: .bold)
+                    Text("Loaded from Hermes Dashboard /api/skills. Toggle status via /api/skills/toggle.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                Spacer()
+                if dashboardSkills.isLoading { ProgressView().controlSize(.small) }
+                Button {
+                    dashboardSkills.refreshForManagement(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.bordered)
+                .help("Refresh skills from Hermes Dashboard")
+            }
+
+            HStack {
+                TextField("Filter by name, description, category, or status", text: $skillQuery)
+                    .textFieldStyle(.roundedBorder)
+                Text("\(filteredDashboardSkills.count)/\(dashboardSkills.skills.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Color.hermesSecondaryText)
+            }
+
+            if !dashboardSkills.lastErrorMessage.isEmpty {
+                Label(dashboardSkills.lastErrorMessage, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesDestructive)
+            }
+
+            if dashboardSkills.skills.isEmpty && dashboardSkills.isLoading == false {
+                Text("No skills loaded. Check the Dashboard URL setting and press Refresh.")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(filteredDashboardSkills) { skill in
+                            dashboardSkillRow(skill)
+                        }
+                    }
+                    .padding(2)
+                }
+                .frame(minHeight: 180, maxHeight: 360)
+            }
+        }
+        .padding(16)
+        .hermesGlassPanel(cornerRadius: 18)
+    }
+
+    private func dashboardSkillRow(_ skill: HermesDashboardSkill) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(skill.name)
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                    Text(skill.category?.isEmpty == false ? skill.category! : "Uncategorized")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.hermesSecondaryText)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                    Text(skill.statusLabel)
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(skill.isEnabled ? Color.green : Color.hermesSecondaryText)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background((skill.isEnabled ? Color.green : Color.gray).opacity(0.14), in: Capsule())
+                }
+                if let description = skill.description, !description.isEmpty {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { skill.isEnabled },
+                set: { enabled in
+                    dashboardSkills.setSkillEnabled(skill, enabled: enabled, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+                }
+            ))
+            .labelsHidden()
+            .disabled(dashboardSkills.isLoading)
+            .help(skill.isEnabled ? "Disable \(skill.name)" : "Enable \(skill.name)")
+        }
+        .padding(10)
+        .background(Color.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func refreshConfiguration() {
+        dashboardSkills.refreshForManagement(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        runtime.refreshAll()
     }
 
     private var header: some View {
@@ -375,7 +477,7 @@ struct HermesConfigurationView: View {
             Spacer()
             HermesConnectedHostLabel(hostName: connectedHostName, windowID: connectedWindowID)
             Button {
-                runtime.refreshAll()
+                refreshConfiguration()
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
                     .labelStyle(.iconOnly)
@@ -388,7 +490,7 @@ struct HermesConfigurationView: View {
     }
 
     private var localSystemBanner: some View {
-        Label("Operations run directly on this Mac with the local hermes command and HERMES_HOME, without HermesHostCompanion.", systemImage: "desktopcomputer")
+        Label("Configuration uses the Hermes Dashboard for skills and direct local system calls for the remaining macOS runtime controls, without HermesHostCompanion.", systemImage: "desktopcomputer")
             .font(.callout)
             .foregroundStyle(Color.hermesSecondaryText)
             .padding(14)
@@ -469,7 +571,6 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
     private let hermesHome = "/Volumes/WDBlack4TB/.hermes"
 
     func refreshAll() {
-        run(.skills, ["skills", "list"])
         run(.profiles, ["profile", "list"])
         run(.tools, ["tools", "list"])
         run(.mcpServers, ["mcp", "list"])

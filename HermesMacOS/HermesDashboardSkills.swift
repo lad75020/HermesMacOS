@@ -5,12 +5,15 @@
 
 import SwiftUI
 
-struct HermesDashboardSkill: Decodable, Identifiable, Equatable {
+struct HermesDashboardSkill: Codable, Identifiable, Equatable {
     let name: String
     let description: String?
+    let category: String?
     let enabled: Bool?
 
     var id: String { name }
+    var isEnabled: Bool { enabled ?? true }
+    var statusLabel: String { isEnabled ? "Enabled" : "Disabled" }
 }
 
 @Observable
@@ -28,11 +31,24 @@ final class HermesDashboardSkillsStore {
     }
 
     func refresh(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
-        activeTask?.cancel()
-        activeTask = Task { await loadSkills(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
+        refresh(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, includeDisabled: false)
     }
 
-    private func loadSkills(dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
+    func refreshForManagement(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
+        refresh(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, includeDisabled: true)
+    }
+
+    func setSkillEnabled(_ skill: HermesDashboardSkill, enabled: Bool, dashboardBaseURL: String, apiSettings: HermesAPISettings) {
+        activeTask?.cancel()
+        activeTask = Task { await toggleSkill(skill, enabled: enabled, dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
+    }
+
+    private func refresh(dashboardBaseURL: String, apiSettings: HermesAPISettings, includeDisabled: Bool) {
+        activeTask?.cancel()
+        activeTask = Task { await loadSkills(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, includeDisabled: includeDisabled) }
+    }
+
+    private func loadSkills(dashboardBaseURL: String, apiSettings: HermesAPISettings, includeDisabled: Bool) async {
         isLoading = true
         lastErrorMessage = ""
         defer { isLoading = false }
@@ -42,8 +58,31 @@ final class HermesDashboardSkillsStore {
             let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
             let fetched = try await fetchSkills(baseURL: baseURL, token: token, apiSettings: apiSettings)
             skills = fetched
-                .filter { $0.enabled ?? true }
+                .filter { includeDisabled || ($0.enabled ?? true) }
                 .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        } catch {
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func toggleSkill(_ skill: HermesDashboardSkill, enabled: Bool, dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
+        isLoading = true
+        lastErrorMessage = ""
+        defer { isLoading = false }
+
+        do {
+            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            try await toggleSkillRequest(name: skill.name, enabled: enabled, baseURL: baseURL, token: token, apiSettings: apiSettings)
+            if let index = skills.firstIndex(where: { $0.name == skill.name }) {
+                skills[index] = HermesDashboardSkill(
+                    name: skill.name,
+                    description: skill.description,
+                    category: skill.category,
+                    enabled: enabled
+                )
+            }
+            await loadSkills(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, includeDisabled: true)
         } catch {
             lastErrorMessage = error.localizedDescription
         }
@@ -80,6 +119,19 @@ final class HermesDashboardSkillsStore {
         return try JSONDecoder().decode([HermesDashboardSkill].self, from: data)
     }
 
+    private func toggleSkillRequest(name: String, enabled: Bool, baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws {
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/skills/toggle"))
+        request.httpMethod = "PUT"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        request.httpBody = try JSONEncoder().encode(HermesDashboardSkillToggleRequest(name: name, enabled: enabled))
+        let session = HermesNetworkSessionFactory.session(for: apiSettings)
+        let (_, response) = try await session.data(for: request)
+        try HermesNetworkSessionFactory.validate(response: response)
+    }
+
     private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
         let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
@@ -94,6 +146,11 @@ final class HermesDashboardSkillsStore {
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
         return URL(string: trimmed)
     }
+}
+
+private struct HermesDashboardSkillToggleRequest: Encodable {
+    let name: String
+    let enabled: Bool
 }
 
 enum HermesDashboardSkillsError: LocalizedError {
