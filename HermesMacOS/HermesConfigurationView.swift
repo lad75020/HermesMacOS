@@ -205,7 +205,6 @@ struct HermesConfigurationView: View {
     @State private var mcpCommand = ""
     @State private var mcpArgs = ""
     @State private var mcpValidationMessage = ""
-    @State private var knowledgeQuery = ""
     @State private var scheduleName = ""
     @State private var scheduleExpression = ""
     @State private var schedulePrompt = ""
@@ -245,24 +244,6 @@ struct HermesConfigurationView: View {
                 dashboardToolsetsSection
 
                 dashboardMCPServersSection
-
-                runtimeSection(
-                    title: "Knowledge Eraser",
-                    subtitle: "Search local Hermes knowledge and open files for review or removal.",
-                    systemImage: "eraser.line.dashed.fill",
-                    output: runtime.outputs[.knowledge]
-                ) {
-                    HStack {
-                        TextField("Topic, phrase, or filename", text: $knowledgeQuery)
-                        Button("Search") { runtime.searchKnowledge(knowledgeQuery) }
-                            .disabled(knowledgeQuery.trimmedForHermes.isEmpty)
-                        Button("Open Knowledge Folder") { runtime.openHermesSubfolder("knowledge") }
-                        Button("Open Memory Folder") { runtime.openHermesSubfolder("memory") }
-                    }
-                    Text("For safety, erasing opens the local files for review instead of deleting broad matches automatically.")
-                        .font(.caption)
-                        .foregroundStyle(Color.hermesSecondaryText)
-                }
 
                 dashboardSchedulesSection
 
@@ -1185,7 +1166,7 @@ private struct HermesRuntimeModelSlotEditorCard: View {
 }
 
 private enum HermesLocalConfigurationSection: String, CaseIterable, Hashable {
-    case skills, profiles, tools, mcpServers, knowledge, schedules, models
+    case skills, profiles, tools, mcpServers, schedules, models
 
     init(title: String) {
         switch title {
@@ -1193,7 +1174,6 @@ private enum HermesLocalConfigurationSection: String, CaseIterable, Hashable {
         case "Profiles": self = .profiles
         case "Tools": self = .tools
         case "MCP Servers": self = .mcpServers
-        case "Knowledge Eraser": self = .knowledge
         case "Schedules": self = .schedules
         case "Models": self = .models
         default: self = .skills
@@ -1215,7 +1195,6 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
 
     func refreshAll() {
         run(.profiles, ["profile", "list"])
-        searchKnowledge("")
     }
 
     func run(_ section: HermesLocalConfigurationSection, _ arguments: [String]) {
@@ -1279,24 +1258,6 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
         }
     }
 
-    func searchKnowledge(_ query: String) {
-        let trimmed = query.trimmedForHermes
-        runningSections.insert(.knowledge)
-        outputs[.knowledge] = trimmed.isEmpty ? "Scanning local Hermes knowledge folders…" : "Searching local Hermes knowledge for \"\(trimmed)\"…"
-        Task.detached(priority: .userInitiated) { [hermesHome] in
-            let result = Self.executeKnowledgeSearch(query: trimmed, hermesHome: hermesHome)
-            await MainActor.run {
-                self.outputs[.knowledge] = result
-                self.runningSections.remove(.knowledge)
-            }
-        }
-    }
-
-    func openHermesSubfolder(_ name: String) {
-        let path = "\(hermesHome)/\(name)"
-        _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/open"), arguments: [path])
-    }
-
     private nonisolated static func execute(executable: String, arguments: [String], hermesHome: String) -> String {
         let process = Process()
         process.executableURL = FileManager.default.isExecutableFile(atPath: executable) ? URL(fileURLWithPath: executable) : URL(fileURLWithPath: "/opt/homebrew/bin/hermes")
@@ -1326,24 +1287,4 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
         }
     }
 
-    private nonisolated static func executeKnowledgeSearch(query: String, hermesHome: String) -> String {
-        let roots = ["knowledge", "memory", "skills"].map { URL(fileURLWithPath: hermesHome).appendingPathComponent($0) }
-        let fileManager = FileManager.default
-        var matches: [String] = []
-        for root in roots where fileManager.fileExists(atPath: root.path) {
-            guard let enumerator = fileManager.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { continue }
-            for case let fileURL as URL in enumerator {
-                guard (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
-                guard ["md", "txt", "json", "yaml", "yml"].contains(fileURL.pathExtension.lowercased()) else { continue }
-                if query.isEmpty {
-                    matches.append(fileURL.path)
-                } else if let content = try? String(contentsOf: fileURL, encoding: .utf8), content.localizedCaseInsensitiveContains(query) || fileURL.lastPathComponent.localizedCaseInsensitiveContains(query) {
-                    matches.append(fileURL.path)
-                }
-                if matches.count >= 200 { break }
-            }
-        }
-        if matches.isEmpty { return query.isEmpty ? "No local knowledge files found." : "No matches for \"\(query)\"." }
-        return matches.prefix(200).joined(separator: "\n")
-    }
 }

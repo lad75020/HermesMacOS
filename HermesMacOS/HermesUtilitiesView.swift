@@ -31,9 +31,11 @@ struct HermesUtilitiesView: View {
     @AppStorage("hermes.macOS.utilities.messagesHistoryExpanded") private var isMessagesHistoryExpanded = false
     @AppStorage("hermes.macOS.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @AppStorage("hermes.macOS.utilities.installationExpanded") private var isInstallationExpanded = false
+    @AppStorage("hermes.macOS.utilities.knowledgeEraserExpanded") private var isKnowledgeEraserExpanded = false
     @State private var statusMessage = String(localized: "Monitoring the Mac clipboard while HermesMacOS is active.")
     @State private var historyStatusMessage = String(localized: "Capturing prompts and responses sent from Ask Hermes and Chat with Hermes.")
     @State private var messagesHistoryMode: HermesMessagesHistoryMode = .prompt
+    @State private var knowledgeEraser = HermesKnowledgeEraserStore()
 
     private var selectedWorkspace: HermesAskWorkspace {
         workspaces.first(where: { $0.id == selectedWorkspaceID }) ?? workspaces[0]
@@ -75,6 +77,19 @@ struct HermesUtilitiesView: View {
                         HermesResponsesDebugPanel(workspaces: workspaces, selectedWorkspaceID: $selectedWorkspaceID, chatSession: chatSession)
                     } label: {
                         utilityDisclosureLabel(title: String(localized: "Debugging"), subtitle: String(localized: "Inspect streamed Responses and Chat JSON"), systemImage: "ladybug")
+                    }
+                    .tint(.hermesActionBlue)
+
+                    Divider().padding(.vertical, 8)
+
+                    DisclosureGroup(isExpanded: $isKnowledgeEraserExpanded) {
+                        HermesKnowledgeEraserUtilityPanel(store: knowledgeEraser)
+                    } label: {
+                        utilityDisclosureLabel(
+                            title: String(localized: "Knowledge Eraser"),
+                            subtitle: knowledgeEraser.items.isEmpty ? String(localized: "Find, review, archive, and erase topic-related knowledge") : String(localized: "\(knowledgeEraser.items.count) candidates • \(knowledgeEraser.selectedCount) selected"),
+                            systemImage: "eraser.line.dashed.fill"
+                        )
                     }
                     .tint(.hermesActionBlue)
 
@@ -124,6 +139,7 @@ struct HermesUtilitiesView: View {
         isMessagesHistoryExpanded = false
         isDebuggingExpanded = false
         isInstallationExpanded = false
+        isKnowledgeEraserExpanded = false
     }
 
     private func utilityDisclosureLabel(title: String, subtitle: String, systemImage: String) -> some View {
