@@ -190,15 +190,18 @@ struct HermesConfigurationView: View {
     @StateObject private var runtime = HermesLocalConfigurationRuntime()
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var dashboardToolsets = HermesDashboardToolsetsStore()
+    @State private var dashboardMCPServers = HermesDashboardMCPServersStore()
     @State private var skillQuery = ""
     @State private var toolsetQuery = ""
+    @State private var mcpQuery = ""
     @State private var skillInstallURL = ""
     @State private var selectedSkillFileURL: URL?
     @State private var skillInstallValidationMessage = ""
     @State private var profileName = ""
     @State private var mcpName = ""
-    @State private var mcpURL = ""
     @State private var mcpCommand = ""
+    @State private var mcpArgs = ""
+    @State private var mcpValidationMessage = ""
     @State private var knowledgeQuery = ""
     @State private var scheduleName = ""
     @State private var scheduleExpression = ""
@@ -240,31 +243,7 @@ struct HermesConfigurationView: View {
 
                 dashboardToolsetsSection
 
-                runtimeSection(
-                    title: "MCP Servers",
-                    subtitle: "List, add, test, configure, or remove MCP servers in local config.yaml.",
-                    systemImage: "point.3.connected.trianglepath.dotted",
-                    output: runtime.outputs[.mcpServers]
-                ) {
-                    HStack {
-                        TextField("Server name", text: $mcpName)
-                        Button("List") { runtime.run(.mcpServers, ["mcp", "list"]) }
-                        Button("Test") { runtime.run(.mcpServers, ["mcp", "test", mcpName]) }
-                            .disabled(mcpName.trimmedForHermes.isEmpty)
-                        Button("Remove") { runtime.run(.mcpServers, ["mcp", "remove", mcpName]) }
-                            .disabled(mcpName.trimmedForHermes.isEmpty)
-                    }
-                    HStack {
-                        TextField("MCP URL", text: $mcpURL)
-                        Button("Add URL") { runtime.run(.mcpServers, ["mcp", "add", mcpName, "--url", mcpURL]) }
-                            .disabled(mcpName.trimmedForHermes.isEmpty || mcpURL.trimmedForHermes.isEmpty)
-                    }
-                    HStack {
-                        TextField("Command", text: $mcpCommand)
-                        Button("Add Command") { runtime.run(.mcpServers, ["mcp", "add", mcpName, "--command", mcpCommand]) }
-                            .disabled(mcpName.trimmedForHermes.isEmpty || mcpCommand.trimmedForHermes.isEmpty)
-                    }
-                }
+                dashboardMCPServersSection
 
                 runtimeSection(
                     title: "Knowledge Eraser",
@@ -361,6 +340,17 @@ struct HermesConfigurationView: View {
             toolset.description.localizedCaseInsensitiveContains(query) ||
             toolset.statusLabel.localizedCaseInsensitiveContains(query) ||
             (toolset.tools ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    private var filteredDashboardMCPServers: [HermesDashboardMCPServer] {
+        let query = mcpQuery.trimmedForHermes
+        guard !query.isEmpty else { return dashboardMCPServers.servers }
+        return dashboardMCPServers.servers.filter { server in
+            server.name.localizedCaseInsensitiveContains(query) ||
+            server.primaryDetail.localizedCaseInsensitiveContains(query) ||
+            server.transportLabel.localizedCaseInsensitiveContains(query) ||
+            server.statusLabel.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -528,6 +518,56 @@ struct HermesConfigurationView: View {
         }
     }
 
+    private func addMCPServer() {
+        let name = mcpName.trimmedForHermes
+        let command = mcpCommand.trimmedForHermes
+        guard !name.isEmpty, !command.isEmpty else {
+            mcpValidationMessage = "Enter an MCP server name and command."
+            return
+        }
+        let args = splitMCPArguments(mcpArgs)
+        mcpValidationMessage = ""
+        runtime.addMCPServer(name: name, command: command, args: args) {
+            mcpName = ""
+            mcpCommand = ""
+            mcpArgs = ""
+            dashboardMCPServers.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        }
+    }
+
+    private func splitMCPArguments(_ text: String) -> [String] {
+        var result: [String] = []
+        var current = ""
+        var quote: Character?
+        var escaping = false
+        for character in text {
+            if escaping {
+                current.append(character)
+                escaping = false
+            } else if character == "\\" {
+                escaping = true
+            } else if let activeQuote = quote {
+                if character == activeQuote {
+                    quote = nil
+                } else {
+                    current.append(character)
+                }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character.isWhitespace {
+                if !current.isEmpty {
+                    result.append(current)
+                    current = ""
+                }
+            } else {
+                current.append(character)
+            }
+        }
+        if escaping { current.append("\\") }
+        if !current.isEmpty { result.append(current) }
+        return result
+    }
+
     private func dashboardSkillRow(_ skill: HermesDashboardSkill) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
@@ -573,6 +613,7 @@ struct HermesConfigurationView: View {
     private func refreshConfiguration() {
         dashboardSkills.refreshForManagement(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         dashboardToolsets.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        dashboardMCPServers.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         runtime.refreshAll()
     }
 
@@ -687,6 +728,95 @@ struct HermesConfigurationView: View {
         }
     }
 
+    private var dashboardMCPServersSection: some View {
+        runtimeSection(
+            title: "MCP Servers",
+            subtitle: "Loaded from Hermes Dashboard config. Delete through dashboard config; add command servers locally with hermes mcp add.",
+            systemImage: "point.3.connected.trianglepath.dotted",
+            output: runtime.outputs[.mcpServers]
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    TextField("Search MCP servers", text: $mcpQuery)
+                    Button {
+                        dashboardMCPServers.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(dashboardMCPServers.isLoading)
+                }
+
+                HStack {
+                    TextField("Name", text: $mcpName)
+                    TextField("Command", text: $mcpCommand)
+                    TextField("Args, e.g. -y package@latest", text: $mcpArgs)
+                    Button("Add") { addMCPServer() }
+                        .disabled(mcpName.trimmedForHermes.isEmpty || mcpCommand.trimmedForHermes.isEmpty || runtime.runningSections.contains(.mcpServers))
+                }
+                Text("Add uses local CLI: hermes mcp add <NAME> --command <COMMAND> --args <ARGS>.")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                if !mcpValidationMessage.isEmpty {
+                    Text(mcpValidationMessage)
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                }
+
+                if dashboardMCPServers.isLoading {
+                    ProgressView("Loading MCP servers from dashboard…")
+                        .controlSize(.small)
+                } else if !dashboardMCPServers.lastErrorMessage.isEmpty {
+                    Text(dashboardMCPServers.lastErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(Color.orange)
+                } else if filteredDashboardMCPServers.isEmpty {
+                    Text("No MCP servers found in dashboard config.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(filteredDashboardMCPServers) { server in
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack(spacing: 8) {
+                                        Text(server.name)
+                                            .font(.headline)
+                                        Text(server.transportLabel)
+                                            .font(.caption.weight(.semibold))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 2)
+                                            .background(Color.hermesActionBlue.opacity(0.16), in: Capsule())
+                                            .foregroundStyle(Color.hermesActionBlue)
+                                        Text(server.statusLabel)
+                                            .font(.caption.weight(.semibold))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 2)
+                                            .background((server.disabled ? Color.gray : Color.green).opacity(0.16), in: Capsule())
+                                            .foregroundStyle(server.disabled ? Color.hermesSecondaryText : Color.green)
+                                    }
+                                    Text(server.primaryDetail)
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(Color.hermesSecondaryText)
+                                }
+                                Spacer()
+                                Button(role: .destructive) {
+                                    dashboardMCPServers.deleteServer(server, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                .disabled(dashboardMCPServers.isLoading)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private var localSystemBanner: some View {
         Label("Configuration uses the Hermes Dashboard for skills and direct local system calls for the remaining macOS runtime controls, without HermesHostCompanion.", systemImage: "desktopcomputer")
             .font(.callout)
@@ -770,7 +900,6 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
 
     func refreshAll() {
         run(.profiles, ["profile", "list"])
-        run(.mcpServers, ["mcp", "list"])
         searchKnowledge("")
         run(.schedules, ["cron", "list", "--all"])
         run(.models, ["config"])
@@ -814,6 +943,24 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
             await MainActor.run {
                 self.outputs[.skills] = result
                 self.runningSections.remove(.skills)
+                completion()
+            }
+        }
+    }
+
+    func addMCPServer(name: String, command: String, args: [String], completion: @escaping @MainActor () -> Void) {
+        let cleanName = name.trimmedForHermes
+        let cleanCommand = command.trimmedForHermes
+        guard !cleanName.isEmpty, !cleanCommand.isEmpty else { return }
+        let cleanArgs = args.map { $0.trimmedForHermes }.filter { !$0.isEmpty }
+        let arguments = ["mcp", "add", cleanName, "--command", cleanCommand] + (cleanArgs.isEmpty ? [] : ["--args"] + cleanArgs)
+        runningSections.insert(.mcpServers)
+        outputs[.mcpServers] = "$ hermes \(arguments.joined(separator: " "))\nRunning…"
+        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome] in
+            let result = Self.execute(executable: hermesExecutable, arguments: arguments, hermesHome: hermesHome)
+            await MainActor.run {
+                self.outputs[.mcpServers] = result
+                self.runningSections.remove(.mcpServers)
                 completion()
             }
         }
