@@ -447,8 +447,10 @@ struct ContentView: View {
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
             )
+        case .dashboard:
+            HermesDashboardView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .configuration:
-            HermesConfigurationView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)
+            HermesConfigurationView(connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .utilities:
             HermesUtilitiesView(
                 clipboardHistory: clipboardHistory,
@@ -538,6 +540,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case ask
     case chat
     case history
+    case dashboard
     case configuration
     case utilities
 
@@ -548,6 +551,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .ask: "Ask Hermes"
         case .chat: "Chat with Hermes"
         case .history: "History"
+        case .dashboard: "Hermes Dashboard"
         case .configuration: "Configuration"
         case .utilities: "Utilities"
         }
@@ -558,6 +562,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .ask: "dot.radiowaves.left.and.right"
         case .chat: "text.bubble"
         case .history: "clock.arrow.circlepath"
+        case .dashboard: "speedometer"
         case .configuration: "gearshape.2"
         case .utilities: "wrench.and.screwdriver"
         }

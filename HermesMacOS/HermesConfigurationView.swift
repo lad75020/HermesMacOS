@@ -6,7 +6,7 @@
 import SwiftUI
 import WebKit
 
-struct HermesConfigurationView: View {
+struct HermesDashboardView: View {
     let dashboardURL: String
     let webViewStore: HermesDashboardWebViewStore
     let colorScheme: ColorScheme
@@ -34,7 +34,7 @@ struct HermesConfigurationView: View {
                     ContentUnavailableView(
                         "Dashboard URL required",
                         systemImage: "exclamationmark.triangle",
-                        description: Text("Set the Hermes Dashboard URL in Settings, then return here to load Configuration.")
+                        description: Text("Set the Hermes Dashboard URL in Settings, then return here to load Hermes Dashboard.")
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.72), cornerRadius: 20)
@@ -47,7 +47,7 @@ struct HermesConfigurationView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Label("Configuration", systemImage: "gearshape.2")
+            Label("Hermes Dashboard", systemImage: "speedometer")
                 .hermesWebsiteTitleFont(size: 22, weight: .bold)
             Button {
                 reloadToken = UUID()
@@ -180,5 +180,397 @@ struct HermesDashboardWebView: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         store.loadIfNeeded(url: url, reloadToken: reloadToken)
+    }
+}
+
+
+struct HermesConfigurationView: View {
+    @StateObject private var runtime = HermesLocalConfigurationRuntime()
+    @State private var skillQuery = ""
+    @State private var skillInstallID = ""
+    @State private var profileName = ""
+    @State private var selectedTool = ""
+    @State private var mcpName = ""
+    @State private var mcpURL = ""
+    @State private var mcpCommand = ""
+    @State private var knowledgeQuery = ""
+    @State private var scheduleName = ""
+    @State private var scheduleExpression = ""
+    @State private var schedulePrompt = ""
+    @State private var scheduleID = ""
+    @State private var modelProvider = ""
+    @State private var modelName = ""
+    let connectedHostName: String
+    let connectedWindowID: UUID
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header
+                localSystemBanner
+                runtimeSection(
+                    title: "Skills",
+                    subtitle: "List, search, install, update, and remove local Hermes skills.",
+                    systemImage: "square.stack.3d.up.fill",
+                    output: runtime.outputs[.skills]
+                ) {
+                    HStack {
+                        TextField("Search skills", text: $skillQuery)
+                        Button("Search") { runtime.run(.skills, ["skills", "search", skillQuery]) }
+                            .disabled(skillQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("List") { runtime.run(.skills, ["skills", "list"]) }
+                        Button("Check Updates") { runtime.run(.skills, ["skills", "check"]) }
+                        Button("Update") { runtime.run(.skills, ["skills", "update"]) }
+                    }
+                    HStack {
+                        TextField("Skill ID or URL", text: $skillInstallID)
+                        Button("Install") { runtime.run(.skills, ["skills", "install", skillInstallID]) }
+                            .disabled(skillInstallID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button("Uninstall") { runtime.run(.skills, ["skills", "uninstall", skillInstallID]) }
+                            .disabled(skillInstallID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+
+                runtimeSection(
+                    title: "Profiles",
+                    subtitle: "Manage local Hermes profiles directly on this Mac.",
+                    systemImage: "person.crop.rectangle.stack",
+                    output: runtime.outputs[.profiles]
+                ) {
+                    HStack {
+                        TextField("Profile name", text: $profileName)
+                        Button("List") { runtime.run(.profiles, ["profile", "list"]) }
+                        Button("Show") { runtime.run(.profiles, ["profile", "show", profileName]) }
+                            .disabled(profileName.trimmedForHermes.isEmpty)
+                        Button("Use") { runtime.run(.profiles, ["profile", "use", profileName]) }
+                            .disabled(profileName.trimmedForHermes.isEmpty)
+                        Button("Create") { runtime.run(.profiles, ["profile", "create", profileName]) }
+                            .disabled(profileName.trimmedForHermes.isEmpty)
+                        Button("Delete") { runtime.run(.profiles, ["profile", "delete", profileName]) }
+                            .disabled(profileName.trimmedForHermes.isEmpty)
+                    }
+                }
+
+                runtimeSection(
+                    title: "Tools",
+                    subtitle: "Enable or disable toolsets for new Hermes sessions.",
+                    systemImage: "wrench.and.screwdriver",
+                    output: runtime.outputs[.tools]
+                ) {
+                    HStack {
+                        TextField("Toolset name", text: $selectedTool)
+                        Button("List") { runtime.run(.tools, ["tools", "list"]) }
+                        Button("Enable") { runtime.run(.tools, ["tools", "enable", selectedTool]) }
+                            .disabled(selectedTool.trimmedForHermes.isEmpty)
+                        Button("Disable") { runtime.run(.tools, ["tools", "disable", selectedTool]) }
+                            .disabled(selectedTool.trimmedForHermes.isEmpty)
+                    }
+                }
+
+                runtimeSection(
+                    title: "MCP Servers",
+                    subtitle: "List, add, test, configure, or remove MCP servers in local config.yaml.",
+                    systemImage: "point.3.connected.trianglepath.dotted",
+                    output: runtime.outputs[.mcpServers]
+                ) {
+                    HStack {
+                        TextField("Server name", text: $mcpName)
+                        Button("List") { runtime.run(.mcpServers, ["mcp", "list"]) }
+                        Button("Test") { runtime.run(.mcpServers, ["mcp", "test", mcpName]) }
+                            .disabled(mcpName.trimmedForHermes.isEmpty)
+                        Button("Remove") { runtime.run(.mcpServers, ["mcp", "remove", mcpName]) }
+                            .disabled(mcpName.trimmedForHermes.isEmpty)
+                    }
+                    HStack {
+                        TextField("MCP URL", text: $mcpURL)
+                        Button("Add URL") { runtime.run(.mcpServers, ["mcp", "add", mcpName, "--url", mcpURL]) }
+                            .disabled(mcpName.trimmedForHermes.isEmpty || mcpURL.trimmedForHermes.isEmpty)
+                    }
+                    HStack {
+                        TextField("Command", text: $mcpCommand)
+                        Button("Add Command") { runtime.run(.mcpServers, ["mcp", "add", mcpName, "--command", mcpCommand]) }
+                            .disabled(mcpName.trimmedForHermes.isEmpty || mcpCommand.trimmedForHermes.isEmpty)
+                    }
+                }
+
+                runtimeSection(
+                    title: "Knowledge Eraser",
+                    subtitle: "Search local Hermes knowledge and open files for review or removal.",
+                    systemImage: "eraser.line.dashed.fill",
+                    output: runtime.outputs[.knowledge]
+                ) {
+                    HStack {
+                        TextField("Topic, phrase, or filename", text: $knowledgeQuery)
+                        Button("Search") { runtime.searchKnowledge(knowledgeQuery) }
+                            .disabled(knowledgeQuery.trimmedForHermes.isEmpty)
+                        Button("Open Knowledge Folder") { runtime.openHermesSubfolder("knowledge") }
+                        Button("Open Memory Folder") { runtime.openHermesSubfolder("memory") }
+                    }
+                    Text("For safety, erasing opens the local files for review instead of deleting broad matches automatically.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+
+                runtimeSection(
+                    title: "Schedules",
+                    subtitle: "Manage local Hermes cron jobs.",
+                    systemImage: "calendar.badge.clock",
+                    output: runtime.outputs[.schedules]
+                ) {
+                    HStack {
+                        TextField("Job ID", text: $scheduleID)
+                        Button("List") { runtime.run(.schedules, ["cron", "list", "--all"]) }
+                        Button("Run") { runtime.run(.schedules, ["cron", "run", scheduleID]) }
+                            .disabled(scheduleID.trimmedForHermes.isEmpty)
+                        Button("Pause") { runtime.run(.schedules, ["cron", "pause", scheduleID]) }
+                            .disabled(scheduleID.trimmedForHermes.isEmpty)
+                        Button("Resume") { runtime.run(.schedules, ["cron", "resume", scheduleID]) }
+                            .disabled(scheduleID.trimmedForHermes.isEmpty)
+                        Button("Remove") { runtime.run(.schedules, ["cron", "remove", scheduleID]) }
+                            .disabled(scheduleID.trimmedForHermes.isEmpty)
+                    }
+                    HStack {
+                        TextField("Name", text: $scheduleName)
+                        TextField("Schedule, e.g. every 2h", text: $scheduleExpression)
+                        TextField("Prompt", text: $schedulePrompt)
+                        Button("Create") {
+                            var args = ["cron", "create", scheduleExpression, schedulePrompt]
+                            if !scheduleName.trimmedForHermes.isEmpty { args += ["--name", scheduleName] }
+                            runtime.run(.schedules, args)
+                        }
+                        .disabled(scheduleExpression.trimmedForHermes.isEmpty || schedulePrompt.trimmedForHermes.isEmpty)
+                    }
+                }
+
+                runtimeSection(
+                    title: "Models",
+                    subtitle: "Inspect and update local provider/model routing.",
+                    systemImage: "cpu",
+                    output: runtime.outputs[.models]
+                ) {
+                    HStack {
+                        TextField("Provider", text: $modelProvider)
+                        TextField("Model", text: $modelName)
+                        Button("Current Config") { runtime.run(.models, ["config"]) }
+                        Button("Set") {
+                            runtime.runChained(.models, [
+                                ["config", "set", "model.provider", modelProvider],
+                                ["config", "set", "model.default", modelName]
+                            ])
+                        }
+                        .disabled(modelProvider.trimmedForHermes.isEmpty || modelName.trimmedForHermes.isEmpty)
+                    }
+                }
+            }
+            .padding(18)
+        }
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
+        .onAppear { runtime.refreshAll() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Label("Configuration", systemImage: "gearshape.2")
+                .hermesWebsiteTitleFont(size: 22, weight: .bold)
+            Spacer()
+            HermesConnectedHostLabel(hostName: connectedHostName, windowID: connectedWindowID)
+            Button {
+                runtime.refreshAll()
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderedProminent)
+            .help("Refresh local Hermes runtime status")
+        }
+        .padding(18)
+        .hermesGlassPanel(cornerRadius: 18)
+    }
+
+    private var localSystemBanner: some View {
+        Label("Operations run directly on this Mac with the local hermes command and HERMES_HOME, without HermesHostCompanion.", systemImage: "desktopcomputer")
+            .font(.callout)
+            .foregroundStyle(Color.hermesSecondaryText)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 14)
+    }
+
+    private func runtimeSection<Content: View>(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        output: String?,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.hermesActionBlue)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .hermesWebsiteTitleFont(size: 17, weight: .bold)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                Spacer()
+                if runtime.runningSections.contains(HermesLocalConfigurationSection(title: title)) {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            content()
+                .textFieldStyle(.roundedBorder)
+            ScrollView {
+                Text(output ?? "Not loaded yet.")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+            }
+            .frame(minHeight: 96, maxHeight: 180)
+            .background(Color.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .padding(16)
+        .hermesGlassPanel(cornerRadius: 18)
+    }
+}
+
+private enum HermesLocalConfigurationSection: String, CaseIterable, Hashable {
+    case skills, profiles, tools, mcpServers, knowledge, schedules, models
+
+    init(title: String) {
+        switch title {
+        case "Skills": self = .skills
+        case "Profiles": self = .profiles
+        case "Tools": self = .tools
+        case "MCP Servers": self = .mcpServers
+        case "Knowledge Eraser": self = .knowledge
+        case "Schedules": self = .schedules
+        case "Models": self = .models
+        default: self = .skills
+        }
+    }
+}
+
+private extension String {
+    var trimmedForHermes: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+@MainActor
+private final class HermesLocalConfigurationRuntime: ObservableObject {
+    @Published var outputs: [HermesLocalConfigurationSection: String] = [:]
+    @Published var runningSections: Set<HermesLocalConfigurationSection> = []
+
+    private let hermesExecutable = "/Users/laurent/.hermes/hermes-agent/venv/bin/hermes"
+    private let hermesHome = "/Volumes/WDBlack4TB/.hermes"
+
+    func refreshAll() {
+        run(.skills, ["skills", "list"])
+        run(.profiles, ["profile", "list"])
+        run(.tools, ["tools", "list"])
+        run(.mcpServers, ["mcp", "list"])
+        searchKnowledge("")
+        run(.schedules, ["cron", "list", "--all"])
+        run(.models, ["config"])
+    }
+
+    func run(_ section: HermesLocalConfigurationSection, _ arguments: [String]) {
+        let cleanArguments = arguments.map { $0.trimmedForHermes }.filter { !$0.isEmpty }
+        guard cleanArguments.isEmpty == false else { return }
+        runningSections.insert(section)
+        outputs[section] = "$ hermes \(cleanArguments.joined(separator: " "))\nRunning…"
+        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome] in
+            let result = Self.execute(executable: hermesExecutable, arguments: cleanArguments, hermesHome: hermesHome)
+            await MainActor.run {
+                self.outputs[section] = result
+                self.runningSections.remove(section)
+            }
+        }
+    }
+
+    func runChained(_ section: HermesLocalConfigurationSection, _ commands: [[String]]) {
+        runningSections.insert(section)
+        outputs[section] = "Running \(commands.count) local Hermes commands…"
+        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome] in
+            let combined = commands.map { command in
+                Self.execute(executable: hermesExecutable, arguments: command.map { $0.trimmedForHermes }.filter { !$0.isEmpty }, hermesHome: hermesHome)
+            }.joined(separator: "\n\n")
+            await MainActor.run {
+                self.outputs[section] = combined
+                self.runningSections.remove(section)
+            }
+        }
+    }
+
+    func searchKnowledge(_ query: String) {
+        let trimmed = query.trimmedForHermes
+        runningSections.insert(.knowledge)
+        outputs[.knowledge] = trimmed.isEmpty ? "Scanning local Hermes knowledge folders…" : "Searching local Hermes knowledge for \"\(trimmed)\"…"
+        Task.detached(priority: .userInitiated) { [hermesHome] in
+            let result = Self.executeKnowledgeSearch(query: trimmed, hermesHome: hermesHome)
+            await MainActor.run {
+                self.outputs[.knowledge] = result
+                self.runningSections.remove(.knowledge)
+            }
+        }
+    }
+
+    func openHermesSubfolder(_ name: String) {
+        let path = "\(hermesHome)/\(name)"
+        _ = try? Process.run(URL(fileURLWithPath: "/usr/bin/open"), arguments: [path])
+    }
+
+    private nonisolated static func execute(executable: String, arguments: [String], hermesHome: String) -> String {
+        let process = Process()
+        process.executableURL = FileManager.default.isExecutableFile(atPath: executable) ? URL(fileURLWithPath: executable) : URL(fileURLWithPath: "/opt/homebrew/bin/hermes")
+        process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["HERMES_HOME"] = hermesHome
+        environment["TERM"] = environment["TERM"] ?? "xterm-256color"
+        process.environment = environment
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do {
+            try process.run()
+            DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
+                if process.isRunning {
+                    process.terminate()
+                }
+            }
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let text = String(data: data, encoding: .utf8) ?? ""
+            let command = "$ hermes \(arguments.joined(separator: " "))"
+            let status = "exit \(process.terminationStatus)"
+            return [command, status, text.isEmpty ? "No output." : text].joined(separator: "\n")
+        } catch {
+            return "Failed to run hermes \(arguments.joined(separator: " ")): \(error.localizedDescription)"
+        }
+    }
+
+    private nonisolated static func executeKnowledgeSearch(query: String, hermesHome: String) -> String {
+        let roots = ["knowledge", "memory", "skills"].map { URL(fileURLWithPath: hermesHome).appendingPathComponent($0) }
+        let fileManager = FileManager.default
+        var matches: [String] = []
+        for root in roots where fileManager.fileExists(atPath: root.path) {
+            guard let enumerator = fileManager.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else { continue }
+            for case let fileURL as URL in enumerator {
+                guard (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
+                guard ["md", "txt", "json", "yaml", "yml"].contains(fileURL.pathExtension.lowercased()) else { continue }
+                if query.isEmpty {
+                    matches.append(fileURL.path)
+                } else if let content = try? String(contentsOf: fileURL, encoding: .utf8), content.localizedCaseInsensitiveContains(query) || fileURL.lastPathComponent.localizedCaseInsensitiveContains(query) {
+                    matches.append(fileURL.path)
+                }
+                if matches.count >= 200 { break }
+            }
+        }
+        if matches.isEmpty { return query.isEmpty ? "No local knowledge files found." : "No matches for \"\(query)\"." }
+        return matches.prefix(200).joined(separator: "\n")
     }
 }
