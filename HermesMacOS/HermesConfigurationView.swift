@@ -5,6 +5,8 @@
 
 import SwiftUI
 import WebKit
+import AppKit
+import UniformTypeIdentifiers
 
 struct HermesDashboardView: View {
     let dashboardURL: String
@@ -188,6 +190,9 @@ struct HermesConfigurationView: View {
     @StateObject private var runtime = HermesLocalConfigurationRuntime()
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var skillQuery = ""
+    @State private var skillInstallURL = ""
+    @State private var selectedSkillFileURL: URL?
+    @State private var skillInstallValidationMessage = ""
     @State private var profileName = ""
     @State private var selectedTool = ""
     @State private var mcpName = ""
@@ -394,6 +399,57 @@ struct HermesConfigurationView: View {
                     .foregroundStyle(Color.hermesSecondaryText)
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Button {
+                        pickSkillFile()
+                    } label: {
+                        Label("Choose SKILL.md", systemImage: "doc.badge.plus")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Text(selectedSkillFileURL?.lastPathComponent ?? "No local file selected")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                        .lineLimit(1)
+
+                    Spacer()
+                }
+                HStack(spacing: 8) {
+                    TextField("Or paste a skill URL", text: $skillInstallURL)
+                        .textFieldStyle(.roundedBorder)
+                    Button {
+                        addSkill()
+                    } label: {
+                        Label("Add skill", systemImage: "plus.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(skillInstallSource == nil || runtime.runningSections.contains(.skills))
+                }
+                if runtime.runningSections.contains(.skills) {
+                    Label("Installing skill…", systemImage: "hourglass")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                if !skillInstallValidationMessage.isEmpty {
+                    Label(skillInstallValidationMessage, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesDestructive)
+                }
+                if let installOutput = runtime.outputs[.skills], !installOutput.isEmpty {
+                    ScrollView {
+                        Text(installOutput)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(Color.hermesSecondaryText)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(10)
+                    }
+                    .frame(minHeight: 60, maxHeight: 140)
+                    .background(Color.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+
             if !dashboardSkills.lastErrorMessage.isEmpty {
                 Label(dashboardSkills.lastErrorMessage, systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -421,6 +477,56 @@ struct HermesConfigurationView: View {
         }
         .padding(16)
         .hermesGlassPanel(cornerRadius: 18)
+    }
+
+    private var skillInstallSource: String? {
+        let trimmedURL = skillInstallURL.trimmedForHermes
+        if !trimmedURL.isEmpty { return trimmedURL }
+        return selectedSkillFileURL?.path
+    }
+
+    private func pickSkillFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a SKILL.md file"
+        panel.prompt = "Choose"
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        if let markdownType = UTType(filenameExtension: "md") {
+            panel.allowedContentTypes = [markdownType]
+        }
+        if panel.runModal() == .OK, let url = panel.url {
+            selectedSkillFileURL = url
+            skillInstallValidationMessage = url.lastPathComponent == "SKILL.md" ? "" : "Selected file is not named SKILL.md. Hermes may reject it."
+        }
+    }
+
+    private func addSkill() {
+        guard let source = skillInstallSource else {
+            skillInstallValidationMessage = "Choose a SKILL.md file or enter a web URL."
+            return
+        }
+        let trimmedURL = skillInstallURL.trimmedForHermes
+        if !trimmedURL.isEmpty {
+            guard let url = URL(string: trimmedURL), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), url.host?.isEmpty == false else {
+                skillInstallValidationMessage = "Enter a valid http or https skill URL."
+                return
+            }
+        } else if let selectedSkillFileURL, selectedSkillFileURL.lastPathComponent != "SKILL.md" {
+            skillInstallValidationMessage = "Choose a file named SKILL.md."
+            return
+        }
+        let localFileURL = trimmedURL.isEmpty ? selectedSkillFileURL : nil
+        let didAccessLocalFile = localFileURL?.startAccessingSecurityScopedResource() ?? false
+        skillInstallValidationMessage = ""
+        runtime.installSkill(from: source) {
+            if didAccessLocalFile {
+                localFileURL?.stopAccessingSecurityScopedResource()
+            }
+            selectedSkillFileURL = nil
+            skillInstallURL = ""
+            dashboardSkills.refreshForManagement(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        }
     }
 
     private func dashboardSkillRow(_ skill: HermesDashboardSkill) -> some View {
@@ -603,6 +709,21 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
             await MainActor.run {
                 self.outputs[section] = combined
                 self.runningSections.remove(section)
+            }
+        }
+    }
+
+    func installSkill(from source: String, completion: @escaping @MainActor () -> Void) {
+        let trimmedSource = source.trimmedForHermes
+        guard !trimmedSource.isEmpty else { return }
+        runningSections.insert(.skills)
+        outputs[.skills] = "$ hermes skills install \(trimmedSource)\nRunning…"
+        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome] in
+            let result = Self.execute(executable: hermesExecutable, arguments: ["skills", "install", trimmedSource], hermesHome: hermesHome)
+            await MainActor.run {
+                self.outputs[.skills] = result
+                self.runningSections.remove(.skills)
+                completion()
             }
         }
     }
