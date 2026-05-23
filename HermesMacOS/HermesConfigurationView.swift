@@ -192,6 +192,7 @@ struct HermesConfigurationView: View {
     @State private var dashboardToolsets = HermesDashboardToolsetsStore()
     @State private var dashboardMCPServers = HermesDashboardMCPServersStore()
     @State private var dashboardSchedules = HermesDashboardSchedulesStore()
+    @State private var localRuntimeModels = HermesLocalRuntimeModelsStore()
     @State private var skillQuery = ""
     @State private var toolsetQuery = ""
     @State private var mcpQuery = ""
@@ -209,8 +210,6 @@ struct HermesConfigurationView: View {
     @State private var scheduleExpression = ""
     @State private var schedulePrompt = ""
     @State private var scheduleSkillName = ""
-    @State private var modelProvider = ""
-    @State private var modelName = ""
     let apiSettings: HermesAPISettings
     let dashboardURL: String
     let connectedHostName: String
@@ -267,25 +266,7 @@ struct HermesConfigurationView: View {
 
                 dashboardSchedulesSection
 
-                runtimeSection(
-                    title: "Models",
-                    subtitle: "Inspect and update local provider/model routing.",
-                    systemImage: "cpu",
-                    output: runtime.outputs[.models]
-                ) {
-                    HStack {
-                        TextField("Provider", text: $modelProvider)
-                        TextField("Model", text: $modelName)
-                        Button("Current Config") { runtime.run(.models, ["config"]) }
-                        Button("Set") {
-                            runtime.runChained(.models, [
-                                ["config", "set", "model.provider", modelProvider],
-                                ["config", "set", "model.default", modelName]
-                            ])
-                        }
-                        .disabled(modelProvider.trimmedForHermes.isEmpty || modelName.trimmedForHermes.isEmpty)
-                    }
-                }
+                localRuntimeModelsSection
             }
             .padding(18)
         }
@@ -601,6 +582,7 @@ struct HermesConfigurationView: View {
         dashboardToolsets.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         dashboardMCPServers.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         dashboardSchedules.refresh(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        localRuntimeModels.refresh()
         runtime.refreshAll()
     }
 
@@ -621,6 +603,115 @@ struct HermesConfigurationView: View {
         }
         .padding(18)
         .hermesGlassPanel(cornerRadius: 18)
+    }
+
+    private var localRuntimeModelsSection: some View {
+        runtimeSection(
+            title: "Models",
+            subtitle: "Configure main, delegation, and auxiliary runtime model routing in local config.yaml.",
+            systemImage: "cpu",
+            output: localRuntimeModels.lastStatusMessage
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Works like HermesiOS Agent Runtime: edit provider and model slots for the main conversation, delegated sub-agents, and auxiliary tasks. Changes are written directly on this Mac.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.hermesSecondaryText)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    configurationSummaryRow(label: "Hermes Home", value: localRuntimeModels.resolvedHermesHome.isEmpty ? "/Volumes/WDBlack4TB/.hermes" : localRuntimeModels.resolvedHermesHome)
+                    configurationSummaryRow(label: "Config", value: localRuntimeModels.configPath.isEmpty ? "/Volumes/WDBlack4TB/.hermes/config.yaml" : localRuntimeModels.configPath)
+                }
+
+                HStack {
+                    Button("Reload Models") { localRuntimeModels.refresh() }
+                    if localRuntimeModels.isLoading { ProgressView().controlSize(.small) }
+                    Spacer()
+                }
+
+                HermesRuntimeModelSlotEditorCard(
+                    title: "Main Model",
+                    subtitle: "Primary model for interactive Hermes Agent turns (`model.provider` and `model.default`).",
+                    systemImage: "sparkles",
+                    provider: localRuntimeModels.mainModel.provider,
+                    model: localRuntimeModels.mainModel.model,
+                    providerOptions: mainModelProviderOptions,
+                    onSave: { provider, model in localRuntimeModels.saveMain(provider: provider, model: model) }
+                )
+
+                HermesRuntimeModelSlotEditorCard(
+                    title: "Delegation Model",
+                    subtitle: "Model used when Hermes spawns delegated sub-agents (`delegation.provider` and `delegation.model`). Leave blank to inherit defaults.",
+                    systemImage: "person.2.wave.2",
+                    provider: localRuntimeModels.delegationModel.provider,
+                    model: localRuntimeModels.delegationModel.model,
+                    providerOptions: runtimeModelProviderOptions,
+                    allowEmptyProvider: true,
+                    onSave: { provider, model in
+                        localRuntimeModels.saveSlot(localRuntimeModels.delegationModel, provider: provider, model: model)
+                    }
+                )
+
+                Text("Auxiliary Models")
+                    .hermesWebsiteTitleFont(size: 15, weight: .bold)
+                Text("Use auto for Hermes automatic routing, main to inherit the main model, or leave model empty to use the provider's default auxiliary model.")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+
+                ForEach(localRuntimeModels.auxiliaryModels) { slot in
+                    HermesRuntimeModelSlotEditorCard(
+                        title: slot.label,
+                        subtitle: "Writes `auxiliary.\(slot.key).provider` and `auxiliary.\(slot.key).model`.",
+                        systemImage: auxiliaryModelIcon(for: slot.key),
+                        provider: slot.provider,
+                        model: slot.model,
+                        providerOptions: runtimeModelProviderOptions,
+                        allowEmptyProvider: true,
+                        onSave: { provider, model in
+                            localRuntimeModels.saveSlot(slot, provider: provider, model: model)
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private var mainModelProviderOptions: [HermesRuntimeProviderOption] {
+        localRuntimeModels.providerOptions.filter { $0.value != "main" }
+    }
+
+    private var runtimeModelProviderOptions: [HermesRuntimeProviderOption] {
+        var options = localRuntimeModels.providerOptions
+        if !options.contains(where: { $0.value == "main" }) {
+            options.insert(.init(value: "main", label: "Main model"), at: min(1, options.count))
+        }
+        return options
+    }
+
+    private func configurationSummaryRow(label: String, value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label).fontWeight(.semibold)
+            Spacer()
+            Text(value)
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(Color.hermesSecondaryText)
+                .textSelection(.enabled)
+        }
+        .font(.caption)
+    }
+
+    private func auxiliaryModelIcon(for key: String) -> String {
+        switch key {
+        case "vision": "eye"
+        case "web_extract": "doc.text.magnifyingglass"
+        case "compression": "arrow.down.forward.and.arrow.up.backward"
+        case "title_generation": "textformat"
+        case "mcp": "point.3.connected.trianglepath.dotted"
+        case "curator": "wand.and.stars"
+        case "skills_hub": "square.stack.3d.up.fill"
+        case "approval": "checkmark.shield"
+        case "session_search": "magnifyingglass.circle"
+        default: "cpu"
+        }
     }
 
     private var dashboardToolsetsSection: some View {
@@ -992,6 +1083,107 @@ struct HermesConfigurationView: View {
     }
 }
 
+private struct HermesRuntimeModelSlotEditorCard: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let provider: String
+    let model: String
+    let providerOptions: [HermesRuntimeProviderOption]
+    let allowEmptyProvider: Bool
+    let onSave: (String, String) -> Void
+
+    @State private var draftProvider: String
+    @State private var draftModel: String
+    @State private var saved = false
+
+    init(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        provider: String,
+        model: String,
+        providerOptions: [HermesRuntimeProviderOption],
+        allowEmptyProvider: Bool = false,
+        onSave: @escaping (String, String) -> Void
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.provider = provider
+        self.model = model
+        self.providerOptions = providerOptions
+        self.allowEmptyProvider = allowEmptyProvider
+        self.onSave = onSave
+        _draftProvider = State(initialValue: provider.isEmpty && !allowEmptyProvider ? "auto" : provider)
+        _draftModel = State(initialValue: model)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.hermesActionBlue)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                Spacer()
+                if saved {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.green)
+                }
+            }
+
+            Picker("Provider", selection: $draftProvider) {
+                if allowEmptyProvider {
+                    Text("Unset / inherit default").tag("")
+                }
+                ForEach(providerOptions) { option in
+                    Text(option.label).tag(option.value)
+                }
+                if !provider.isEmpty && !providerOptions.contains(where: { $0.value == provider }) {
+                    Text(provider).tag(provider)
+                }
+            }
+            .pickerStyle(.menu)
+
+            TextField("Model, e.g. anthropic/claude-sonnet-4", text: $draftModel)
+                .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 10) {
+                Button("Save") {
+                    onSave(draftProvider.trimmedForHermes, draftModel.trimmedForHermes)
+                    saved = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { saved = false }
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Reset Draft") {
+                    draftProvider = provider.isEmpty && !allowEmptyProvider ? "auto" : provider
+                    draftModel = model
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.hermesSurfaceInput, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onChange(of: provider) { _, newValue in
+            draftProvider = newValue.isEmpty && !allowEmptyProvider ? "auto" : newValue
+        }
+        .onChange(of: model) { _, newValue in
+            draftModel = newValue
+        }
+    }
+}
+
 private enum HermesLocalConfigurationSection: String, CaseIterable, Hashable {
     case skills, profiles, tools, mcpServers, knowledge, schedules, models
 
@@ -1024,7 +1216,6 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
     func refreshAll() {
         run(.profiles, ["profile", "list"])
         searchKnowledge("")
-        run(.models, ["config"])
     }
 
     func run(_ section: HermesLocalConfigurationSection, _ arguments: [String]) {
