@@ -187,6 +187,12 @@ struct HermesDashboardWebView: NSViewRepresentable {
 
 
 struct HermesConfigurationView: View {
+    @AppStorage("hermes.macOS.configuration.skillsExpanded") private var isSkillsExpanded = true
+    @AppStorage("hermes.macOS.configuration.profilesExpanded") private var isProfilesExpanded = true
+    @AppStorage("hermes.macOS.configuration.toolsExpanded") private var isToolsExpanded = true
+    @AppStorage("hermes.macOS.configuration.mcpServersExpanded") private var isMCPServersExpanded = true
+    @AppStorage("hermes.macOS.configuration.schedulesExpanded") private var isSchedulesExpanded = true
+    @AppStorage("hermes.macOS.configuration.modelsExpanded") private var isModelsExpanded = true
     @StateObject private var runtime = HermesLocalConfigurationRuntime()
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var dashboardToolsets = HermesDashboardToolsetsStore()
@@ -225,6 +231,7 @@ struct HermesConfigurationView: View {
                     title: "Profiles",
                     subtitle: "Manage local Hermes profiles directly on this Mac.",
                     systemImage: "person.crop.rectangle.stack",
+                    isExpanded: $isProfilesExpanded,
                     output: runtime.outputs[.profiles]
                 ) {
                     HStack {
@@ -303,31 +310,22 @@ struct HermesConfigurationView: View {
     }
 
     private var dashboardSkillsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "square.stack.3d.up.fill")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.hermesActionBlue)
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Skills")
-                        .hermesWebsiteTitleFont(size: 17, weight: .bold)
-                    Text("Loaded from Hermes Dashboard /api/skills. Toggle status via /api/skills/toggle.")
-                        .font(.caption)
-                        .foregroundStyle(Color.hermesSecondaryText)
-                }
-                Spacer()
-                if dashboardSkills.isLoading { ProgressView().controlSize(.small) }
-                Button {
-                    dashboardSkills.refreshForManagement(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                        .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.bordered)
-                .help("Refresh skills from Hermes Dashboard")
+        configurationSection(
+            title: "Skills",
+            subtitle: "Loaded from Hermes Dashboard /api/skills. Toggle status via /api/skills/toggle.",
+            systemImage: "square.stack.3d.up.fill",
+            isExpanded: $isSkillsExpanded
+        ) {
+            if dashboardSkills.isLoading { ProgressView().controlSize(.small) }
+            Button {
+                dashboardSkills.refreshForManagement(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
             }
-
+            .buttonStyle(.bordered)
+            .help("Refresh skills from Hermes Dashboard")
+        } content: {
             HStack {
                 TextField("Filter by name, description, category, or status", text: $skillQuery)
                     .textFieldStyle(.roundedBorder)
@@ -412,8 +410,6 @@ struct HermesConfigurationView: View {
                 .frame(minHeight: 180, maxHeight: 360)
             }
         }
-        .padding(16)
-        .hermesGlassPanel(cornerRadius: 18)
     }
 
     private var skillInstallSource: String? {
@@ -591,6 +587,7 @@ struct HermesConfigurationView: View {
             title: "Models",
             subtitle: "Configure main, delegation, and auxiliary runtime model routing in local config.yaml.",
             systemImage: "cpu",
+            isExpanded: $isModelsExpanded,
             output: localRuntimeModels.lastStatusMessage
         ) {
             VStack(alignment: .leading, spacing: 16) {
@@ -700,6 +697,7 @@ struct HermesConfigurationView: View {
             title: "Tools",
             subtitle: "Enable or disable dashboard toolsets for new Hermes sessions.",
             systemImage: "wrench.and.screwdriver",
+            isExpanded: $isToolsExpanded,
             output: dashboardToolsets.lastErrorMessage
         ) {
             VStack(alignment: .leading, spacing: 12) {
@@ -792,6 +790,7 @@ struct HermesConfigurationView: View {
             title: "MCP Servers",
             subtitle: "Loaded from Hermes Dashboard config. Delete through dashboard config; add command servers locally with hermes mcp add.",
             systemImage: "point.3.connected.trianglepath.dotted",
+            isExpanded: $isMCPServersExpanded,
             output: runtime.outputs[.mcpServers]
         ) {
             VStack(alignment: .leading, spacing: 12) {
@@ -881,6 +880,7 @@ struct HermesConfigurationView: View {
             title: "Schedules",
             subtitle: "Loaded from Hermes Dashboard /api/cron/jobs. Enable, disable, and create cron schedules without hermes cron list.",
             systemImage: "calendar.badge.clock",
+            isExpanded: $isSchedulesExpanded,
             output: dashboardSchedules.lastErrorMessage
         ) {
             VStack(alignment: .leading, spacing: 12) {
@@ -1025,27 +1025,20 @@ struct HermesConfigurationView: View {
         title: String,
         subtitle: String,
         systemImage: String,
+        isExpanded: Binding<Bool>,
         output: String?,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Color.hermesActionBlue)
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .hermesWebsiteTitleFont(size: 17, weight: .bold)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Color.hermesSecondaryText)
-                }
-                Spacer()
-                if runtime.runningSections.contains(HermesLocalConfigurationSection(title: title)) {
-                    ProgressView().controlSize(.small)
-                }
+        configurationSection(
+            title: title,
+            subtitle: subtitle,
+            systemImage: systemImage,
+            isExpanded: isExpanded
+        ) {
+            if runtime.runningSections.contains(HermesLocalConfigurationSection(title: title)) {
+                ProgressView().controlSize(.small)
             }
+        } content: {
             content()
                 .textFieldStyle(.roundedBorder)
             ScrollView {
@@ -1059,6 +1052,42 @@ struct HermesConfigurationView: View {
             .frame(minHeight: 96, maxHeight: 180)
             .background(Color.black.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
+    }
+
+    private func configurationSection<Content: View, Trailing: View>(
+        title: String,
+        subtitle: String,
+        systemImage: String,
+        isExpanded: Binding<Bool>,
+        @ViewBuilder trailing: @escaping () -> Trailing,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        DisclosureGroup(isExpanded: isExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                content()
+            }
+            .padding(.top, 12)
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.hermesActionBlue)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .hermesWebsiteTitleFont(size: 17, weight: .bold)
+                    if isExpanded.wrappedValue {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
+                }
+                Spacer()
+                trailing()
+            }
+            .contentShape(Rectangle())
+        }
+        .tint(Color.hermesActionBlue)
         .padding(16)
         .hermesGlassPanel(cornerRadius: 18)
     }
