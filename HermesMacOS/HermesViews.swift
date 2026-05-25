@@ -1000,9 +1000,16 @@ private struct HermesBubbleMessageText: View {
 enum HermesBubbleTextFormatter {
     static func displayLineFeeds(in text: String) -> String {
         text
-            .replacingOccurrences(of: "\\r\\n", with: "\n")
-            .replacingOccurrences(of: "\\n", with: "\n")
-            .replacingOccurrences(of: "\\r", with: "\n")
+            // JSON can arrive as a raw object string ("\\n") or as a
+            // double-encoded JSON fragment ("\\\\n"). Normalize the
+            // double-escaped spellings first so the bubble shows a real line
+            // feed instead of a stray backslash plus a line break.
+            .replacingOccurrences(of: #"\\r\\n"#, with: "\n")
+            .replacingOccurrences(of: #"\\n"#, with: "\n")
+            .replacingOccurrences(of: #"\\r"#, with: "\n")
+            .replacingOccurrences(of: #"\r\n"#, with: "\n")
+            .replacingOccurrences(of: #"\n"#, with: "\n")
+            .replacingOccurrences(of: #"\r"#, with: "\n")
     }
 }
 
