@@ -28,6 +28,7 @@ final class HermesChatSession {
     var sessionTitle = ""
     var activeResponseMessageID: UUID?
     var activeResponseElapsedSeconds: Int?
+    var activeResponseTokenUsage: HermesTokenUsage?
 
     var displaySessionTitle: String {
         let trimmedTitle = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -87,6 +88,7 @@ final class HermesChatSession {
         activeAssistantEntryID = nil
         activeResponseMessageID = nil
         activeResponseElapsedSeconds = nil
+        activeResponseTokenUsage = nil
         responseTimingTask?.cancel()
         responseTimingTask = nil
         responseTimingStart = nil
@@ -118,6 +120,7 @@ final class HermesChatSession {
         activeAssistantEntryID = nil
         activeResponseMessageID = nil
         activeResponseElapsedSeconds = nil
+        activeResponseTokenUsage = nil
         responseTimingTask?.cancel()
         responseTimingTask = nil
         responseTimingStart = nil
@@ -289,12 +292,14 @@ final class HermesChatSession {
         rawStreamedJSON = ""
         debugEventText = ""
         activeAssistantEntryID = nil
+        activeResponseTokenUsage = nil
     }
 
     private func appendExchange(prompt: String) {
         guard !prompt.isEmpty else { return }
         entries.append(.init(role: "user", content: prompt))
         let assistant = HermesChatMessage(role: "assistant", content: "")
+        activeResponseTokenUsage = nil
         activeAssistantEntryID = assistant.id
         activeResponseMessageID = assistant.id
         entries.append(assistant)
@@ -320,6 +325,11 @@ final class HermesChatSession {
     private func stopResponseTiming() {
         if let responseTimingStart {
             activeResponseElapsedSeconds = max(0, Int(Date().timeIntervalSince(responseTimingStart)))
+        }
+        if let activeResponseMessageID,
+           let activeResponseTokenUsage,
+           let index = entries.firstIndex(where: { $0.id == activeResponseMessageID }) {
+            entries[index].tokenUsage = activeResponseTokenUsage
         }
         responseTimingTask?.cancel()
         responseTimingTask = nil
@@ -380,6 +390,7 @@ final class HermesChatSession {
 
         if let envelope = try? JSONDecoder().decode(HermesChatCompletionEnvelope.self, from: data) {
             persistLastChatSessionID(envelope.resolvedSessionID)
+            updateTokenUsage(envelope.usage)
             streamedText = envelope.assistantText
         }
         eventCount = 1
@@ -555,6 +566,7 @@ final class HermesChatSession {
             if let sessionID = payload.string(at: ["session_id"]) ?? payload.string(at: ["session", "id"]) {
                 persistLastChatSessionID(sessionID)
             }
+            updateTokenUsage(payload.tokenUsage())
             let delta = extractChatText(from: payload, eventName: event.name)
             let extractedTextFromPayload = !delta.isEmpty
             let eventStatus = statusMessage(for: event, payload: payload, didExtractText: extractedTextFromPayload)
@@ -588,6 +600,14 @@ final class HermesChatSession {
                 streamedText += delta
             }
             updateActiveAssistantEntry(with: streamedText)
+        }
+    }
+
+    private func updateTokenUsage(_ usage: HermesTokenUsage?) {
+        guard let usage, !usage.isEmpty else { return }
+        activeResponseTokenUsage = usage
+        if let activeResponseMessageID, let index = entries.firstIndex(where: { $0.id == activeResponseMessageID }) {
+            entries[index].tokenUsage = usage
         }
     }
 
@@ -847,6 +867,7 @@ struct HermesChatMessage: Identifiable {
     let id = UUID()
     let role: String
     var content: String
+    var tokenUsage: HermesTokenUsage? = nil
 }
 
 private struct HermesChatCompletionsRequestBody: Encodable {
@@ -943,6 +964,7 @@ private struct HermesChatCompletionEnvelope: Decodable {
     let id: String?
     let sessionID: String?
     let choices: [HermesChatChoice]
+    let usage: HermesTokenUsage?
 
     var assistantText: String {
         choices.compactMap(\.message?.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
@@ -956,6 +978,7 @@ private struct HermesChatCompletionEnvelope: Decodable {
         case id
         case sessionID = "session_id"
         case choices
+        case usage
     }
 }
 

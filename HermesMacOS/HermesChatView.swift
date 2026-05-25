@@ -118,7 +118,8 @@ struct HermesChatConsoleView: View {
                                 liveContent: liveContent(for: message),
                                 fontSize: chatBubbleFontSize,
                                 isResponding: isChatPlaceholder(message),
-                                responseElapsedSeconds: responseElapsedSeconds(for: message)
+                                responseElapsedSeconds: responseElapsedSeconds(for: message),
+                                tokenUsage: tokenUsage(for: message)
                             )
                                 .id(message.id)
                         }
@@ -395,8 +396,19 @@ struct HermesChatConsoleView: View {
     }
 
     private func responseElapsedSeconds(for message: HermesChatMessage) -> Int? {
-        guard message.role != "user", message.id == chatSession.activeResponseMessageID else { return nil }
-        return chatSession.activeResponseElapsedSeconds
+        guard message.role != "user" else { return nil }
+        if message.id == chatSession.activeResponseMessageID {
+            return chatSession.activeResponseElapsedSeconds
+        }
+        return nil
+    }
+
+    private func tokenUsage(for message: HermesChatMessage) -> HermesTokenUsage? {
+        guard message.role != "user" else { return nil }
+        if message.id == chatSession.activeResponseMessageID {
+            return chatSession.activeResponseTokenUsage ?? message.tokenUsage
+        }
+        return message.tokenUsage
     }
 
     private func resolvedLiveContent(for message: HermesChatMessage) -> String {
@@ -442,6 +454,7 @@ struct HermesChatBubble: View {
     let fontSize: Double
     var isResponding = false
     var responseElapsedSeconds: Int?
+    var tokenUsage: HermesTokenUsage?
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -456,6 +469,12 @@ struct HermesChatBubble: View {
                             .font(.caption.monospacedDigit().weight(.semibold))
                             .foregroundStyle(Color.hermesOrange)
                             .accessibilityLabel("Response streaming time \(Self.formattedElapsedAccessibilityTime(responseElapsedSeconds))")
+                    }
+                    if let tokenUsage, !tokenUsage.isEmpty, !isUser {
+                        Text(tokenUsage.displayText)
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(Color.hermesSecondaryText)
+                            .accessibilityLabel("Response token usage: \(tokenUsage.accessibilityText)")
                     }
                 }
                 HermesCopyableBubbleContent(text: displayContent, copyText: message.content, isUser: isUser, rendersMarkdown: !isUser, fontSize: fontSize, isResponding: isResponding)

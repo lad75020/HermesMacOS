@@ -7,14 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		E8D4C3B27A974F8196C2D5A0 /* HermesLocalProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A96D38C4B94A1AB3F0C7E2 /* HermesLocalProfiles.swift */; };
-		C4E22D9B31A6404E9F216A11 /* HermesKnowledgeEraserUtility.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B1C7E54F924B61902A3E89 /* HermesKnowledgeEraserUtility.swift */; };
-		A94C8F1D39E247E4B5A61072 /* HermesLocalRuntimeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B86D4A7C2E9F41C6A5308D21 /* HermesLocalRuntimeModels.swift */; };
-		E62F41B8A9D54C2197B3084A /* HermesDashboardSchedules.swift in Sources */ = {isa = PBXBuildFile; fileRef = F73A52C91B4E4D4CA830692B /* HermesDashboardSchedules.swift */; };
-		C83F9D6A214E4B7FA2D9C031 /* HermesDashboardMCPServers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51A8C72F6E04B8CA419E273 /* HermesDashboardMCPServers.swift */; };
 		0724D3B1772C360DF5DA9252 /* JetBrainsMono-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = F3FB4E9B657C2FD9D30A00C1 /* JetBrainsMono-Regular.woff2 */; };
 		0D0492D08725C1EF5F09E3F0 /* HermesDashboardSkills.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC604AF483CFF67A41BA12A3 /* HermesDashboardSkills.swift */; };
-		A12F0B9C87D34E1A9B6C5201 /* HermesDashboardToolsets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42E7D0A19C64F5A8E3D2710 /* HermesDashboardToolsets.swift */; };
 		0FD78FCA7D9BEBCEF1A82EB6 /* RulesExpanded-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 952B0A6ABF1E202BF580B269 /* RulesExpanded-Regular.woff2 */; };
 		2776471A84D2345DB28B851A /* HermesSpeechToText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */; };
 		483D761E91F51DD21D2548E4 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EACF0689F8F9A1772463C81 /* SplashView.swift */; };
@@ -26,26 +20,27 @@
 		894771D840EFDC655AA6773F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4501AB7BBEE0E95DA1F88BD8 /* Assets.xcassets */; };
 		8C0CBEB9FC4A6D4040EBFD56 /* HermesMacOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */; };
 		94CFB24AD7B68108672D0497 /* HermesHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F22943CF56D37CF71DD1CD /* HermesHistoryView.swift */; };
+		A12F0B9C87D34E1A9B6C5201 /* HermesDashboardToolsets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42E7D0A19C64F5A8E3D2710 /* HermesDashboardToolsets.swift */; };
+		A94C8F1D39E247E4B5A61072 /* HermesLocalRuntimeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B86D4A7C2E9F41C6A5308D21 /* HermesLocalRuntimeModels.swift */; };
 		AB364C25AEB7E281976FF7DA /* HermesChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E23D78F8C8391F85BE1F3FFF /* HermesChatView.swift */; };
 		ADA3B122D278EEEE2D7A34BD /* HermesDashboardHistorySearch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */; };
 		C29A742AAE1F188A9653ADB4 /* HermesUtilitiesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EBD3C94B644F20D2E6BD269 /* HermesUtilitiesView.swift */; };
+		C4E22D9B31A6404E9F216A11 /* HermesKnowledgeEraserUtility.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B1C7E54F924B61902A3E89 /* HermesKnowledgeEraserUtility.swift */; };
+		C83F9D6A214E4B7FA2D9C031 /* HermesDashboardMCPServers.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51A8C72F6E04B8CA419E273 /* HermesDashboardMCPServers.swift */; };
 		D65D293D4E89089922501618 /* HermesConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43E8823EB1ED5D1894AC19DA /* HermesConfigurationView.swift */; };
 		DB23DA2FDB511CAEB70B396D /* HermesSplash.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 261DC1AC9FE01008500D6665 /* HermesSplash.mp4 */; };
 		DC9951D9255D694859E91CC4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69CBD5F9B22B44BCCD839298 /* ContentView.swift */; };
 		E1848BEE3EF0960620A17BD3 /* HermesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6696056CAFB17C7255BD45D7 /* HermesViews.swift */; };
+		E62F41B8A9D54C2197B3084A /* HermesDashboardSchedules.swift in Sources */ = {isa = PBXBuildFile; fileRef = F73A52C91B4E4D4CA830692B /* HermesDashboardSchedules.swift */; };
 		E6744ACE824DD627E37B9020 /* HermesChatCompletionsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */; };
 		E6DB079DBEBCA1119036ACEA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */; };
+		E8D4C3B27A974F8196C2D5A0 /* HermesLocalProfiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A96D38C4B94A1AB3F0C7E2 /* HermesLocalProfiles.swift */; };
 		EA79CB1E2A998BE7404B71C6 /* HermesInstallationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11CEF196220572F395969711 /* HermesInstallationView.swift */; };
 		EC7B891993F3D2C1EA9AC233 /* HermesTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6205CE4D8DF6062D876C169 /* HermesTypography.swift */; };
 		F13714B10A79E7A22C66A8FA /* RulesExpanded-Bold.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 3B6DA44781589EEE8E783934 /* RulesExpanded-Bold.woff2 */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		F1A96D38C4B94A1AB3F0C7E2 /* HermesLocalProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesLocalProfiles.swift; sourceTree = "<group>"; };
-		B86D4A7C2E9F41C6A5308D21 /* HermesLocalRuntimeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesLocalRuntimeModels.swift; sourceTree = "<group>"; };
-		D7B1C7E54F924B61902A3E89 /* HermesKnowledgeEraserUtility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesKnowledgeEraserUtility.swift; sourceTree = "<group>"; };
-		F73A52C91B4E4D4CA830692B /* HermesDashboardSchedules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardSchedules.swift; sourceTree = "<group>"; };
-		D51A8C72F6E04B8CA419E273 /* HermesDashboardMCPServers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardMCPServers.swift; sourceTree = "<group>"; };
 		03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesChatCompletionsAPI.swift; sourceTree = "<group>"; };
 		0EACF0689F8F9A1772463C81 /* SplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplashView.swift; sourceTree = "<group>"; };
 		11CEF196220572F395969711 /* HermesInstallationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesInstallationView.swift; sourceTree = "<group>"; };
@@ -53,31 +48,36 @@
 		1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardHistorySearch.swift; sourceTree = "<group>"; };
 		1EBD3C94B644F20D2E6BD269 /* HermesUtilitiesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesUtilitiesView.swift; sourceTree = "<group>"; };
 		2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
-		261DC1AC9FE01008500D6665 /* HermesSplash.mp4 */ = {isa = PBXFileReference; path = HermesSplash.mp4; sourceTree = "<group>"; };
-		28E6EB259A2B46DF7A3B0134 /* JetBrainsMono-Bold.woff2 */ = {isa = PBXFileReference; path = "JetBrainsMono-Bold.woff2"; sourceTree = "<group>"; };
+		261DC1AC9FE01008500D6665 /* HermesSplash.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = HermesSplash.mp4; sourceTree = "<group>"; };
+		28E6EB259A2B46DF7A3B0134 /* JetBrainsMono-Bold.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Bold.woff2"; sourceTree = "<group>"; };
 		37F22943CF56D37CF71DD1CD /* HermesHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesHistoryView.swift; sourceTree = "<group>"; };
-		3B6DA44781589EEE8E783934 /* RulesExpanded-Bold.woff2 */ = {isa = PBXFileReference; path = "RulesExpanded-Bold.woff2"; sourceTree = "<group>"; };
+		3B6DA44781589EEE8E783934 /* RulesExpanded-Bold.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RulesExpanded-Bold.woff2"; sourceTree = "<group>"; };
 		43E8823EB1ED5D1894AC19DA /* HermesConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationView.swift; sourceTree = "<group>"; };
 		4501AB7BBEE0E95DA1F88BD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		59D8EC4527F9A1247F7B7D87 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		6696056CAFB17C7255BD45D7 /* HermesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesViews.swift; sourceTree = "<group>"; };
 		69CBD5F9B22B44BCCD839298 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		952B0A6ABF1E202BF580B269 /* RulesExpanded-Regular.woff2 */ = {isa = PBXFileReference; path = "RulesExpanded-Regular.woff2"; sourceTree = "<group>"; };
+		952B0A6ABF1E202BF580B269 /* RulesExpanded-Regular.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RulesExpanded-Regular.woff2"; sourceTree = "<group>"; };
 		98751529CF81E71302A3466F /* HermesMacOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HermesMacOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6205CE4D8DF6062D876C169 /* HermesTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesTypography.swift; sourceTree = "<group>"; };
 		AC30A9107E0067942908A526 /* HermesAskWorkspacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesAskWorkspacesView.swift; sourceTree = "<group>"; };
+		B42E7D0A19C64F5A8E3D2710 /* HermesDashboardToolsets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardToolsets.swift; sourceTree = "<group>"; };
 		B58BD62886261007C1C9E595 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
+		B86D4A7C2E9F41C6A5308D21 /* HermesLocalRuntimeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesLocalRuntimeModels.swift; sourceTree = "<group>"; };
 		C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesSpeechToText.swift; sourceTree = "<group>"; };
+		D51A8C72F6E04B8CA419E273 /* HermesDashboardMCPServers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardMCPServers.swift; sourceTree = "<group>"; };
 		D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMacOSApp.swift; sourceTree = "<group>"; };
 		D76746761A58C12E6B3890D5 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		D7B1C7E54F924B61902A3E89 /* HermesKnowledgeEraserUtility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesKnowledgeEraserUtility.swift; sourceTree = "<group>"; };
 		E23D78F8C8391F85BE1F3FFF /* HermesChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesChatView.swift; sourceTree = "<group>"; };
 		EBBF745CBB6AEE27A9D9EB9E /* HermesModelsAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesModelsAPI.swift; sourceTree = "<group>"; };
+		F1A96D38C4B94A1AB3F0C7E2 /* HermesLocalProfiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesLocalProfiles.swift; sourceTree = "<group>"; };
 		F32AE47EB41A0A5D4A1AC620 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		F3FB4E9B657C2FD9D30A00C1 /* JetBrainsMono-Regular.woff2 */ = {isa = PBXFileReference; path = "JetBrainsMono-Regular.woff2"; sourceTree = "<group>"; };
+		F3FB4E9B657C2FD9D30A00C1 /* JetBrainsMono-Regular.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Regular.woff2"; sourceTree = "<group>"; };
+		F73A52C91B4E4D4CA830692B /* HermesDashboardSchedules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardSchedules.swift; sourceTree = "<group>"; };
 		FA43AC78DAFC778F3E5332ED /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		FBC2DDAD3CDD391DBF2E2572 /* Mondwest-Regular.woff2 */ = {isa = PBXFileReference; path = "Mondwest-Regular.woff2"; sourceTree = "<group>"; };
+		FBC2DDAD3CDD391DBF2E2572 /* Mondwest-Regular.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Mondwest-Regular.woff2"; sourceTree = "<group>"; };
 		FC604AF483CFF67A41BA12A3 /* HermesDashboardSkills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardSkills.swift; sourceTree = "<group>"; };
-		B42E7D0A19C64F5A8E3D2710 /* HermesDashboardToolsets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardToolsets.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -283,7 +283,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = HermesMacOS/HermesMacOS.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = RJYVGK9S3F;
@@ -428,7 +428,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = HermesMacOS/HermesMacOS.entitlements;
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = RJYVGK9S3F;
