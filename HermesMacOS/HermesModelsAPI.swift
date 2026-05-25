@@ -520,6 +520,8 @@ final class HermesResponsesSession {
     var eventCount = 0
     var rawStreamedJSON = ""
     var sessionTitle = ""
+    var activeResponseMessageID: UUID?
+    var activeResponseElapsedSeconds: Int?
 
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
@@ -527,6 +529,8 @@ final class HermesResponsesSession {
     private var activeHistoryStore: HermesPromptHistoryStore?
     private var activeCancellationRequestID = ""
     private var activeCancellationAPISettings: HermesAPISettings?
+    private var responseTimingStart: Date?
+    private var responseTimingTask: Task<Void, Never>?
 
     init() {
         lastKnownResponseID = HermesSettingsStore.loadLastResponsesSessionID()
@@ -569,6 +573,7 @@ final class HermesResponsesSession {
         requestTask = nil
         isSending = false
         isStreaming = false
+        stopResponseTiming()
         connectionStatus = "Cancelled"
     }
 
@@ -580,6 +585,7 @@ final class HermesResponsesSession {
         streamedText = ""
         activeAssistantEntryID = nil
         activeStreamOutputBubbleID = nil
+        clearResponseTiming()
         isSending = false
         isStreaming = false
         activeProfile = ""
@@ -603,6 +609,7 @@ final class HermesResponsesSession {
         streamedText = ""
         activeAssistantEntryID = nil
         activeStreamOutputBubbleID = nil
+        clearResponseTiming()
         isSending = false
         isStreaming = false
         latestResponseID = ""
@@ -623,6 +630,7 @@ final class HermesResponsesSession {
         streamedText = ""
         activeAssistantEntryID = nil
         activeStreamOutputBubbleID = nil
+        clearResponseTiming()
         isSending = false
         isStreaming = false
         latestResponseID = ""
@@ -690,6 +698,7 @@ final class HermesResponsesSession {
         appendExchange(prompt: displayPrompt(prompt, attachment: attachment), includeStreamOutputBubble: showsStreamOutputBubble && draft.stream)
         isSending = true
         isStreaming = draft.stream
+        startResponseTiming()
         connectionStatus = continuationID.isEmpty ? (draft.stream ? "Connecting to SSE stream" : "Sending request") : (draft.stream ? "Continuing SSE stream" : "Continuing request")
         do {
             if draft.stream {
@@ -711,11 +720,12 @@ final class HermesResponsesSession {
         }
         isSending = false
         isStreaming = false
+        stopResponseTiming()
         completeActiveStreamOutputBubble()
     }
 
     private func resetForRequest() {
-        streamedText = ""; latestResponseID = ""; lastErrorMessage = ""; lastErrorWasTimeoutOrNetworkLoss = false; latestMessageType = ""; eventCount = 0; rawStreamedJSON = ""; activeAssistantEntryID = nil; activeStreamOutputBubbleID = nil
+        streamedText = ""; latestResponseID = ""; lastErrorMessage = ""; lastErrorWasTimeoutOrNetworkLoss = false; latestMessageType = ""; eventCount = 0; rawStreamedJSON = ""; activeAssistantEntryID = nil; activeStreamOutputBubbleID = nil; activeResponseMessageID = nil; activeResponseElapsedSeconds = nil
     }
 
     private func appendExchange(prompt: String, includeStreamOutputBubble: Bool) {
@@ -729,7 +739,47 @@ final class HermesResponsesSession {
         }
         let assistant = HermesResponseMessage(role: "assistant", content: "")
         activeAssistantEntryID = assistant.id
+        activeResponseMessageID = assistant.id
         entries.append(assistant)
+    }
+
+    private func clearResponseTiming() {
+        activeResponseMessageID = nil
+        activeResponseElapsedSeconds = nil
+        responseTimingTask?.cancel()
+        responseTimingTask = nil
+        responseTimingStart = nil
+    }
+
+    private func startResponseTiming() {
+        responseTimingTask?.cancel()
+        let start = Date()
+        responseTimingStart = start
+        activeResponseElapsedSeconds = 0
+        responseTimingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.isSending, let responseTimingStart = self.responseTimingStart else { return }
+                    self.activeResponseElapsedSeconds = max(0, Int(Date().timeIntervalSince(responseTimingStart)))
+                }
+            }
+        }
+    }
+
+    private func stopResponseTiming() {
+        if let responseTimingStart {
+            activeResponseElapsedSeconds = max(0, Int(Date().timeIntervalSince(responseTimingStart)))
+        }
+        if let activeResponseMessageID,
+           let activeResponseElapsedSeconds,
+           let index = entries.firstIndex(where: { $0.id == activeResponseMessageID }) {
+            entries[index].responseElapsedSeconds = activeResponseElapsedSeconds
+        }
+        responseTimingTask?.cancel()
+        responseTimingTask = nil
+        responseTimingStart = nil
     }
 
     private func displayPrompt(_ prompt: String, attachment: HermesPromptAttachment?) -> String {
@@ -855,6 +905,7 @@ struct HermesResponseMessage: Identifiable, Equatable {
     let id = UUID()
     let role: String
     var content: String
+    var responseElapsedSeconds: Int? = nil
 }
 
 struct HermesStreamOutputBubble: Identifiable, Equatable {

@@ -200,7 +200,12 @@ struct HermesResponsesConsoleView: View {
                         .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.07))
                     } else {
                         ForEach(responseSession.entries) { message in
-                            HermesResponseBubble(message: message, fontSize: chatBubbleFontSize, isResponding: isResponsePlaceholder(message))
+                            HermesResponseBubble(
+                                message: message,
+                                fontSize: chatBubbleFontSize,
+                                isResponding: isResponsePlaceholder(message),
+                                responseElapsedSeconds: responseElapsedSeconds(for: message)
+                            )
                                 .id(message.id)
                             if showsStreamOutputBubbles,
                                message.role == "user",
@@ -477,6 +482,14 @@ struct HermesResponsesConsoleView: View {
 
     private func isResponsePlaceholder(_ message: HermesResponseMessage) -> Bool {
         responseSession.isSending && message.role != "user" && message.content.isEmpty && responseSession.entries.last?.id == message.id
+    }
+
+    private func responseElapsedSeconds(for message: HermesResponseMessage) -> Int? {
+        if message.role == "user" { return nil }
+        if responseSession.activeResponseMessageID == message.id {
+            return responseSession.activeResponseElapsedSeconds ?? message.responseElapsedSeconds
+        }
+        return message.responseElapsedSeconds
     }
 
     private func submitPrompt() {
@@ -788,14 +801,23 @@ struct HermesResponseBubble: View {
     let message: HermesResponseMessage
     let fontSize: Double
     var isResponding = false
+    var responseElapsedSeconds: Int?
 
     var body: some View {
         HStack(alignment: .bottom) {
             if isUser { Spacer(minLength: 80) }
             VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
-                Text(isUser ? "You" : "Hermes")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.hermesSecondaryText)
+                HStack(spacing: 8) {
+                    Text(isUser ? "You" : "Hermes")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.hermesSecondaryText)
+                    if let responseElapsedSeconds, !isUser {
+                        Text(Self.formattedElapsedTime(responseElapsedSeconds))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(Color.hermesOrange)
+                            .accessibilityLabel("Response elapsed time \(Self.formattedElapsedAccessibilityTime(responseElapsedSeconds))")
+                    }
+                }
                 HermesCopyableBubbleContent(text: displayContent, copyText: message.content, isUser: isUser, rendersMarkdown: !isUser, fontSize: fontSize, isResponding: isResponding)
             }
             .frame(maxWidth: 680, alignment: isUser ? .trailing : .leading)
@@ -806,6 +828,31 @@ struct HermesResponseBubble: View {
 
     private var isUser: Bool { message.role == "user" }
     private var displayContent: String { message.content }
+
+    private static func formattedElapsedTime(_ seconds: Int) -> String {
+        let clampedSeconds = max(0, seconds)
+        let hours = clampedSeconds / 3_600
+        let minutes = (clampedSeconds % 3_600) / 60
+        let remainingSeconds = clampedSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+        }
+        return String(format: "%02d:%02d", minutes, remainingSeconds)
+    }
+
+    private static func formattedElapsedAccessibilityTime(_ seconds: Int) -> String {
+        let clampedSeconds = max(0, seconds)
+        let hours = clampedSeconds / 3_600
+        let minutes = (clampedSeconds % 3_600) / 60
+        let remainingSeconds = clampedSeconds % 60
+        if hours > 0 {
+            return "\(hours) hours, \(minutes) minutes, \(remainingSeconds) seconds"
+        }
+        if minutes > 0 {
+            return "\(minutes) minutes, \(remainingSeconds) seconds"
+        }
+        return "\(remainingSeconds) seconds"
+    }
 }
 
 private struct HermesStreamOutputBubbleView: View {
