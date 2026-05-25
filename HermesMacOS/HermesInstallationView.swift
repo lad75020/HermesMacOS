@@ -52,6 +52,7 @@ final class HermesInstallationSession {
     var isPreviewingMerge = false
     var isMerging = false
     var lastErrorMessage = ""
+    var remoteHostName = defaultHermesMacHost
 
     private let runner = HermesGitCommandRunner()
 
@@ -64,9 +65,10 @@ final class HermesInstallationSession {
         isRefreshing = true
         lastErrorMessage = ""
         let path = status.repositoryPath
+        let host = remoteHostName
         Task {
             do {
-                let refreshed = try await runner.status(repositoryPath: path)
+                let refreshed = try await runner.status(repositoryPath: path, remoteHostName: host)
                 status = refreshed
             } catch {
                 lastErrorMessage = error.localizedDescription
@@ -79,10 +81,11 @@ final class HermesInstallationSession {
         isPreviewingMerge = true
         lastErrorMessage = ""
         let path = status.repositoryPath
+        let host = remoteHostName
         Task {
             do {
-                var refreshed = try await runner.status(repositoryPath: path)
-                refreshed.mergePreview = try await runner.previewMerge(repositoryPath: path)
+                var refreshed = try await runner.status(repositoryPath: path, remoteHostName: host)
+                refreshed.mergePreview = try await runner.previewMerge(repositoryPath: path, remoteHostName: host)
                 status = refreshed
             } catch {
                 lastErrorMessage = error.localizedDescription
@@ -95,12 +98,13 @@ final class HermesInstallationSession {
         isMerging = true
         lastErrorMessage = ""
         let path = status.repositoryPath
+        let host = remoteHostName
         Task {
             do {
-                status = try await runner.updateHermesFromUpstream(repositoryPath: path)
+                status = try await runner.updateHermesFromUpstream(repositoryPath: path, remoteHostName: host)
             } catch {
                 lastErrorMessage = error.localizedDescription
-                do { status = try await runner.status(repositoryPath: path) } catch { }
+                do { status = try await runner.status(repositoryPath: path, remoteHostName: host) } catch { }
             }
             isMerging = false
         }
@@ -347,17 +351,17 @@ struct HermesInstallationView: View {
 }
 
 private final class HermesGitCommandRunner: @unchecked Sendable {
-    func status(repositoryPath: String) async throws -> HermesInstallationStatus {
-        try await ensureRemote(repositoryPath: repositoryPath, name: "upstream", url: Self.upstreamRemoteURL)
-        try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "upstream", "main"])
-        let root = try await output(repositoryPath: repositoryPath, arguments: ["rev-parse", "--show-toplevel"])
-        let branch = (try? await output(repositoryPath: repositoryPath, arguments: ["branch", "--show-current"])) ?? ""
-        let head = (try? await output(repositoryPath: repositoryPath, arguments: ["rev-parse", "--short", "HEAD"])) ?? ""
-        let remote = (try? await output(repositoryPath: repositoryPath, arguments: ["remote", "get-url", "origin"])) ?? ""
-        let behind = Int(((try? await output(repositoryPath: repositoryPath, arguments: ["rev-list", "--count", "HEAD..upstream/main"])) ?? "0")) ?? 0
-        let ahead = Int(((try? await output(repositoryPath: repositoryPath, arguments: ["rev-list", "--count", "upstream/main..HEAD"])) ?? "0")) ?? 0
-        let dirty = (try? await output(repositoryPath: repositoryPath, arguments: ["status", "--porcelain"])) ?? ""
-        let conflicts = (try? await output(repositoryPath: repositoryPath, arguments: ["diff", "--name-only", "--diff-filter=U"])) ?? ""
+    func status(repositoryPath: String, remoteHostName: String) async throws -> HermesInstallationStatus {
+        try await ensureRemote(repositoryPath: repositoryPath, name: "upstream", url: Self.upstreamRemoteURL, remoteHostName: remoteHostName)
+        try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "upstream", "main"], remoteHostName: remoteHostName)
+        let root = try await output(repositoryPath: repositoryPath, arguments: ["rev-parse", "--show-toplevel"], remoteHostName: remoteHostName)
+        let branch = (try? await output(repositoryPath: repositoryPath, arguments: ["branch", "--show-current"], remoteHostName: remoteHostName)) ?? ""
+        let head = (try? await output(repositoryPath: repositoryPath, arguments: ["rev-parse", "--short", "HEAD"], remoteHostName: remoteHostName)) ?? ""
+        let remote = (try? await output(repositoryPath: repositoryPath, arguments: ["remote", "get-url", "origin"], remoteHostName: remoteHostName)) ?? ""
+        let behind = Int(((try? await output(repositoryPath: repositoryPath, arguments: ["rev-list", "--count", "HEAD..upstream/main"], remoteHostName: remoteHostName)) ?? "0")) ?? 0
+        let ahead = Int(((try? await output(repositoryPath: repositoryPath, arguments: ["rev-list", "--count", "upstream/main..HEAD"], remoteHostName: remoteHostName)) ?? "0")) ?? 0
+        let dirty = (try? await output(repositoryPath: repositoryPath, arguments: ["status", "--porcelain"], remoteHostName: remoteHostName)) ?? ""
+        let conflicts = (try? await output(repositoryPath: repositoryPath, arguments: ["diff", "--name-only", "--diff-filter=U"], remoteHostName: remoteHostName)) ?? ""
 
         var status = HermesInstallationStatus(repositoryPath: NSString(string: repositoryPath).expandingTildeInPath)
         status.rootPath = root
@@ -373,9 +377,9 @@ private final class HermesGitCommandRunner: @unchecked Sendable {
         return status
     }
 
-    func previewMerge(repositoryPath: String) async throws -> String {
-        try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "origin", "main"])
-        let result = try await run(repositoryPath: repositoryPath, arguments: ["merge-tree", "--write-tree", "HEAD", "origin/main"], allowFailure: true)
+    func previewMerge(repositoryPath: String, remoteHostName: String) async throws -> String {
+        try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "origin", "main"], remoteHostName: remoteHostName)
+        let result = try await run(repositoryPath: repositoryPath, arguments: ["merge-tree", "--write-tree", "HEAD", "origin/main"], allowFailure: true, remoteHostName: remoteHostName)
         let trimmed = result.combinedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
         if result.exitCode == 0 {
             return trimmed.isEmpty ? "Dry merge preview completed: no conflicts predicted." : "Dry merge preview completed: no conflicts predicted.\n\n\(trimmed)"
@@ -383,80 +387,110 @@ private final class HermesGitCommandRunner: @unchecked Sendable {
         return trimmed.isEmpty ? "Dry merge preview found conflicts." : trimmed
     }
 
-    func updateHermesFromUpstream(repositoryPath: String) async throws -> HermesInstallationStatus {
-        let current = try await status(repositoryPath: repositoryPath)
+    func updateHermesFromUpstream(repositoryPath: String, remoteHostName: String) async throws -> HermesInstallationStatus {
+        let current = try await status(repositoryPath: repositoryPath, remoteHostName: remoteHostName)
         guard !current.isDirty else {
             throw HermesInstallationError.commandFailed("Working tree has local changes. Commit or stash them before updating Hermes.")
         }
 
         var outputLines: [String] = []
         outputLines.append("Ensuring upstream remote points to \(Self.upstreamRemoteURL)")
-        try await ensureRemote(repositoryPath: repositoryPath, name: "upstream", url: Self.upstreamRemoteURL)
+        try await ensureRemote(repositoryPath: repositoryPath, name: "upstream", url: Self.upstreamRemoteURL, remoteHostName: remoteHostName)
 
         outputLines.append("Fetching NousResearch main")
-        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "upstream", "main"]).combinedOutput)
+        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["fetch", "upstream", "main"], remoteHostName: remoteHostName).combinedOutput)
 
         outputLines.append("Updating local branch upstream-latest from upstream/main")
-        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["switch", "-C", "upstream-latest", "upstream/main"]).combinedOutput)
+        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["switch", "-C", "upstream-latest", "upstream/main"], remoteHostName: remoteHostName).combinedOutput)
 
         outputLines.append("Switching to local main")
-        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["switch", "main"]).combinedOutput)
+        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["switch", "main"], remoteHostName: remoteHostName).combinedOutput)
 
         outputLines.append("Merging upstream-latest into main")
-        let merge = try await run(repositoryPath: repositoryPath, arguments: ["merge", "--no-ff", "upstream-latest"], allowFailure: true)
+        let merge = try await run(repositoryPath: repositoryPath, arguments: ["merge", "--no-ff", "upstream-latest"], allowFailure: true, remoteHostName: remoteHostName)
         outputLines.append(merge.combinedOutput)
 
-        var refreshed = try await status(repositoryPath: repositoryPath)
+        var refreshed = try await status(repositoryPath: repositoryPath, remoteHostName: remoteHostName)
         if merge.exitCode != 0 || !refreshed.conflictFiles.isEmpty {
             refreshed.operationOutput = outputLines.joined(separator: "\n") + "\nConflicts detected. Update stopped before push; resolve the listed conflicts on local main."
             return refreshed
         }
 
         outputLines.append("Pushing main to origin (expected: \(Self.forkRemoteURL))")
-        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["push", "origin", "main"]).combinedOutput)
+        outputLines.append(try await runGit(repositoryPath: repositoryPath, arguments: ["push", "origin", "main"], remoteHostName: remoteHostName).combinedOutput)
 
-        refreshed = try await status(repositoryPath: repositoryPath)
+        refreshed = try await status(repositoryPath: repositoryPath, remoteHostName: remoteHostName)
         refreshed.operationOutput = outputLines.joined(separator: "\n") + "\nHermes update completed: upstream-latest merged into local main and main pushed to origin."
         return refreshed
     }
 
-    private func ensureRemote(repositoryPath: String, name: String, url: String) async throws {
-        let existing = try await run(repositoryPath: repositoryPath, arguments: ["remote", "get-url", name], allowFailure: true)
+    private func ensureRemote(repositoryPath: String, name: String, url: String, remoteHostName: String) async throws {
+        let existing = try await run(repositoryPath: repositoryPath, arguments: ["remote", "get-url", name], allowFailure: true, remoteHostName: remoteHostName)
         if existing.exitCode == 0 {
             let currentURL = existing.combinedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
             if currentURL != url {
-                try await runGit(repositoryPath: repositoryPath, arguments: ["remote", "set-url", name, url])
+                try await runGit(repositoryPath: repositoryPath, arguments: ["remote", "set-url", name, url], remoteHostName: remoteHostName)
             }
         } else {
-            try await runGit(repositoryPath: repositoryPath, arguments: ["remote", "add", name, url])
+            try await runGit(repositoryPath: repositoryPath, arguments: ["remote", "add", name, url], remoteHostName: remoteHostName)
         }
     }
 
     @discardableResult
-    private func runGit(repositoryPath: String, arguments: [String]) async throws -> HermesGitCommandResult {
-        try await run(repositoryPath: repositoryPath, arguments: arguments, allowFailure: false)
+    private func runGit(repositoryPath: String, arguments: [String], remoteHostName: String) async throws -> HermesGitCommandResult {
+        try await run(repositoryPath: repositoryPath, arguments: arguments, allowFailure: false, remoteHostName: remoteHostName)
     }
 
-    private func output(repositoryPath: String, arguments: [String]) async throws -> String {
-        try await runGit(repositoryPath: repositoryPath, arguments: arguments).combinedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func output(repositoryPath: String, arguments: [String], remoteHostName: String) async throws -> String {
+        try await runGit(repositoryPath: repositoryPath, arguments: arguments, remoteHostName: remoteHostName).combinedOutput.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func run(repositoryPath: String, arguments: [String], allowFailure: Bool) async throws -> HermesGitCommandResult {
+    private func run(repositoryPath: String, arguments: [String], allowFailure: Bool, remoteHostName: String) async throws -> HermesGitCommandResult {
         try await Task.detached(priority: .userInitiated) {
             let expandedPath = NSString(string: repositoryPath).expandingTildeInPath
-            let fileManager = FileManager.default
-            var isDirectory: ObjCBool = false
-            guard fileManager.fileExists(atPath: expandedPath, isDirectory: &isDirectory), isDirectory.boolValue else {
-                throw HermesInstallationError.invalidRepository("Repository folder does not exist: \(expandedPath)")
+            let normalizedHost = HermesHostEndpoints.normalizedHost(remoteHostName)
+            let isRemote = !HermesSSHHostCredentials.isLocalHost(normalizedHost)
+            var temporaryIdentityURL: URL?
+            defer {
+                if let temporaryIdentityURL { try? FileManager.default.removeItem(at: temporaryIdentityURL) }
             }
 
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = ["-C", expandedPath] + arguments
-            process.environment = [
-                "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-                "LC_ALL": "C"
-            ]
+            if isRemote {
+                let credentials = HermesSettingsStore.loadSSHCredentials(forHost: normalizedHost)
+                let username = credentials.username.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !username.isEmpty else {
+                    throw HermesInstallationError.commandFailed("SSH settings missing for \(normalizedHost): enter a username in Settings.")
+                }
+                do { temporaryIdentityURL = try HermesSSHKeychain.temporaryIdentityFile(forHost: normalizedHost) }
+                catch { throw HermesInstallationError.commandFailed("SSH settings missing for \(normalizedHost): \(error.localizedDescription)") }
+                let remoteCommand = HermesShellQuoting.command(
+                    "/usr/bin/git",
+                    arguments: ["-C", expandedPath] + arguments,
+                    environment: ["LC_ALL": "C", "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"]
+                )
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+                process.arguments = [
+                    "-i", temporaryIdentityURL!.path,
+                    "-o", "BatchMode=yes",
+                    "-o", "IdentitiesOnly=yes",
+                    "-o", "StrictHostKeyChecking=accept-new",
+                    "\(username)@\(normalizedHost)",
+                    remoteCommand
+                ]
+            } else {
+                let fileManager = FileManager.default
+                var isDirectory: ObjCBool = false
+                guard fileManager.fileExists(atPath: expandedPath, isDirectory: &isDirectory), isDirectory.boolValue else {
+                    throw HermesInstallationError.invalidRepository("Repository folder does not exist: \(expandedPath)")
+                }
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+                process.arguments = ["-C", expandedPath] + arguments
+                process.environment = [
+                    "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                    "LC_ALL": "C"
+                ]
+            }
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe

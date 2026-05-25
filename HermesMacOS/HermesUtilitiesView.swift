@@ -113,7 +113,13 @@ struct HermesUtilitiesView: View {
             .frame(maxWidth: 980, alignment: .leading)
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
-        .onAppear { clipboardHistory.captureCurrentPasteboardIfNeeded(force: true) }
+        .onAppear {
+            clipboardHistory.captureCurrentPasteboardIfNeeded(force: true)
+            installationSession.remoteHostName = connectedHostName
+        }
+        .onChange(of: connectedHostName) { _, newValue in
+            installationSession.remoteHostName = newValue
+        }
         .onDisappear { collapseAllUtilitySections() }
     }
 

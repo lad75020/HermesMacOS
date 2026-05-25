@@ -5,6 +5,7 @@
 
 import Foundation
 import Observation
+import Security
 import UniformTypeIdentifiers
 
 let defaultHermesMacHost = "localhost"
@@ -48,6 +49,8 @@ struct HermesAPISettings: Codable, Equatable {
     var apiKey = ""
     var allowSelfSignedCertificates = false
 
+    var hostName: String { HermesHostEndpoints.displayHost(from: baseURL) }
+
     static func responseURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "responses") }
     static func chatCompletionsURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "chat/completions") }
     static func requestCancelURL(from baseURL: String, requestID: String) -> URL? { endpointURL(from: baseURL, suffix: "requests/\(requestID)/cancel") }
@@ -72,12 +75,28 @@ struct HermesSavedEndpoint: Codable, Equatable, Identifiable {
     var apiURL: String
     var dashboardURL: String
     var savedAt: Date
+    var sshUsername: String
+    var sshKeyDisplayName: String
 
-    init(id: String = UUID().uuidString, apiURL: String, dashboardURL: String, savedAt: Date = Date()) {
+    init(id: String = UUID().uuidString, apiURL: String, dashboardURL: String, savedAt: Date = Date(), sshUsername: String = "", sshKeyDisplayName: String = "") {
         self.id = id
         self.apiURL = apiURL
         self.dashboardURL = dashboardURL
         self.savedAt = savedAt
+        self.sshUsername = sshUsername
+        self.sshKeyDisplayName = sshKeyDisplayName
+    }
+
+    enum CodingKeys: String, CodingKey { case id, apiURL, dashboardURL, savedAt, sshUsername, sshKeyDisplayName }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? container.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        apiURL = (try? container.decode(String.self, forKey: .apiURL)) ?? ""
+        dashboardURL = (try? container.decode(String.self, forKey: .dashboardURL)) ?? ""
+        savedAt = (try? container.decode(Date.self, forKey: .savedAt)) ?? Date()
+        sshUsername = (try? container.decode(String.self, forKey: .sshUsername)) ?? ""
+        sshKeyDisplayName = (try? container.decode(String.self, forKey: .sshKeyDisplayName)) ?? ""
     }
 
     var title: String {
@@ -111,6 +130,93 @@ struct HermesSavedEndpoint: Codable, Equatable, Identifiable {
         }
         let normalizedHost = HermesHostEndpoints.normalizedHost(trimmed)
         return normalizedHost.isEmpty ? nil : normalizedHost
+    }
+}
+
+struct HermesSSHHostCredentials: Codable, Equatable {
+    var host: String
+    var username: String
+    var keyDisplayName: String
+
+    var normalizedHost: String { HermesHostEndpoints.normalizedHost(host).lowercased() }
+    var isRemoteHost: Bool { !HermesSSHHostCredentials.isLocalHost(host) }
+    var hasUsername: Bool { !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var hasPrivateKey: Bool { HermesSSHKeychain.hasPrivateKey(forHost: host) }
+
+    static func isLocalHost(_ host: String) -> Bool {
+        let value = HermesHostEndpoints.normalizedHost(host).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return value.isEmpty || value == "localhost" || value == "127.0.0.1" || value == "::1" || value == "[::1]"
+    }
+}
+
+enum HermesSSHKeychain {
+    private static let service = "HermesMacOS.SSHPrivateKeys"
+
+    static func hasPrivateKey(forHost host: String) -> Bool { privateKeyData(forHost: host) != nil }
+
+    static func savePrivateKey(_ data: Data, displayName: String, forHost host: String) throws {
+        let account = accountName(forHost: host)
+        var query = baseQuery(account: account)
+        SecItemDelete(query as CFDictionary)
+        query[kSecValueData as String] = data
+        query[kSecAttrLabel as String] = displayName
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+    }
+
+    static func deletePrivateKey(forHost host: String) {
+        SecItemDelete(baseQuery(account: accountName(forHost: host)) as CFDictionary)
+    }
+
+    static func privateKeyData(forHost host: String) -> Data? {
+        var query = baseQuery(account: accountName(forHost: host))
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else { return nil }
+        return item as? Data
+    }
+
+    static func temporaryIdentityFile(forHost host: String) throws -> URL {
+        guard let data = privateKeyData(forHost: host) else {
+            throw NSError(domain: "HermesMacOS.SSH", code: 1, userInfo: [NSLocalizedDescriptionKey: "No private SSH key is stored for \(host)."])
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("HermesMacOSSSH", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("key-\(UUID().uuidString)")
+        try data.write(to: url, options: .atomic)
+        chmod(url.path, S_IRUSR | S_IWUSR)
+        return url
+    }
+
+    private static func accountName(forHost host: String) -> String {
+        HermesHostEndpoints.normalizedHost(host).lowercased()
+    }
+
+    private static func baseQuery(account: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+    }
+}
+
+enum HermesShellQuoting {
+    static func quote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    static func command(_ executable: String, arguments: [String], environment: [String: String] = [:], workingDirectory: String? = nil) -> String {
+        var parts: [String] = []
+        if let workingDirectory, !workingDirectory.isEmpty {
+            parts.append("cd \(quote(workingDirectory))")
+        }
+        let envParts = environment.map { key, value in "\(key)=\(quote(value))" }.sorted()
+        parts.append((envParts + [quote(executable)] + arguments.map(quote)).joined(separator: " "))
+        return parts.joined(separator: " && ")
     }
 }
 
@@ -255,6 +361,7 @@ enum HermesSettingsStore {
     private static let lastChatSessionTitleKey = "hermes.macOS.lastChatSessionTitle"
     private static let savedEndpointsKey = "hermes.macOS.savedConnectionEndpoints"
     private static let selectedEndpointIDKey = "hermes.macOS.selectedConnectionEndpointID"
+    private static let sshCredentialsKey = "hermes.macOS.sshHostCredentials"
 
     static func loadAPISettings() -> HermesAPISettings { load(HermesAPISettings.self, forKey: apiSettingsKey) ?? HermesAPISettings() }
     static func saveAPISettings(_ value: HermesAPISettings) { save(value, forKey: apiSettingsKey) }
@@ -274,6 +381,19 @@ enum HermesSettingsStore {
     static func saveSavedEndpoints(_ value: [HermesSavedEndpoint]) { save(value, forKey: savedEndpointsKey) }
     static func loadSelectedEndpointID() -> String { UserDefaults.standard.string(forKey: selectedEndpointIDKey) ?? "" }
     static func saveSelectedEndpointID(_ value: String) { UserDefaults.standard.set(value, forKey: selectedEndpointIDKey) }
+    static func loadSSHCredentials() -> [String: HermesSSHHostCredentials] { load([String: HermesSSHHostCredentials].self, forKey: sshCredentialsKey) ?? [:] }
+    static func saveSSHCredentials(_ value: [String: HermesSSHHostCredentials]) { save(value, forKey: sshCredentialsKey) }
+    static func loadSSHCredentials(forHost host: String) -> HermesSSHHostCredentials {
+        let normalizedHost = HermesHostEndpoints.normalizedHost(host).lowercased()
+        return loadSSHCredentials()[normalizedHost] ?? HermesSSHHostCredentials(host: normalizedHost, username: "", keyDisplayName: "")
+    }
+    static func saveSSHCredentials(_ credentials: HermesSSHHostCredentials) {
+        let normalizedHost = credentials.normalizedHost
+        guard !normalizedHost.isEmpty else { return }
+        var values = loadSSHCredentials()
+        values[normalizedHost] = HermesSSHHostCredentials(host: normalizedHost, username: credentials.username, keyDisplayName: credentials.keyDisplayName)
+        saveSSHCredentials(values)
+    }
 
     private static func load<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
@@ -522,6 +642,7 @@ final class HermesResponsesSession {
     var sessionTitle = ""
     var activeResponseMessageID: UUID?
     var activeResponseElapsedSeconds: Int?
+    var activeResponseTokenUsage: HermesTokenUsage?
 
     private var requestTask: Task<Void, Never>?
     private var activeAssistantEntryID: UUID?
@@ -725,7 +846,7 @@ final class HermesResponsesSession {
     }
 
     private func resetForRequest() {
-        streamedText = ""; latestResponseID = ""; lastErrorMessage = ""; lastErrorWasTimeoutOrNetworkLoss = false; latestMessageType = ""; eventCount = 0; rawStreamedJSON = ""; activeAssistantEntryID = nil; activeStreamOutputBubbleID = nil; activeResponseMessageID = nil; activeResponseElapsedSeconds = nil
+        streamedText = ""; latestResponseID = ""; lastErrorMessage = ""; lastErrorWasTimeoutOrNetworkLoss = false; latestMessageType = ""; eventCount = 0; rawStreamedJSON = ""; activeAssistantEntryID = nil; activeStreamOutputBubbleID = nil; activeResponseMessageID = nil; activeResponseElapsedSeconds = nil; activeResponseTokenUsage = nil
     }
 
     private func appendExchange(prompt: String, includeStreamOutputBubble: Bool) {
@@ -738,6 +859,7 @@ final class HermesResponsesSession {
             streamOutputBubbles.append(bubble)
         }
         let assistant = HermesResponseMessage(role: "assistant", content: "")
+        activeResponseTokenUsage = nil
         activeAssistantEntryID = assistant.id
         activeResponseMessageID = assistant.id
         entries.append(assistant)
@@ -746,6 +868,7 @@ final class HermesResponsesSession {
     private func clearResponseTiming() {
         activeResponseMessageID = nil
         activeResponseElapsedSeconds = nil
+        activeResponseTokenUsage = nil
         responseTimingTask?.cancel()
         responseTimingTask = nil
         responseTimingStart = nil
@@ -773,9 +896,9 @@ final class HermesResponsesSession {
             activeResponseElapsedSeconds = max(0, Int(Date().timeIntervalSince(responseTimingStart)))
         }
         if let activeResponseMessageID,
-           let activeResponseElapsedSeconds,
            let index = entries.firstIndex(where: { $0.id == activeResponseMessageID }) {
-            entries[index].responseElapsedSeconds = activeResponseElapsedSeconds
+            if let activeResponseElapsedSeconds { entries[index].responseElapsedSeconds = activeResponseElapsedSeconds }
+            if let activeResponseTokenUsage { entries[index].tokenUsage = activeResponseTokenUsage }
         }
         responseTimingTask?.cancel()
         responseTimingTask = nil
@@ -833,6 +956,7 @@ final class HermesResponsesSession {
         rawStreamedJSON = Self.prettyPrintedJSON(from: data)
         latestResponseID = envelope.id ?? ""
         persistLastResponseID(latestResponseID)
+        updateTokenUsage(envelope.usage)
         streamedText = envelope.assistantText
         updateActiveAssistantEntry(with: streamedText)
         latestMessageType = envelope.outputMessageType
@@ -864,8 +988,10 @@ final class HermesResponsesSession {
         appendRawStreamedJSON(event)
         if event.data == "[DONE]" { connectionStatus = "Completed"; return }
         eventCount += 1
+        let payload = HermesLooseJSON(json: event.data)
+        updateTokenUsage(payload.tokenUsage())
         let summary = HermesEventSummaryBuilder.summary(for: event)
-        appendActiveStreamOutputBubble(lines: HermesLooseJSON(json: event.data).streamOutputTexts())
+        appendActiveStreamOutputBubble(lines: payload.streamOutputTexts())
         latestMessageType = summary.messageType
         if let responseID = summary.responseID, !responseID.isEmpty { latestResponseID = responseID; persistLastResponseID(responseID) }
         if let delta = summary.outputDelta, !delta.isEmpty {
@@ -877,6 +1003,14 @@ final class HermesResponsesSession {
             connectionStatus = "Streaming output"
         } else if summary.title.hasPrefix("response.output_item.") { connectionStatus = summary.status }
         else { connectionStatus = String(localized: "Processing \(summary.title)") }
+    }
+
+    private func updateTokenUsage(_ usage: HermesTokenUsage?) {
+        guard let usage, !usage.isEmpty else { return }
+        activeResponseTokenUsage = usage
+        if let activeResponseMessageID, let index = entries.firstIndex(where: { $0.id == activeResponseMessageID }) {
+            entries[index].tokenUsage = usage
+        }
     }
 
     private func persistHermesSessionID(from response: URLResponse) {
@@ -906,6 +1040,45 @@ struct HermesResponseMessage: Identifiable, Equatable {
     let role: String
     var content: String
     var responseElapsedSeconds: Int? = nil
+    var tokenUsage: HermesTokenUsage? = nil
+}
+
+struct HermesTokenUsage: Equatable, Decodable {
+    var inputTokens: Int?
+    var outputTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case inputTokens = "input_tokens"
+        case outputTokens = "output_tokens"
+        case promptTokens = "prompt_tokens"
+        case completionTokens = "completion_tokens"
+        case totalInputTokens = "total_input_tokens"
+        case totalOutputTokens = "total_output_tokens"
+    }
+
+    init(inputTokens: Int? = nil, outputTokens: Int? = nil) {
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        inputTokens = try container.decodeIfPresent(Int.self, forKey: .inputTokens)
+            ?? container.decodeIfPresent(Int.self, forKey: .promptTokens)
+            ?? container.decodeIfPresent(Int.self, forKey: .totalInputTokens)
+        outputTokens = try container.decodeIfPresent(Int.self, forKey: .outputTokens)
+            ?? container.decodeIfPresent(Int.self, forKey: .completionTokens)
+            ?? container.decodeIfPresent(Int.self, forKey: .totalOutputTokens)
+    }
+
+    var isEmpty: Bool { inputTokens == nil && outputTokens == nil }
+    var displayText: String { "In \(Self.format(inputTokens)) · Out \(Self.format(outputTokens))" }
+    var accessibilityText: String { "input tokens \(Self.format(inputTokens)), output tokens \(Self.format(outputTokens))" }
+
+    private static func format(_ value: Int?) -> String {
+        guard let value else { return "—" }
+        return value.formatted(.number.notation(.compactName))
+    }
 }
 
 struct HermesStreamOutputBubble: Identifiable, Equatable {
@@ -957,6 +1130,7 @@ private struct HermesResponsesRequestBody: Encodable { let model: String; let in
 private struct HermesResponseEnvelope: Decodable {
     let id: String?
     let output: [HermesResponseOutputItem]?
+    let usage: HermesTokenUsage?
     var assistantText: String { (output ?? []).compactMap(\.assistantText).joined(separator: "\n\n") }
     var outputMessageType: String { output?.first(where: { $0.assistantText?.isEmpty == false })?.type ?? "message" }
 }
@@ -1016,6 +1190,27 @@ struct HermesLooseJSON {
     init(json: String) { object = json.data(using: .utf8).flatMap { try? JSONSerialization.jsonObject(with: $0) } }
     init(data: Data) { object = try? JSONSerialization.jsonObject(with: data) }
     func string(at path: [String]) -> String? { guard let value = value(at: path) else { return nil }; if let string = value as? String { return string }; if let number = value as? NSNumber { return number.stringValue }; return nil }
+    func int(at path: [String]) -> Int? { guard let value = value(at: path) else { return nil }; if let int = value as? Int { return int }; if let number = value as? NSNumber { return number.intValue }; if let string = value as? String { return Int(string) }; return nil }
+    func tokenUsage() -> HermesTokenUsage? {
+        let input = int(at: ["usage", "input_tokens"])
+            ?? int(at: ["usage", "prompt_tokens"])
+            ?? int(at: ["usage", "total_input_tokens"])
+            ?? int(at: ["response", "usage", "input_tokens"])
+            ?? int(at: ["response", "usage", "prompt_tokens"])
+            ?? int(at: ["response", "usage", "total_input_tokens"])
+            ?? int(at: ["input_tokens"])
+            ?? int(at: ["prompt_tokens"])
+        let output = int(at: ["usage", "output_tokens"])
+            ?? int(at: ["usage", "completion_tokens"])
+            ?? int(at: ["usage", "total_output_tokens"])
+            ?? int(at: ["response", "usage", "output_tokens"])
+            ?? int(at: ["response", "usage", "completion_tokens"])
+            ?? int(at: ["response", "usage", "total_output_tokens"])
+            ?? int(at: ["output_tokens"])
+            ?? int(at: ["completion_tokens"])
+        let usage = HermesTokenUsage(inputTokens: input, outputTokens: output)
+        return usage.isEmpty ? nil : usage
+    }
     func texts(at path: [String]) -> [String] { value(at: path).map(extractTexts(from:)) ?? [] }
     func messageOutputTexts(at path: [String]) -> [String] { value(at: path).map(extractMessageOutputTexts(from:)) ?? [] }
     func streamOutputTexts() -> [String] {

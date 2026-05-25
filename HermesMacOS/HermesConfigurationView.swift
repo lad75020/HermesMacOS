@@ -250,7 +250,13 @@ struct HermesConfigurationView: View {
             .padding(18)
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
-        .onAppear { refreshConfiguration() }
+        .onAppear {
+            runtime.remoteHostName = connectedHostName
+            refreshConfiguration()
+        }
+        .onChange(of: connectedHostName) { _, newValue in
+            runtime.remoteHostName = newValue
+        }
         .confirmationDialog(
             "Delete profile?",
             isPresented: Binding(
@@ -1861,6 +1867,7 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
 
     private let hermesExecutable = "/Users/laurent/.hermes/hermes-agent/venv/bin/hermes"
     let hermesHome = "/Volumes/WDBlack4TB/.hermes"
+    var remoteHostName = defaultHermesMacHost
 
     func refreshAll() {
     }
@@ -1870,8 +1877,8 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
         guard cleanArguments.isEmpty == false else { return }
         runningSections.insert(section)
         outputs[section] = "$ hermes \(cleanArguments.joined(separator: " "))\nRunning…"
-        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome] in
-            let result = Self.execute(executable: hermesExecutable, arguments: cleanArguments, hermesHome: hermesHome)
+        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
+            let result = Self.execute(executable: hermesExecutable, arguments: cleanArguments, hermesHome: hermesHome, remoteHostName: remoteHostName)
             await MainActor.run {
                 self.outputs[section] = result
                 self.runningSections.remove(section)
@@ -1882,9 +1889,9 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
     func runChained(_ section: HermesLocalConfigurationSection, _ commands: [[String]]) {
         runningSections.insert(section)
         outputs[section] = "Running \(commands.count) local Hermes commands…"
-        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome] in
+        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
             let combined = commands.map { command in
-                Self.execute(executable: hermesExecutable, arguments: command.map { $0.trimmedForHermes }.filter { !$0.isEmpty }, hermesHome: hermesHome)
+                Self.execute(executable: hermesExecutable, arguments: command.map { $0.trimmedForHermes }.filter { !$0.isEmpty }, hermesHome: hermesHome, remoteHostName: remoteHostName)
             }.joined(separator: "\n\n")
             await MainActor.run {
                 self.outputs[section] = combined
@@ -1898,8 +1905,8 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
         guard !trimmedSource.isEmpty else { return }
         runningSections.insert(.skills)
         outputs[.skills] = "$ hermes skills install \(trimmedSource)\nRunning…"
-        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome] in
-            let result = Self.execute(executable: hermesExecutable, arguments: ["skills", "install", trimmedSource], hermesHome: hermesHome)
+        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
+            let result = Self.execute(executable: hermesExecutable, arguments: ["skills", "install", trimmedSource], hermesHome: hermesHome, remoteHostName: remoteHostName)
             await MainActor.run {
                 self.outputs[.skills] = result
                 self.runningSections.remove(.skills)
@@ -1916,8 +1923,8 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
         let arguments = ["mcp", "add", cleanName, "--command", cleanCommand] + (cleanArgs.isEmpty ? [] : ["--args"] + cleanArgs)
         runningSections.insert(.mcpServers)
         outputs[.mcpServers] = "$ hermes \(arguments.joined(separator: " "))\nRunning…"
-        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome] in
-            let result = Self.execute(executable: hermesExecutable, arguments: arguments, hermesHome: hermesHome)
+        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
+            let result = Self.execute(executable: hermesExecutable, arguments: arguments, hermesHome: hermesHome, remoteHostName: remoteHostName)
             await MainActor.run {
                 self.outputs[.mcpServers] = result
                 self.runningSections.remove(.mcpServers)
@@ -1926,30 +1933,58 @@ private final class HermesLocalConfigurationRuntime: ObservableObject {
         }
     }
 
-    private nonisolated static func execute(executable: String, arguments: [String], hermesHome: String) -> String {
+    private nonisolated static func execute(executable: String, arguments: [String], hermesHome: String, remoteHostName: String) -> String {
         let process = Process()
-        process.executableURL = FileManager.default.isExecutableFile(atPath: executable) ? URL(fileURLWithPath: executable) : URL(fileURLWithPath: "/opt/homebrew/bin/hermes")
-        process.arguments = arguments
-        var environment = ProcessInfo.processInfo.environment
-        environment["HERMES_HOME"] = hermesHome
-        environment["TERM"] = environment["TERM"] ?? "xterm-256color"
-        process.environment = environment
+        let normalizedHost = HermesHostEndpoints.normalizedHost(remoteHostName)
+        let isRemote = !HermesSSHHostCredentials.isLocalHost(normalizedHost)
+        let commandLabel = "$ hermes \(arguments.joined(separator: " "))"
+        var temporaryIdentityURL: URL?
+        defer {
+            if let temporaryIdentityURL { try? FileManager.default.removeItem(at: temporaryIdentityURL) }
+        }
+
+        if isRemote {
+            let credentials = HermesSettingsStore.loadSSHCredentials(forHost: normalizedHost)
+            let username = credentials.username.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !username.isEmpty else { return "\(commandLabel)\nSSH settings missing for \(normalizedHost): enter a username in Settings." }
+            do { temporaryIdentityURL = try HermesSSHKeychain.temporaryIdentityFile(forHost: normalizedHost) }
+            catch { return "\(commandLabel)\nSSH settings missing for \(normalizedHost): \(error.localizedDescription)" }
+            let remoteCommand = HermesShellQuoting.command(
+                executable,
+                arguments: arguments,
+                environment: ["HERMES_HOME": hermesHome, "TERM": "xterm-256color"]
+            )
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+            process.arguments = [
+                "-i", temporaryIdentityURL!.path,
+                "-o", "BatchMode=yes",
+                "-o", "IdentitiesOnly=yes",
+                "-o", "StrictHostKeyChecking=accept-new",
+                "\(username)@\(normalizedHost)",
+                remoteCommand
+            ]
+        } else {
+            process.executableURL = FileManager.default.isExecutableFile(atPath: executable) ? URL(fileURLWithPath: executable) : URL(fileURLWithPath: "/opt/homebrew/bin/hermes")
+            process.arguments = arguments
+            var environment = ProcessInfo.processInfo.environment
+            environment["HERMES_HOME"] = hermesHome
+            environment["TERM"] = environment["TERM"] ?? "xterm-256color"
+            process.environment = environment
+        }
+
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
         do {
             try process.run()
             DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
-                if process.isRunning {
-                    process.terminate()
-                }
+                if process.isRunning { process.terminate() }
             }
             process.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             let text = String(data: data, encoding: .utf8) ?? ""
-            let command = "$ hermes \(arguments.joined(separator: " "))"
-            let status = "exit \(process.terminationStatus)"
-            return [command, status, text.isEmpty ? "No output." : text].joined(separator: "\n")
+            let status = isRemote ? "ssh \(normalizedHost) exit \(process.terminationStatus)" : "exit \(process.terminationStatus)"
+            return [commandLabel, status, text.isEmpty ? "No output." : text].joined(separator: "\n")
         } catch {
             return "Failed to run hermes \(arguments.joined(separator: " ")): \(error.localizedDescription)"
         }

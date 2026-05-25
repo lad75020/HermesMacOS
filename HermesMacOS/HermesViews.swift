@@ -204,7 +204,8 @@ struct HermesResponsesConsoleView: View {
                                 message: message,
                                 fontSize: chatBubbleFontSize,
                                 isResponding: isResponsePlaceholder(message),
-                                responseElapsedSeconds: responseElapsedSeconds(for: message)
+                                responseElapsedSeconds: responseElapsedSeconds(for: message),
+                                tokenUsage: tokenUsage(for: message)
                             )
                                 .id(message.id)
                             if showsStreamOutputBubbles,
@@ -490,6 +491,14 @@ struct HermesResponsesConsoleView: View {
             return responseSession.activeResponseElapsedSeconds ?? message.responseElapsedSeconds
         }
         return message.responseElapsedSeconds
+    }
+
+    private func tokenUsage(for message: HermesResponseMessage) -> HermesTokenUsage? {
+        if message.role == "user" { return nil }
+        if responseSession.activeResponseMessageID == message.id {
+            return responseSession.activeResponseTokenUsage ?? message.tokenUsage
+        }
+        return message.tokenUsage
     }
 
     private func submitPrompt() {
@@ -802,6 +811,7 @@ struct HermesResponseBubble: View {
     let fontSize: Double
     var isResponding = false
     var responseElapsedSeconds: Int?
+    var tokenUsage: HermesTokenUsage?
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -816,6 +826,12 @@ struct HermesResponseBubble: View {
                             .font(.caption.monospacedDigit().weight(.semibold))
                             .foregroundStyle(Color.hermesOrange)
                             .accessibilityLabel("Response elapsed time \(Self.formattedElapsedAccessibilityTime(responseElapsedSeconds))")
+                    }
+                    if let tokenUsage, !tokenUsage.isEmpty, !isUser {
+                        Text(tokenUsage.displayText)
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(Color.hermesSecondaryText)
+                            .accessibilityLabel("Response token usage: \(tokenUsage.accessibilityText)")
                     }
                 }
                 HermesCopyableBubbleContent(text: displayContent, copyText: message.content, isUser: isUser, rendersMarkdown: !isUser, fontSize: fontSize, isResponding: isResponding)
@@ -1170,6 +1186,8 @@ struct SettingsView: View {
     @State private var chatDraft = HermesSettingsStore.loadChatDraft()
     @State private var savedEndpoints = HermesSettingsStore.loadSavedEndpoints()
     @State private var selectedEndpointID = HermesSettingsStore.loadSelectedEndpointID()
+    @State private var sshCredentials = HermesSettingsStore.loadSSHCredentials(forHost: HermesSettingsStore.loadAPISettings().hostName)
+    @State private var sshKeyStatusMessage = ""
     @State private var selectedWindowID = ""
     @State private var isApplyingSavedEndpoint = false
     @State private var connectionCenter = HermesWindowConnectionCenter.shared
@@ -1275,6 +1293,29 @@ struct SettingsView: View {
                     Text("Saved connections store an API URL together with its matching dashboard URL. Selecting one switches the selected Hermes window, not every open window.")
                         .font(.caption)
                         .foregroundStyle(Color.hermesSecondaryText)
+
+                    if currentAPIHostIsRemote {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("SSH for \(currentAPIHost)")
+                                .font(.headline)
+                            TextField("SSH username", text: $sshCredentials.username)
+                                .textFieldStyle(.roundedBorder)
+                            HStack(spacing: 10) {
+                                Button("Choose private SSH key…") { chooseSSHPrivateKey() }
+                                if sshCredentials.hasPrivateKey {
+                                    Button("Remove key") { removeSSHPrivateKey() }
+                                }
+                                Spacer()
+                            }
+                            Text(sshKeyStatusText)
+                                .font(.caption)
+                                .foregroundStyle(Color.hermesSecondaryText)
+                        }
+                        Text("For non-local hosts, HermesMacOS runs local system calls over SSH with this username and the private key stored in Keychain. The key is written only to a temporary 0600 identity file while ssh is running.")
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
                 }
 
                 Section("Hermes Dashboard") {
@@ -1324,6 +1365,7 @@ struct SettingsView: View {
         }
         .onChange(of: apiSettings) { _, value in
             HermesSettingsStore.saveAPISettings(value)
+            loadSSHCredentialsForCurrentHost()
             if !isApplyingSavedEndpoint {
                 syncSelectedEndpointWithCurrentURLs()
                 applyCurrentSettingsToSelectedWindow()
@@ -1343,6 +1385,19 @@ struct SettingsView: View {
         }
         .onChange(of: draft) { _, value in HermesSettingsStore.saveDraft(value) }
         .onChange(of: chatDraft) { _, value in HermesSettingsStore.saveChatDraft(value) }
+        .onChange(of: sshCredentials) { _, value in saveCurrentSSHCredentials(value) }
+    }
+
+    private var currentAPIHost: String { apiSettings.hostName }
+    private var currentAPIHostIsRemote: Bool { !HermesSSHHostCredentials.isLocalHost(currentAPIHost) }
+
+    private var sshKeyStatusText: String {
+        if !sshKeyStatusMessage.isEmpty { return sshKeyStatusMessage }
+        if sshCredentials.hasPrivateKey {
+            let label = sshCredentials.keyDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return label.isEmpty ? "Private key is stored in Keychain." : "Private key stored in Keychain: \(label)"
+        }
+        return "No private key stored for this host."
     }
 
     private var selectedSavedEndpoint: HermesSavedEndpoint? {
@@ -1460,6 +1515,53 @@ struct SettingsView: View {
             left.title.localizedStandardCompare(right.title) == .orderedAscending
         }
         HermesSettingsStore.saveSavedEndpoints(savedEndpoints)
+    }
+
+    private func loadSSHCredentialsForCurrentHost() {
+        let host = currentAPIHost
+        sshCredentials = HermesSettingsStore.loadSSHCredentials(forHost: host)
+        sshKeyStatusMessage = ""
+    }
+
+    private func saveCurrentSSHCredentials(_ value: HermesSSHHostCredentials) {
+        guard currentAPIHostIsRemote else { return }
+        var saved = value
+        saved.host = currentAPIHost
+        HermesSettingsStore.saveSSHCredentials(saved)
+        if let index = savedEndpoints.firstIndex(where: { $0.matches(apiURL: apiSettings.baseURL, dashboardURL: dashboardURL) }) {
+            savedEndpoints[index].sshUsername = saved.username
+            savedEndpoints[index].sshKeyDisplayName = saved.keyDisplayName
+            saveSavedEndpoints()
+        }
+    }
+
+    private func chooseSSHPrivateKey() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose private SSH key for \(currentAPIHost)"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: NSString(string: "~/.ssh").expandingTildeInPath, isDirectory: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let didAccess = url.startAccessingSecurityScopedResource()
+        defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            try HermesSSHKeychain.savePrivateKey(data, displayName: url.lastPathComponent, forHost: currentAPIHost)
+            sshCredentials.host = currentAPIHost
+            sshCredentials.keyDisplayName = url.lastPathComponent
+            HermesSettingsStore.saveSSHCredentials(sshCredentials)
+            sshKeyStatusMessage = "Private key loaded into Keychain."
+        } catch {
+            sshKeyStatusMessage = "Could not store key: \(error.localizedDescription)"
+        }
+    }
+
+    private func removeSSHPrivateKey() {
+        HermesSSHKeychain.deletePrivateKey(forHost: currentAPIHost)
+        sshCredentials.keyDisplayName = ""
+        HermesSettingsStore.saveSSHCredentials(sshCredentials)
+        sshKeyStatusMessage = "Private key removed from Keychain."
     }
 
     private func announceConnectionEndpointChange() {
