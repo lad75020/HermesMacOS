@@ -313,6 +313,7 @@ struct ContentView: View {
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
     @State private var historySearchSession = HermesDashboardHistorySearchSession()
+    @State private var sessionsStore = HermesSessionsStore()
     @State private var installationSession = HermesInstallationSession()
     @State private var configurationWebViewStore = HermesDashboardWebViewStore()
     @State private var selectedTab = HermesMacOSTab.ask
@@ -447,6 +448,14 @@ struct ContentView: View {
                 onResumeResponses: resumeConversationInResponses,
                 onResumeChat: resumeConversationInChat
             )
+        case .sessions:
+            HermesSessionsView(
+                apiSettings: apiSettings,
+                dashboardURL: dashboardURL,
+                store: sessionsStore,
+                connectedHostName: connectedHostName,
+                connectedWindowID: windowID
+            )
         case .dashboard:
             HermesDashboardView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .configuration:
@@ -540,6 +549,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case ask
     case chat
     case history
+    case sessions
     case dashboard
     case configuration
     case utilities
@@ -551,6 +561,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .ask: "Ask Hermes"
         case .chat: "Chat with Hermes"
         case .history: "History"
+        case .sessions: "Sessions"
         case .dashboard: "Hermes Dashboard"
         case .configuration: "Configuration"
         case .utilities: "Utilities"
@@ -562,6 +573,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .ask: "dot.radiowaves.left.and.right"
         case .chat: "text.bubble"
         case .history: "clock.arrow.circlepath"
+        case .sessions: "rectangle.stack"
         case .dashboard: "speedometer"
         case .configuration: "gearshape.2"
         case .utilities: "wrench.and.screwdriver"

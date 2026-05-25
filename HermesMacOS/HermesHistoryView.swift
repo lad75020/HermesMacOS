@@ -3,6 +3,7 @@
 //  HermesMacOS
 //
 
+import Foundation
 import SwiftUI
 
 struct HermesHistoryView: View {
@@ -405,4 +406,442 @@ private extension HermesDashboardConversationMessage {
         guard let timestamp else { return nil }
         return Date(timeIntervalSince1970: timestamp)
     }
+}
+
+struct HermesSessionsResponse: Decodable {
+    let sessions: [HermesAgentSessionSummary]
+    let total: Int
+    let limit: Int
+    let offset: Int
+}
+
+struct HermesAgentSessionSummary: Identifiable, Decodable, Equatable {
+    let id: String
+    let source: String?
+    let model: String?
+    let title: String?
+    let startedAt: Double?
+    let endedAt: Double?
+    let lastActive: Double?
+    let messageCount: Int?
+    let preview: String?
+    let isActive: Bool?
+    let profile: String?
+    let endReason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, source, model, title, preview, profile
+        case startedAt = "started_at"
+        case endedAt = "ended_at"
+        case lastActive = "last_active"
+        case messageCount = "message_count"
+        case isActive = "is_active"
+        case endReason = "end_reason"
+    }
+
+    var displayTitle: String {
+        for candidate in [title, preview, id] {
+            let trimmed = (candidate ?? "").replacingOccurrences(of: "\n", with: " ").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return "Untitled session"
+    }
+
+    var startedAtDate: Date? { startedAt.map { Date(timeIntervalSince1970: $0) } }
+    var lastActiveDate: Date? { lastActive.map { Date(timeIntervalSince1970: $0) } }
+
+    var sourceIconName: String {
+        switch source?.lowercased() {
+        case "telegram", "whatsapp", "signal", "discord", "slack", "matrix": "message"
+        case "cli": "terminal"
+        case "cron": "calendar.badge.clock"
+        case "api", "api_server": "network"
+        case "tui": "rectangle.and.pencil.and.ellipsis"
+        case "tool": "hammer"
+        default: "bubble.left.and.text.bubble.right"
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class HermesSessionsStore {
+    let pageSize = 10
+    var sessions: [HermesAgentSessionSummary] = []
+    var total = 0
+    var pageIndex = 0
+    var isLoading = false
+    var status = "Loading sessions"
+    var lastErrorMessage = ""
+
+    private var requestTask: Task<Void, Never>?
+    private var activeRequestID: UUID?
+    private var cachedTokenByBaseURL: [String: String] = [:]
+
+    var pageCount: Int { max(1, Int(ceil(Double(total) / Double(pageSize)))) }
+    var canGoPrevious: Bool { !isLoading && pageIndex > 0 }
+    var canGoNext: Bool { !isLoading && pageIndex + 1 < pageCount }
+    var displayRangeText: String {
+        guard total > 0 else { return "No sessions" }
+        let start = pageIndex * pageSize + 1
+        let end = min(total, start + sessions.count - 1)
+        return "\(start)–\(end) of \(total)"
+    }
+
+    func refresh(dashboardURL: String, apiSettings: HermesAPISettings) {
+        load(page: pageIndex, dashboardURL: dashboardURL, apiSettings: apiSettings)
+    }
+
+    func loadFirstPage(dashboardURL: String, apiSettings: HermesAPISettings) {
+        load(page: 0, dashboardURL: dashboardURL, apiSettings: apiSettings)
+    }
+
+    func nextPage(dashboardURL: String, apiSettings: HermesAPISettings) {
+        guard canGoNext else { return }
+        load(page: pageIndex + 1, dashboardURL: dashboardURL, apiSettings: apiSettings)
+    }
+
+    func previousPage(dashboardURL: String, apiSettings: HermesAPISettings) {
+        guard canGoPrevious else { return }
+        load(page: pageIndex - 1, dashboardURL: dashboardURL, apiSettings: apiSettings)
+    }
+
+    func cancel() {
+        requestTask?.cancel()
+        requestTask = nil
+        activeRequestID = nil
+        isLoading = false
+        status = "Cancelled"
+    }
+
+    private func load(page requestedPage: Int, dashboardURL: String, apiSettings: HermesAPISettings) {
+        requestTask?.cancel()
+        let requestID = UUID()
+        activeRequestID = requestID
+        isLoading = true
+        lastErrorMessage = ""
+        status = "Loading sessions"
+
+        requestTask = Task {
+            do {
+                let baseURL = try Self.resolvedDashboardBaseURL(from: dashboardURL, apiBaseURL: apiSettings.baseURL)
+                var token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                let firstResponse: HermesSessionsResponse
+                do {
+                    firstResponse = try await Self.fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: 1, offset: 0)
+                } catch HermesResponsesError.httpError(401) {
+                    cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
+                    token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                    firstResponse = try await Self.fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: 1, offset: 0)
+                }
+                try Task.checkCancellation()
+                guard activeRequestID == requestID else { return }
+
+                let newTotal = firstResponse.total
+                let lastPage = max(0, Int(ceil(Double(newTotal) / Double(pageSize))) - 1)
+                let effectivePage = min(max(0, requestedPage), lastPage)
+                let pageStart = effectivePage * pageSize
+                let count = max(0, min(pageSize, newTotal - pageStart))
+
+                if count == 0 {
+                    total = newTotal
+                    pageIndex = 0
+                    sessions = []
+                    status = "No sessions found"
+                    isLoading = false
+                    activeRequestID = nil
+                    return
+                }
+
+                let apiOffset = max(newTotal - (pageStart + count), 0)
+                let response = try await Self.fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: count, offset: apiOffset)
+                try Task.checkCancellation()
+                guard activeRequestID == requestID else { return }
+
+                total = response.total
+                pageIndex = effectivePage
+                sessions = response.sessions.reversed()
+                status = "Showing sessions in chronological order"
+            } catch is CancellationError {
+                if activeRequestID == requestID { status = "Cancelled" }
+            } catch {
+                if activeRequestID == requestID {
+                    sessions = []
+                    lastErrorMessage = error.localizedDescription
+                    status = "Could not load sessions"
+                }
+            }
+            if activeRequestID == requestID {
+                isLoading = false
+                activeRequestID = nil
+            }
+        }
+    }
+
+    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
+        let cacheKey = baseURL.absoluteString
+        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
+        let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(from: baseURL)
+        try HermesNetworkSessionFactory.validate(response: response)
+        let html = String(decoding: data, as: UTF8.self)
+        let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#
+        let regex = try NSRegularExpression(pattern: pattern)
+        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
+        guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else { throw HermesDashboardHistorySearchError.missingDashboardSessionToken }
+        let token = String(html[tokenRange])
+        cachedTokenByBaseURL[cacheKey] = token
+        return token
+    }
+
+    nonisolated private static func fetchSessions(baseURL: URL, token: String, apiSettings: HermesAPISettings, limit: Int, offset: Int) async throws -> HermesSessionsResponse {
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/sessions"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset))
+        ]
+        guard let url = components?.url else { throw HermesDashboardHistorySearchError.invalidDashboardURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
+        try HermesNetworkSessionFactory.validate(response: response)
+        return try JSONDecoder().decode(HermesSessionsResponse.self, from: data)
+    }
+
+    nonisolated private static func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
+        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
+        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
+        guard let url = normalizedBaseURL(from: fallback) else { throw HermesDashboardHistorySearchError.invalidDashboardURL }
+        return url
+    }
+
+    nonisolated private static func normalizedBaseURL(from value: String) -> URL? {
+        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        return URL(string: trimmed)
+    }
+}
+
+struct HermesSessionsView: View {
+    let apiSettings: HermesAPISettings
+    let dashboardURL: String
+    @Bindable var store: HermesSessionsStore
+    let connectedHostName: String
+    let connectedWindowID: UUID
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            List {
+                paginationSection
+                sessionsSection
+            }
+            .scrollContentBackground(.hidden)
+        }
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
+        .task(id: dashboardURL + apiSettings.baseURL) {
+            store.loadFirstPage(dashboardURL: dashboardURL, apiSettings: apiSettings)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            Label("Sessions", systemImage: "rectangle.stack")
+                .hermesWebsiteTitleFont(size: 22, weight: .bold)
+            Spacer()
+            HermesConnectedHostLabel(hostName: connectedHostName, windowID: connectedWindowID)
+            if store.isLoading {
+                ProgressView().controlSize(.small)
+                Text("Dashboard HTTP")
+                    .hermesWebsiteLabelFont(size: 11, weight: .bold)
+                    .foregroundStyle(Color.hermesSecondaryText)
+            }
+        }
+        .padding(18)
+        .hermesGlassPanel(cornerRadius: 0)
+    }
+
+    private var paginationSection: some View {
+        Section {
+            HStack(spacing: 12) {
+                Button {
+                    store.previousPage(dashboardURL: dashboardURL, apiSettings: apiSettings)
+                } label: {
+                    Label("Previous 10", systemImage: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+                .disabled(!store.canGoPrevious)
+
+                Button {
+                    store.nextPage(dashboardURL: dashboardURL, apiSettings: apiSettings)
+                } label: {
+                    Label("Next 10", systemImage: "chevron.right")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!store.canGoNext)
+
+                Button {
+                    store.refresh(dashboardURL: dashboardURL, apiSettings: apiSettings)
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+                .disabled(store.isLoading)
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(store.displayRangeText)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.primary)
+                    Text("Page \(min(store.pageIndex + 1, store.pageCount)) of \(store.pageCount)")
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+            }
+            .padding(14)
+            .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.58), cornerRadius: 18)
+            .padding(.vertical, 4)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(store.status)
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                if !store.lastErrorMessage.isEmpty {
+                    Text(store.lastErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesDestructive)
+                }
+            }
+        } header: {
+            Label("Pagination", systemImage: "list.number")
+        } footer: {
+            Text("Sessions are displayed oldest to newest. Each page shows up to 10 sessions from the Hermes dashboard /api/sessions endpoint.")
+        }
+    }
+
+    private var sessionsSection: some View {
+        Section {
+            if store.isLoading && store.sessions.isEmpty {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text("Loading sessions…")
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                .padding(.vertical, 8)
+            } else if store.sessions.isEmpty {
+                ContentUnavailableView(
+                    "No Sessions",
+                    systemImage: "rectangle.stack.badge.person.crop",
+                    description: Text("Hermes has not reported any saved sessions yet.")
+                )
+            } else {
+                ForEach(store.sessions) { session in
+                    HermesSessionSummaryRow(session: session)
+                }
+            }
+        } header: {
+            Label("Known sessions", systemImage: "rectangle.stack")
+        }
+    }
+}
+
+private struct HermesSessionSummaryRow: View {
+    let session: HermesAgentSessionSummary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: session.sourceIconName)
+                    .foregroundStyle(session.isActive == true ? Color.green : Color.hermesActionBlue)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(session.displayTitle)
+                            .font(.headline)
+                            .lineLimit(2)
+                        if session.isActive == true {
+                            Text("Active")
+                                .font(.caption2.weight(.bold))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Color.green.opacity(0.16), in: Capsule())
+                                .foregroundStyle(Color.green)
+                        }
+                    }
+
+                    Text(session.id)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(Color.hermesSecondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    if let startedAtDate = session.startedAtDate {
+                        Text(startedAtDate, formatter: Self.dateFormatter)
+                            .font(.caption.monospacedDigit())
+                    }
+                    if let messageCount = session.messageCount {
+                        Text("\(messageCount) messages")
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(Color.hermesSecondaryText)
+                    }
+                }
+            }
+
+            if let preview = session.preview?.trimmingCharacters(in: .whitespacesAndNewlines), !preview.isEmpty, preview != session.displayTitle {
+                Text(preview)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .lineLimit(3)
+            }
+
+            HStack(spacing: 8) {
+                sessionPill(label: session.source ?? "unknown", systemImage: "tray")
+                if let profile = session.profile?.trimmingCharacters(in: .whitespacesAndNewlines), !profile.isEmpty {
+                    sessionPill(label: profile, systemImage: "person.crop.circle")
+                }
+                if let model = session.model?.trimmingCharacters(in: .whitespacesAndNewlines), !model.isEmpty {
+                    sessionPill(label: model, systemImage: "cpu")
+                }
+                if let lastActiveDate = session.lastActiveDate {
+                    sessionPill(label: "Last active \(Self.relativeFormatter.localizedString(for: lastActiveDate, relativeTo: Date()))", systemImage: "clock")
+                }
+            }
+            .lineLimit(1)
+        }
+        .padding(14)
+        .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.54), cornerRadius: 18)
+        .padding(.vertical, 4)
+    }
+
+    private func sessionPill(label: String, systemImage: String) -> some View {
+        Label(label, systemImage: systemImage)
+            .font(.caption2)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.hermesSurfaceInput.opacity(0.7), in: Capsule())
+            .foregroundStyle(Color.hermesSecondaryText)
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
 }
