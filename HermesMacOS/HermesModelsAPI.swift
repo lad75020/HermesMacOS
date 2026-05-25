@@ -362,6 +362,8 @@ enum HermesSettingsStore {
     private static let savedEndpointsKey = "hermes.macOS.savedConnectionEndpoints"
     private static let selectedEndpointIDKey = "hermes.macOS.selectedConnectionEndpointID"
     private static let sshCredentialsKey = "hermes.macOS.sshHostCredentials"
+    private static let installationRepositoryPathKey = "hermes.macOS.installation.repositoryPath"
+    private static let defaultInstallationRepositoryPath = NSString(string: "~/.hermes/hermes-agent").expandingTildeInPath
 
     static func loadAPISettings() -> HermesAPISettings { load(HermesAPISettings.self, forKey: apiSettingsKey) ?? HermesAPISettings() }
     static func saveAPISettings(_ value: HermesAPISettings) { save(value, forKey: apiSettingsKey) }
@@ -383,6 +385,8 @@ enum HermesSettingsStore {
     static func saveSelectedEndpointID(_ value: String) { UserDefaults.standard.set(value, forKey: selectedEndpointIDKey) }
     static func loadSSHCredentials() -> [String: HermesSSHHostCredentials] { load([String: HermesSSHHostCredentials].self, forKey: sshCredentialsKey) ?? [:] }
     static func saveSSHCredentials(_ value: [String: HermesSSHHostCredentials]) { save(value, forKey: sshCredentialsKey) }
+    static func loadInstallationRepositoryPath() -> String { UserDefaults.standard.string(forKey: installationRepositoryPathKey) ?? defaultInstallationRepositoryPath }
+    static func saveInstallationRepositoryPath(_ value: String) { UserDefaults.standard.set(value, forKey: installationRepositoryPathKey) }
     static func loadSSHCredentials(forHost host: String) -> HermesSSHHostCredentials {
         let normalizedHost = HermesHostEndpoints.normalizedHost(host).lowercased()
         return loadSSHCredentials()[normalizedHost] ?? HermesSSHHostCredentials(host: normalizedHost, username: "", keyDisplayName: "")

@@ -38,7 +38,8 @@ struct HermesConnectedHostLabel: View {
         .help("Connected host: \(hostName)")
         .onAppear { reloadSavedEndpoints() }
         .onChange(of: hostName) { _, _ in syncSelectedEndpoint() }
-        .onReceive(NotificationCenter.default.publisher(for: .hermesConnectionEndpointDidChange)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .hermesConnectionEndpointDidChange)) { notification in
+            if let changedWindowID = notification.object as? UUID, changedWindowID != windowID { return }
             reloadSavedEndpoints()
         }
     }
@@ -76,7 +77,6 @@ struct HermesConnectedHostLabel: View {
         else { return }
         var newAPISettings = connectionCenter.connection(id: windowID)?.apiSettings ?? HermesSettingsStore.loadAPISettings()
         newAPISettings.baseURL = endpoint.apiURL
-        HermesSettingsStore.saveSelectedEndpointID(id)
         connectionCenter.applyEndpoint(to: windowID, apiSettings: newAPISettings, dashboardURL: endpoint.dashboardURL)
     }
 }

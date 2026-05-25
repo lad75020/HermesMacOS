@@ -150,7 +150,7 @@ struct HermesInstallationView: View {
     var onReviewWithHermes: (String) -> Void
     var presentation: Presentation = .standalone
 
-    @AppStorage("hermes.macOS.installation.repositoryPath") private var repositoryPath = NSString(string: "~/.hermes/hermes-agent").expandingTildeInPath
+    @State private var repositoryPath = HermesSettingsStore.loadInstallationRepositoryPath()
     @State private var selectedOutput = ""
 
     var body: some View {
@@ -173,6 +173,7 @@ struct HermesInstallationView: View {
             }
         }
         .onChange(of: repositoryPath) { _, newValue in
+            HermesSettingsStore.saveInstallationRepositoryPath(newValue)
             session.refresh(repositoryPath: newValue)
         }
         .onChange(of: session.status.mergePreview) { _, _ in selectedOutput = displayOutput }
