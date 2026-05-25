@@ -471,6 +471,13 @@ struct HermesAgentSessionSummary: Identifiable, Decodable, Equatable {
         default: "bubble.left.and.text.bubble.right"
         }
     }
+
+    var isCronInitiated: Bool {
+        switch source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "cron", "cronjob", "scheduled", "scheduler": true
+        default: false
+        }
+    }
 }
 
 @MainActor
@@ -608,30 +615,21 @@ final class HermesSessionsStore {
                 try Task.checkCancellation()
                 guard activeRequestID == requestID else { return }
 
-                let lastPage = max(0, Int(ceil(Double(visibleTotal) / Double(pageSize))) - 1)
-                let effectivePage = min(max(0, requestedPage), lastPage)
-                let pageStart = effectivePage * pageSize
-                let count = max(0, min(pageSize, visibleTotal - pageStart))
-
-                if count == 0 {
-                    total = 0
-                    pageIndex = 0
-                    sessions = []
-                    status = "No sessions found"
-                    isLoading = false
-                    activeRequestID = nil
-                    return
-                }
-
-                let apiOffset = max(visibleTotal - (pageStart + count), 0)
-                let response = try await Self.fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: count, offset: apiOffset)
+                let nonCronPage = try await Self.nonCronSessionPage(
+                    baseURL: baseURL,
+                    token: token,
+                    apiSettings: apiSettings,
+                    visibleTotal: visibleTotal,
+                    requestedPage: requestedPage,
+                    pageSize: pageSize
+                )
                 try Task.checkCancellation()
                 guard activeRequestID == requestID else { return }
 
-                total = visibleTotal
-                pageIndex = effectivePage
-                sessions = response.sessions.reversed()
-                status = "Showing sessions in chronological order"
+                total = nonCronPage.total
+                pageIndex = nonCronPage.pageIndex
+                sessions = nonCronPage.sessions
+                status = nonCronPage.total == 0 ? "No non-cron sessions found" : "Showing non-cron sessions in chronological order"
             } catch is CancellationError {
                 if activeRequestID == requestID { status = "Cancelled" }
             } catch {
@@ -692,6 +690,37 @@ final class HermesSessionsStore {
         }
 
         return highestNonEmptyOffset + 1
+    }
+
+    nonisolated private static func nonCronSessionPage(
+        baseURL: URL,
+        token: String,
+        apiSettings: HermesAPISettings,
+        visibleTotal: Int,
+        requestedPage: Int,
+        pageSize: Int
+    ) async throws -> (sessions: [HermesAgentSessionSummary], total: Int, pageIndex: Int) {
+        guard visibleTotal > 0 else { return ([], 0, 0) }
+
+        let batchSize = 100
+        var newestFirstNonCron: [HermesAgentSessionSummary] = []
+        var offset = 0
+        while offset < visibleTotal {
+            let limit = min(batchSize, visibleTotal - offset)
+            let response = try await fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: limit, offset: offset)
+            newestFirstNonCron.append(contentsOf: response.sessions.filter { !$0.isCronInitiated })
+            offset += limit
+        }
+
+        let filteredTotal = newestFirstNonCron.count
+        guard filteredTotal > 0 else { return ([], 0, 0) }
+
+        let chronological = Array(newestFirstNonCron.reversed())
+        let lastPage = max(0, Int(ceil(Double(filteredTotal) / Double(pageSize))) - 1)
+        let effectivePage = min(max(0, requestedPage), lastPage)
+        let pageStart = effectivePage * pageSize
+        let pageEnd = min(filteredTotal, pageStart + pageSize)
+        return (Array(chronological[pageStart..<pageEnd]), filteredTotal, effectivePage)
     }
 
     nonisolated private static func fetchSessions(baseURL: URL, token: String, apiSettings: HermesAPISettings, limit: Int, offset: Int) async throws -> HermesSessionsResponse {
