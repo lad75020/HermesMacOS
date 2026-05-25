@@ -73,6 +73,7 @@ struct HermesMacOSApp: App {
                 .frame(minWidth: 920, minHeight: 680)
                 .environment(\.locale, appLanguage.locale)
         }
+        .defaultSize(width: 1_104, height: 816)
         .windowStyle(.titleBar)
         .commands {
             HermesWindowCommands()
