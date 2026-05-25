@@ -598,14 +598,23 @@ final class HermesSessionsStore {
                 try Task.checkCancellation()
                 guard activeRequestID == requestID else { return }
 
-                let newTotal = firstResponse.total
-                let lastPage = max(0, Int(ceil(Double(newTotal) / Double(pageSize))) - 1)
+                let visibleTotal = try await Self.discoverVisibleSessionTotal(
+                    baseURL: baseURL,
+                    token: token,
+                    apiSettings: apiSettings,
+                    reportedTotal: firstResponse.total,
+                    firstPage: firstResponse
+                )
+                try Task.checkCancellation()
+                guard activeRequestID == requestID else { return }
+
+                let lastPage = max(0, Int(ceil(Double(visibleTotal) / Double(pageSize))) - 1)
                 let effectivePage = min(max(0, requestedPage), lastPage)
                 let pageStart = effectivePage * pageSize
-                let count = max(0, min(pageSize, newTotal - pageStart))
+                let count = max(0, min(pageSize, visibleTotal - pageStart))
 
                 if count == 0 {
-                    total = newTotal
+                    total = 0
                     pageIndex = 0
                     sessions = []
                     status = "No sessions found"
@@ -614,12 +623,12 @@ final class HermesSessionsStore {
                     return
                 }
 
-                let apiOffset = max(newTotal - (pageStart + count), 0)
+                let apiOffset = max(visibleTotal - (pageStart + count), 0)
                 let response = try await Self.fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: count, offset: apiOffset)
                 try Task.checkCancellation()
                 guard activeRequestID == requestID else { return }
 
-                total = response.total
+                total = visibleTotal
                 pageIndex = effectivePage
                 sessions = response.sessions.reversed()
                 status = "Showing sessions in chronological order"
@@ -652,6 +661,37 @@ final class HermesSessionsStore {
         let token = String(html[tokenRange])
         cachedTokenByBaseURL[cacheKey] = token
         return token
+    }
+
+    nonisolated private static func discoverVisibleSessionTotal(
+        baseURL: URL,
+        token: String,
+        apiSettings: HermesAPISettings,
+        reportedTotal: Int,
+        firstPage: HermesSessionsResponse
+    ) async throws -> Int {
+        guard reportedTotal > 0, !firstPage.sessions.isEmpty else { return 0 }
+
+        let highestReportedOffset = max(reportedTotal - 1, 0)
+        let lastReportedPage = try await fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: 1, offset: highestReportedOffset)
+        if !lastReportedPage.sessions.isEmpty { return reportedTotal }
+
+        var low = 0
+        var high = highestReportedOffset
+        var highestNonEmptyOffset = 0
+
+        while low <= high {
+            let midpoint = low + (high - low) / 2
+            let response = try await fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: 1, offset: midpoint)
+            if response.sessions.isEmpty {
+                high = midpoint - 1
+            } else {
+                highestNonEmptyOffset = midpoint
+                low = midpoint + 1
+            }
+        }
+
+        return highestNonEmptyOffset + 1
     }
 
     nonisolated private static func fetchSessions(baseURL: URL, token: String, apiSettings: HermesAPISettings, limit: Int, offset: Int) async throws -> HermesSessionsResponse {
