@@ -415,6 +415,16 @@ struct HermesSessionsResponse: Decodable {
     let offset: Int
 }
 
+struct HermesSessionMessagesResponse: Decodable {
+    let sessionID: String
+    let messages: [HermesDashboardConversationMessage]
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case messages
+    }
+}
+
 struct HermesAgentSessionSummary: Identifiable, Decodable, Equatable {
     let id: String
     let source: String?
@@ -473,8 +483,12 @@ final class HermesSessionsStore {
     var isLoading = false
     var status = "Loading sessions"
     var lastErrorMessage = ""
+    var conversationResultsBySessionID: [String: HermesDashboardConversationResult] = [:]
+    var loadingConversationIDs: Set<String> = []
+    var conversationErrorBySessionID: [String: String] = [:]
 
     private var requestTask: Task<Void, Never>?
+    private var conversationTasks: [String: Task<Void, Never>] = [:]
     private var activeRequestID: UUID?
     private var cachedTokenByBaseURL: [String: String] = [:]
 
@@ -508,10 +522,57 @@ final class HermesSessionsStore {
 
     func cancel() {
         requestTask?.cancel()
+        conversationTasks.values.forEach { $0.cancel() }
+        conversationTasks.removeAll()
+        loadingConversationIDs.removeAll()
         requestTask = nil
         activeRequestID = nil
         isLoading = false
         status = "Cancelled"
+    }
+
+    func loadConversation(for session: HermesAgentSessionSummary, dashboardURL: String, apiSettings: HermesAPISettings, onLoaded: ((HermesDashboardConversationResult) -> Void)? = nil) {
+        if let cached = conversationResultsBySessionID[session.id] {
+            onLoaded?(cached)
+            return
+        }
+        conversationTasks[session.id]?.cancel()
+        loadingConversationIDs.insert(session.id)
+        conversationErrorBySessionID[session.id] = nil
+        status = "Loading session details"
+
+        conversationTasks[session.id] = Task {
+            do {
+                let baseURL = try Self.resolvedDashboardBaseURL(from: dashboardURL, apiBaseURL: apiSettings.baseURL)
+                var token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                let response: HermesSessionMessagesResponse
+                do {
+                    response = try await Self.fetchSessionMessages(baseURL: baseURL, token: token, apiSettings: apiSettings, sessionID: session.id)
+                } catch HermesResponsesError.httpError(401) {
+                    cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
+                    token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                    response = try await Self.fetchSessionMessages(baseURL: baseURL, token: token, apiSettings: apiSettings, sessionID: session.id)
+                }
+                try Task.checkCancellation()
+                let result = Self.conversationResult(for: session, resolvedSessionID: response.sessionID, messages: response.messages)
+                conversationResultsBySessionID[session.id] = result
+                conversationErrorBySessionID[session.id] = nil
+                loadingConversationIDs.remove(session.id)
+                conversationTasks[session.id] = nil
+                status = "Session details loaded"
+                onLoaded?(result)
+            } catch is CancellationError {
+                if loadingConversationIDs.contains(session.id) {
+                    loadingConversationIDs.remove(session.id)
+                    conversationTasks[session.id] = nil
+                }
+            } catch {
+                loadingConversationIDs.remove(session.id)
+                conversationTasks[session.id] = nil
+                conversationErrorBySessionID[session.id] = error.localizedDescription
+                status = "Could not load session details"
+            }
+        }
     }
 
     private func load(page requestedPage: Int, dashboardURL: String, apiSettings: HermesAPISettings) {
@@ -610,6 +671,37 @@ final class HermesSessionsStore {
         return try JSONDecoder().decode(HermesSessionsResponse.self, from: data)
     }
 
+    nonisolated private static func fetchSessionMessages(baseURL: URL, token: String, apiSettings: HermesAPISettings, sessionID: String) async throws -> HermesSessionMessagesResponse {
+        let url = baseURL.appendingPathComponent("api/sessions").appendingPathComponent(sessionID).appendingPathComponent("messages")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 60
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
+        try HermesNetworkSessionFactory.validate(response: response)
+        return try JSONDecoder().decode(HermesSessionMessagesResponse.self, from: data)
+    }
+
+    nonisolated private static func conversationResult(for session: HermesAgentSessionSummary, resolvedSessionID: String, messages: [HermesDashboardConversationMessage]) -> HermesDashboardConversationResult {
+        let sessionInfo = HermesDashboardSessionInfo(
+            id: resolvedSessionID,
+            source: session.source,
+            profile: session.profile,
+            model: session.model,
+            title: session.title ?? session.preview,
+            startedAt: session.startedAt,
+            endedAt: session.endedAt,
+            messageCount: session.messageCount
+        )
+        return HermesDashboardConversationResult(
+            sessionID: resolvedSessionID,
+            session: sessionInfo,
+            messages: messages,
+            title: session.title ?? session.preview
+        )
+    }
+
     nonisolated private static func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
         let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
@@ -630,9 +722,12 @@ struct HermesSessionsView: View {
     let apiSettings: HermesAPISettings
     let dashboardURL: String
     @Bindable var store: HermesSessionsStore
+    let isResponsesStreaming: Bool
     let connectedHostName: String
     let connectedWindowID: UUID
+    let onResumeResponses: (HermesDashboardConversationResult) -> Void
 
+    @State private var expandedSessionIDs: Set<String> = []
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -741,17 +836,57 @@ struct HermesSessionsView: View {
                 )
             } else {
                 ForEach(store.sessions) { session in
-                    HermesSessionSummaryRow(session: session)
+                    HermesSessionSummaryRow(
+                        session: session,
+                        conversationResult: store.conversationResultsBySessionID[session.id],
+                        isConversationLoading: store.loadingConversationIDs.contains(session.id),
+                        conversationError: store.conversationErrorBySessionID[session.id],
+                        isExpanded: bindingForSessionDetails(session.id),
+                        isResumeDisabled: isResponsesStreaming,
+                        onResume: { resumeSessionInAskHermes(session) },
+                        onToggleDetails: { toggleDetails(for: session) }
+                    )
                 }
             }
         } header: {
             Label("Known sessions", systemImage: "rectangle.stack")
         }
     }
+
+    private func bindingForSessionDetails(_ sessionID: String) -> Binding<Bool> {
+        Binding(
+            get: { expandedSessionIDs.contains(sessionID) },
+            set: { isExpanded in
+                if isExpanded { expandedSessionIDs.insert(sessionID) } else { expandedSessionIDs.remove(sessionID) }
+            }
+        )
+    }
+
+    private func toggleDetails(for session: HermesAgentSessionSummary) {
+        if expandedSessionIDs.contains(session.id) {
+            expandedSessionIDs.remove(session.id)
+            return
+        }
+        expandedSessionIDs.insert(session.id)
+        store.loadConversation(for: session, dashboardURL: dashboardURL, apiSettings: apiSettings)
+    }
+
+    private func resumeSessionInAskHermes(_ session: HermesAgentSessionSummary) {
+        store.loadConversation(for: session, dashboardURL: dashboardURL, apiSettings: apiSettings) { result in
+            onResumeResponses(result)
+        }
+    }
 }
 
 private struct HermesSessionSummaryRow: View {
     let session: HermesAgentSessionSummary
+    let conversationResult: HermesDashboardConversationResult?
+    let isConversationLoading: Bool
+    let conversationError: String?
+    @Binding var isExpanded: Bool
+    let isResumeDisabled: Bool
+    let onResume: () -> Void
+    let onToggleDetails: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -804,6 +939,46 @@ private struct HermesSessionSummaryRow: View {
                     .lineLimit(3)
             }
 
+            HStack(spacing: 10) {
+                Button {
+                    onResume()
+                } label: {
+                    Label("Resume to Ask Hermes", systemImage: "arrow.uturn.forward.circle")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .disabled(isResumeDisabled || isConversationLoading)
+                .help(isResumeDisabled ? "Ask Hermes is streaming a response" : "Load this session and resume it in Ask Hermes")
+
+                Button {
+                    onToggleDetails()
+                } label: {
+                    Label(isExpanded ? "Hide details" : "Details", systemImage: isExpanded ? "chevron.up.circle" : "text.bubble")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isConversationLoading && !isExpanded)
+
+                if isConversationLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading details…")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+                Spacer()
+            }
+
+            if let conversationError, !conversationError.isEmpty {
+                Text(conversationError)
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesDestructive)
+            }
+
+            if isExpanded {
+                detailsContent
+            }
+
             HStack(spacing: 8) {
                 sessionPill(label: session.source ?? "unknown", systemImage: "tray")
                 if let profile = session.profile?.trimmingCharacters(in: .whitespacesAndNewlines), !profile.isEmpty {
@@ -821,6 +996,29 @@ private struct HermesSessionSummaryRow: View {
         .padding(14)
         .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.54), cornerRadius: 18)
         .padding(.vertical, 4)
+    }
+
+    private var detailsContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let conversationResult {
+                if conversationResult.messages.isEmpty {
+                    Text("No conversation messages were stored for this session.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ForEach(conversationResult.messages) { message in
+                        HermesDashboardConversationMessageRow(message: message)
+                    }
+                }
+            } else if !isConversationLoading {
+                Text("Click Details to load this session conversation.")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.top, 4)
     }
 
     private func sessionPill(label: String, systemImage: String) -> some View {

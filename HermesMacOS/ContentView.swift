@@ -453,8 +453,10 @@ struct ContentView: View {
                 apiSettings: apiSettings,
                 dashboardURL: dashboardURL,
                 store: sessionsStore,
+                isResponsesStreaming: askWorkspaces.contains(where: { $0.session.isSending }),
                 connectedHostName: connectedHostName,
-                connectedWindowID: windowID
+                connectedWindowID: windowID,
+                onResumeResponses: resumeConversationInResponses
             )
         case .dashboard:
             HermesDashboardView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)

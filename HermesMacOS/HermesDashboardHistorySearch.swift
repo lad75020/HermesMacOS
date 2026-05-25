@@ -30,6 +30,14 @@ struct HermesDashboardConversationResult: Identifiable, Decodable {
     let messages: [HermesDashboardConversationMessage]
     let title: String?
 
+    init(sessionID: String, session: HermesDashboardSessionInfo, matches: [HermesDashboardMessageMatch] = [], messages: [HermesDashboardConversationMessage], title: String?) {
+        self.sessionID = sessionID
+        self.session = session
+        self.matches = matches
+        self.messages = messages
+        self.title = title
+    }
+
     var id: String { sessionID }
 
     var sessionFriendlyName: String {
@@ -100,6 +108,18 @@ struct HermesDashboardSessionInfo: Decodable {
     let endedAt: Double?
     let messageCount: Int?
 
+    init(id: String, source: String?, userID: String? = nil, profile: String?, model: String?, title: String?, startedAt: Double?, endedAt: Double?, messageCount: Int?) {
+        self.id = id
+        self.source = source
+        self.userID = userID
+        self.profile = profile
+        self.model = model
+        self.title = title
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.messageCount = messageCount
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, source, profile, metadata, model, title, name, summary
         case userID = "user_id"
@@ -168,6 +188,14 @@ struct HermesDashboardConversationMessage: Identifiable, Decodable {
     let content: String
     let timestamp: Double?
     let toolName: String?
+
+    init(id: String, role: String, content: String, timestamp: Double?, toolName: String?) {
+        self.id = id
+        self.role = role
+        self.content = content
+        self.timestamp = timestamp
+        self.toolName = toolName
+    }
 
     enum CodingKeys: String, CodingKey { case id, role, content, timestamp; case toolName = "tool_name" }
 
