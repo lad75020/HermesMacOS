@@ -465,10 +465,7 @@ except BaseException as exc:
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.currentDirectoryURL = URL(fileURLWithPath: workdir)
-        var environment = ProcessInfo.processInfo.environment
-        environment["HERMES_HOME"] = hermesHome
-        environment["TERM"] = environment["TERM"] ?? "xterm-256color"
-        process.environment = environment
+        process.environment = normalizedSubprocessEnvironment(hermesHome: hermesHome)
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -483,6 +480,39 @@ except BaseException as exc:
         } catch {
             return "{\"error\":\"\(error.localizedDescription)\",\"results\":[]}"
         }
+    }
+
+    private nonisolated static func normalizedSubprocessEnvironment(hermesHome: String) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment["HERMES_HOME"] = hermesHome
+        environment["TERM"] = environment["TERM"] ?? "xterm-256color"
+        environment["PATH"] = normalizedPATH(existing: environment["PATH"], hermesHome: hermesHome)
+        return environment
+    }
+
+    private nonisolated static func normalizedPATH(existing: String?, hermesHome: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let preferredPaths = [
+            URL(fileURLWithPath: hermesHome).appendingPathComponent("node/bin").path,
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            URL(fileURLWithPath: home).appendingPathComponent(".local/bin").path
+        ]
+        let fallbackPaths = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        let pathSeparator = ":"
+        let currentPaths = (existing ?? "")
+            .split(separator: ":", omittingEmptySubsequences: true)
+            .map(String.init)
+        var seen = Set<String>()
+        let orderedPaths = (preferredPaths + currentPaths + fallbackPaths).filter { path in
+            let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard FileManager.default.fileExists(atPath: standardized), !seen.contains(standardized) else { return false }
+            seen.insert(standardized)
+            return true
+        }
+        return orderedPaths.joined(separator: pathSeparator)
     }
 }
 
