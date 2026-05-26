@@ -314,6 +314,7 @@ struct ContentView: View {
     @State private var promptHistory = HermesPromptHistoryStore()
     @State private var historySearchSession = HermesDashboardHistorySearchSession()
     @State private var sessionsStore = HermesSessionsStore()
+    @State private var approvalsInboxStore = HermesApprovalsInboxStore()
     @State private var installationSession = HermesInstallationSession()
     @State private var configurationWebViewStore = HermesDashboardWebViewStore()
     @State private var selectedTab = HermesMacOSTab.ask
@@ -458,6 +459,14 @@ struct ContentView: View {
                 connectedWindowID: windowID,
                 onResumeResponses: resumeConversationInResponses
             )
+        case .approvals:
+            HermesApprovalsInboxView(
+                apiSettings: apiSettings,
+                dashboardURL: dashboardURL,
+                store: approvalsInboxStore,
+                connectedHostName: connectedHostName,
+                connectedWindowID: windowID
+            )
         case .dashboard:
             HermesDashboardView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .configuration:
@@ -552,6 +561,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case chat
     case history
     case sessions
+    case approvals
     case dashboard
     case configuration
     case utilities
@@ -564,6 +574,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .chat: "Chat with Hermes"
         case .history: "History"
         case .sessions: "Sessions"
+        case .approvals: "Approvals Inbox"
         case .dashboard: "Hermes Dashboard"
         case .configuration: "Configuration"
         case .utilities: "Utilities"
@@ -576,6 +587,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .chat: "text.bubble"
         case .history: "clock.arrow.circlepath"
         case .sessions: "rectangle.stack"
+        case .approvals: "tray.full"
         case .dashboard: "speedometer"
         case .configuration: "gearshape.2"
         case .utilities: "wrench.and.screwdriver"
