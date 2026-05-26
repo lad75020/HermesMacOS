@@ -229,9 +229,6 @@ struct HermesApprovalsInboxView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task(id: dashboardURL + apiSettings.baseURL) {
-            await store.runAutoRefreshLoop(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
-        }
     }
 
     private var header: some View {

@@ -122,10 +122,12 @@ struct HermesSideTabSwitcher: View {
     let askAttention: HermesAskWorkspaceAttention?
     let chatAttention: HermesTopTabAttention?
     let historyAttention: HermesTopTabAttention?
+    let approvalsAttention: HermesTopTabAttention?
     let onSelectTab: (HermesMacOSTab) -> Void
     @State private var isAskBlinking = false
     @State private var isChatBlinking = false
     @State private var isHistoryBlinking = false
+    @State private var isApprovalsBlinking = false
 
     private var activeAskAttention: HermesAskWorkspaceAttention? {
         switch askAttention {
@@ -169,12 +171,16 @@ struct HermesSideTabSwitcher: View {
         .task(id: historyAttention) {
             await runHistoryBlinkLoop(for: historyAttention)
         }
+        .task(id: approvalsAttention) {
+            await runApprovalsBlinkLoop(for: approvalsAttention)
+        }
     }
 
     private func foregroundColor(for tab: HermesMacOSTab) -> Color {
         if tab == .ask, activeAskAttention != nil { return .white }
         if tab == .chat, chatAttention != nil { return .white }
         if tab == .history, historyAttention != nil { return .white }
+        if tab == .approvals, approvalsAttention != nil { return .white }
         return selectedTab == tab ? .white : .primary
     }
 
@@ -213,6 +219,18 @@ struct HermesSideTabSwitcher: View {
                 break
             }
         }
+        if tab == .approvals {
+            switch approvalsAttention {
+            case .streaming:
+                return .hermesOrange
+            case .completed:
+                return .green
+            case .failed:
+                return .hermesDestructive
+            case nil:
+                break
+            }
+        }
         return selectedTab == tab ? .hermesActionBlue : .hermesSurface.opacity(0.58)
     }
 
@@ -220,6 +238,7 @@ struct HermesSideTabSwitcher: View {
         if tab == .ask && activeAskAttention == .streaming && isAskBlinking { return 0.45 }
         if tab == .chat && chatAttention == .streaming && isChatBlinking { return 0.45 }
         if tab == .history && historyAttention == .streaming && isHistoryBlinking { return 0.45 }
+        if tab == .approvals && approvalsAttention == .streaming && isApprovalsBlinking { return 0.45 }
         return 1.0
     }
 
@@ -258,6 +277,18 @@ struct HermesSideTabSwitcher: View {
                 break
             }
         }
+        if tab == .approvals {
+            switch approvalsAttention {
+            case .streaming:
+                return .hermesOrange.opacity(0.24)
+            case .completed:
+                return .green.opacity(0.24)
+            case .failed:
+                return .hermesDestructive.opacity(0.24)
+            case nil:
+                break
+            }
+        }
         return selectedTab == tab ? .hermesActionBlue.opacity(0.24) : .clear
     }
 
@@ -274,6 +305,11 @@ struct HermesSideTabSwitcher: View {
     @MainActor
     private func runHistoryBlinkLoop(for attention: HermesTopTabAttention?) async {
         await runBlinkLoop(isStreaming: attention == .streaming) { isHistoryBlinking = $0 }
+    }
+
+    @MainActor
+    private func runApprovalsBlinkLoop(for attention: HermesTopTabAttention?) async {
+        await runBlinkLoop(isStreaming: attention == .streaming) { isApprovalsBlinking = $0 }
     }
 
     @MainActor
@@ -339,6 +375,10 @@ struct ContentView: View {
         historySearchSession.tabAttention
     }
 
+    private var approvalsTabAttention: HermesTopTabAttention? {
+        approvalsInboxStore.pendingCount > 0 ? .streaming : nil
+    }
+
     private var chatTabAttention: HermesTopTabAttention? {
         if chatSession.isStreaming { return .streaming }
         if let token = chatFailureToken, token != acknowledgedChatFailureToken { return .failed }
@@ -375,6 +415,7 @@ struct ContentView: View {
                 askAttention: askTabAttention,
                 chatAttention: chatTabAttention,
                 historyAttention: historyTabAttention,
+                approvalsAttention: approvalsTabAttention,
                 onSelectTab: handleTopTabSelection
             )
             activeTabContent
@@ -392,6 +433,9 @@ struct ContentView: View {
         }
         .task {
             await clipboardHistory.runMonitoringLoop()
+        }
+        .task(id: dashboardURL + apiSettings.baseURL) {
+            await approvalsInboxStore.runAutoRefreshLoop(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         }
         .onChange(of: apiSettings) { _, newValue in
             HermesSettingsStore.saveAPISettings(newValue)
