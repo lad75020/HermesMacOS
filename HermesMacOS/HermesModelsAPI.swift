@@ -55,6 +55,8 @@ struct HermesAPISettings: Codable, Equatable {
     static func chatCompletionsURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "chat/completions") }
     static func requestCancelURL(from baseURL: String, requestID: String) -> URL? { endpointURL(from: baseURL, suffix: "requests/\(requestID)/cancel") }
     static func profilesURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "profiles") }
+    static func approvalsURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "approvals") }
+    static func approvalResolveURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "approvals/resolve") }
 
     private static func endpointURL(from baseURL: String, suffix: String) -> URL? {
         let trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -63,6 +65,10 @@ struct HermesAPISettings: Codable, Equatable {
         guard var components = URLComponents(string: trimmed) else { return nil }
         let normalizedPath = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if normalizedPath.isEmpty {
+            components.path = "/v1/\(suffix)"
+            return components.url
+        }
+        if ["v1/responses", "v1/chat/completions", "v1/profiles", "v1/approvals", "v1/approvals/resolve"].contains(normalizedPath) {
             components.path = "/v1/\(suffix)"
             return components.url
         }

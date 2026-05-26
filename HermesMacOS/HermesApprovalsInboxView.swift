@@ -88,16 +88,7 @@ final class HermesApprovalsInboxStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            let response: HermesApprovalsResponse
-            do {
-                response = try await fetchApprovals(baseURL: baseURL, token: token, apiSettings: apiSettings)
-            } catch HermesResponsesError.httpError(401) {
-                cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
-                let refreshedToken = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-                response = try await fetchApprovals(baseURL: baseURL, token: refreshedToken, apiSettings: apiSettings)
-            }
+            let response = try await fetchApprovals(apiSettings: apiSettings)
             approvals = response.approvals.sorted { lhs, rhs in
                 if lhs.sessionKey == rhs.sessionKey { return lhs.queuePosition < rhs.queuePosition }
                 return lhs.sessionKey.localizedStandardCompare(rhs.sessionKey) == .orderedAscending
@@ -118,15 +109,7 @@ final class HermesApprovalsInboxStore {
         defer { resolvingIDs.remove(approval.id) }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            do {
-                try await resolveApproval(baseURL: baseURL, token: token, apiSettings: apiSettings, approval: approval, choice: choice)
-            } catch HermesResponsesError.httpError(401) {
-                cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
-                let refreshedToken = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-                try await resolveApproval(baseURL: baseURL, token: refreshedToken, apiSettings: apiSettings, approval: approval, choice: choice)
-            }
+            try await resolveApproval(apiSettings: apiSettings, approval: approval, choice: choice)
             status = "Approval \(choice == "deny" ? "denied" : "approved")"
             await refresh(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         } catch {
@@ -161,29 +144,44 @@ final class HermesApprovalsInboxStore {
         return token
     }
 
-    private func fetchApprovals(baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws -> HermesApprovalsResponse {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/approvals"))
+    private func fetchApprovals(apiSettings: HermesAPISettings) async throws -> HermesApprovalsResponse {
+        guard let url = HermesAPISettings.approvalsURL(from: apiSettings.baseURL) else { throw HermesResponsesError.invalidURL }
+        var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        if !apiSettings.apiKey.isEmpty {
+            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        }
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (data, response) = try await session.data(for: request)
         try HermesNetworkSessionFactory.validate(response: response)
+        try validateJSONResponse(response)
         return try JSONDecoder().decode(HermesApprovalsResponse.self, from: data)
     }
 
-    private func resolveApproval(baseURL: URL, token: String, apiSettings: HermesAPISettings, approval: HermesApprovalItem, choice: String) async throws {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/approvals/resolve"))
+    private func resolveApproval(apiSettings: HermesAPISettings, approval: HermesApprovalItem, choice: String) async throws {
+        guard let url = HermesAPISettings.approvalResolveURL(from: apiSettings.baseURL) else { throw HermesResponsesError.invalidURL }
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        if !apiSettings.apiKey.isEmpty {
+            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        }
         request.httpBody = try JSONEncoder().encode(HermesApprovalResolveBody(choice: choice, resolveAll: false, sessionKey: approval.sessionKey))
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
         let (_, response) = try await session.data(for: request)
         try HermesNetworkSessionFactory.validate(response: response)
+    }
+
+    private func validateJSONResponse(_ response: URLResponse) throws {
+        guard let httpResponse = response as? HTTPURLResponse else { throw HermesResponsesError.invalidResponse }
+        let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type") ?? ""
+        guard contentType.localizedCaseInsensitiveContains("application/json") else {
+            throw HermesApprovalsInboxError.unexpectedResponseFormat
+        }
     }
 
     private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
@@ -205,11 +203,13 @@ final class HermesApprovalsInboxStore {
 enum HermesApprovalsInboxError: LocalizedError {
     case invalidDashboardURL
     case missingDashboardSessionToken
+    case unexpectedResponseFormat
 
     var errorDescription: String? {
         switch self {
         case .invalidDashboardURL: "The Hermes dashboard URL is invalid."
         case .missingDashboardSessionToken: "The dashboard session token was not found in the dashboard HTML."
+        case .unexpectedResponseFormat: "The Hermes approvals endpoint did not return JSON. Restart Hermes Agent so the approvals API is available."
         }
     }
 }
