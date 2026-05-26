@@ -425,6 +425,27 @@ struct HermesSessionMessagesResponse: Decodable {
     }
 }
 
+enum HermesSessionDisplayOrder: String, CaseIterable, Identifiable {
+    case chronological
+    case reverseChronological
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .chronological: "Oldest first"
+        case .reverseChronological: "Newest first"
+        }
+    }
+
+    var statusDescription: String {
+        switch self {
+        case .chronological: "oldest first"
+        case .reverseChronological: "newest first"
+        }
+    }
+}
+
 struct HermesAgentSessionSummary: Identifiable, Decodable, Equatable {
     let id: String
     let source: String?
@@ -487,6 +508,7 @@ final class HermesSessionsStore {
     var sessions: [HermesAgentSessionSummary] = []
     var total = 0
     var pageIndex = 0
+    var displayOrder: HermesSessionDisplayOrder = .chronological
     var isLoading = false
     var status = "Loading sessions"
     var lastErrorMessage = ""
@@ -525,6 +547,12 @@ final class HermesSessionsStore {
     func previousPage(dashboardURL: String, apiSettings: HermesAPISettings) {
         guard canGoPrevious else { return }
         load(page: pageIndex - 1, dashboardURL: dashboardURL, apiSettings: apiSettings)
+    }
+
+    func setDisplayOrder(_ order: HermesSessionDisplayOrder, dashboardURL: String, apiSettings: HermesAPISettings) {
+        guard displayOrder != order else { return }
+        displayOrder = order
+        load(page: 0, dashboardURL: dashboardURL, apiSettings: apiSettings)
     }
 
     func cancel() {
@@ -589,6 +617,7 @@ final class HermesSessionsStore {
         isLoading = true
         lastErrorMessage = ""
         status = "Loading sessions"
+        let requestedDisplayOrder = displayOrder
 
         requestTask = Task {
             do {
@@ -621,7 +650,8 @@ final class HermesSessionsStore {
                     apiSettings: apiSettings,
                     visibleTotal: visibleTotal,
                     requestedPage: requestedPage,
-                    pageSize: pageSize
+                    pageSize: pageSize,
+                    displayOrder: requestedDisplayOrder
                 )
                 try Task.checkCancellation()
                 guard activeRequestID == requestID else { return }
@@ -629,7 +659,7 @@ final class HermesSessionsStore {
                 total = nonCronPage.total
                 pageIndex = nonCronPage.pageIndex
                 sessions = nonCronPage.sessions
-                status = nonCronPage.total == 0 ? "No non-cron sessions found" : "Showing non-cron sessions in chronological order"
+                status = nonCronPage.total == 0 ? "No non-cron sessions found" : "Showing non-cron sessions \(requestedDisplayOrder.statusDescription)"
             } catch is CancellationError {
                 if activeRequestID == requestID { status = "Cancelled" }
             } catch {
@@ -698,7 +728,8 @@ final class HermesSessionsStore {
         apiSettings: HermesAPISettings,
         visibleTotal: Int,
         requestedPage: Int,
-        pageSize: Int
+        pageSize: Int,
+        displayOrder: HermesSessionDisplayOrder
     ) async throws -> (sessions: [HermesAgentSessionSummary], total: Int, pageIndex: Int) {
         guard visibleTotal > 0 else { return ([], 0, 0) }
 
@@ -715,12 +746,21 @@ final class HermesSessionsStore {
         let filteredTotal = newestFirstNonCron.count
         guard filteredTotal > 0 else { return ([], 0, 0) }
 
-        let chronological = Array(newestFirstNonCron.reversed())
+        let orderedSessions = Self.orderedSessions(newestFirstNonCron, displayOrder: displayOrder)
         let lastPage = max(0, Int(ceil(Double(filteredTotal) / Double(pageSize))) - 1)
         let effectivePage = min(max(0, requestedPage), lastPage)
         let pageStart = effectivePage * pageSize
         let pageEnd = min(filteredTotal, pageStart + pageSize)
-        return (Array(chronological[pageStart..<pageEnd]), filteredTotal, effectivePage)
+        return (Array(orderedSessions[pageStart..<pageEnd]), filteredTotal, effectivePage)
+    }
+
+    nonisolated private static func orderedSessions(_ newestFirstSessions: [HermesAgentSessionSummary], displayOrder: HermesSessionDisplayOrder) -> [HermesAgentSessionSummary] {
+        switch displayOrder {
+        case .chronological:
+            return Array(newestFirstSessions.reversed())
+        case .reverseChronological:
+            return newestFirstSessions
+        }
     }
 
     nonisolated private static func fetchSessions(baseURL: URL, token: String, apiSettings: HermesAPISettings, limit: Int, offset: Int) async throws -> HermesSessionsResponse {
@@ -856,6 +896,14 @@ struct HermesSessionsView: View {
                 .buttonStyle(.bordered)
                 .disabled(store.isLoading)
 
+                Toggle(isOn: displayOrderToggleBinding) {
+                    Label("Newest first", systemImage: "arrow.down.circle")
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .help("Switch session display between chronological and anti-chronological order.")
+                .accessibilityLabel("Display newest sessions first")
+
                 Spacer()
 
                 VStack(alignment: .trailing, spacing: 3) {
@@ -884,8 +932,17 @@ struct HermesSessionsView: View {
         } header: {
             Label("Pagination", systemImage: "list.number")
         } footer: {
-            Text("Sessions are displayed oldest to newest. Each page shows up to 10 sessions from the Hermes dashboard /api/sessions endpoint.")
+            Text("Use the toggle to switch between chronological (oldest first) and anti-chronological (newest first) display. Each page shows up to 10 non-cron sessions from the Hermes dashboard /api/sessions endpoint.")
         }
+    }
+
+    private var displayOrderToggleBinding: Binding<Bool> {
+        Binding(
+            get: { store.displayOrder == .reverseChronological },
+            set: { isNewestFirst in
+                store.setDisplayOrder(isNewestFirst ? .reverseChronological : .chronological, dashboardURL: dashboardURL, apiSettings: apiSettings)
+            }
+        )
     }
 
     private var sessionsSection: some View {
