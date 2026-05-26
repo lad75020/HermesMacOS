@@ -973,7 +973,7 @@ private struct HermesBubbleMessageText: View {
     }
 
     private var textWithoutRenderedImages: String {
-        guard rendersMarkdown else { return text }
+        guard rendersMarkdown else { return renderableText }
         return HermesRenderedBubbleImage.removingImageMarkdown(from: renderableText)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -981,13 +981,8 @@ private struct HermesBubbleMessageText: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if !textWithoutRenderedImages.isEmpty {
-                if rendersMarkdown, let attributedText = try? AttributedString(markdown: textWithoutRenderedImages) {
-                    Text(attributedText)
-                        .font(.system(size: fontSize))
-                } else {
-                    Text(textWithoutRenderedImages)
-                        .font(.system(size: fontSize))
-                }
+                Text(textWithoutRenderedImages)
+                    .font(.system(size: fontSize))
             }
             ForEach(renderedImages) { renderedImage in
                 HermesRenderedBubbleImageView(renderedImage: renderedImage)
