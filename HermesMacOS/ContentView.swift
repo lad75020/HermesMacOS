@@ -124,6 +124,7 @@ struct HermesSideTabSwitcher: View {
     let historyAttention: HermesTopTabAttention?
     let approvalsAttention: HermesTopTabAttention?
     let onSelectTab: (HermesMacOSTab) -> Void
+    @State private var reachabilityMonitor = HermesReachabilityMonitor()
     @State private var isAskBlinking = false
     @State private var isChatBlinking = false
     @State private var isHistoryBlinking = false
@@ -142,6 +143,9 @@ struct HermesSideTabSwitcher: View {
 
     var body: some View {
         VStack(spacing: 10) {
+            HermesReachabilityLEDRow(monitor: reachabilityMonitor)
+                .padding(.bottom, 2)
+
             ForEach(HermesMacOSTab.allCases) { tab in
                 HermesSideTabButton(
                     tab: tab,
@@ -162,6 +166,12 @@ struct HermesSideTabSwitcher: View {
         .frame(width: 66)
         .frame(maxHeight: .infinity)
         .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 0)
+        .task {
+            await reachabilityMonitor.runAgentAPILoop()
+        }
+        .task {
+            await reachabilityMonitor.runDashboardLoop()
+        }
         .task(id: activeAskAttention) {
             await runAskBlinkLoop(for: activeAskAttention)
         }
@@ -332,6 +342,38 @@ struct HermesSideTabSwitcher: View {
             do { try await Task.sleep(nanoseconds: 700_000_000) } catch { break }
         }
         setPhase(false)
+    }
+}
+
+private struct HermesReachabilityLEDRow: View {
+    let monitor: HermesReachabilityMonitor
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HermesReachabilityLED(title: "Hermes agent API", isReachable: monitor.agentAPIIsReachable)
+            HermesReachabilityLED(title: "Hermes dashboard", isReachable: monitor.dashboardIsReachable)
+        }
+        .frame(width: 44, height: 16)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct HermesReachabilityLED: View {
+    let title: String
+    let isReachable: Bool
+
+    private var statusText: String {
+        isReachable ? "reachable" : "unreachable"
+    }
+
+    var body: some View {
+        Circle()
+            .fill(isReachable ? Color.green : Color.hermesDestructive)
+            .frame(width: 10, height: 10)
+            .overlay(Circle().strokeBorder(Color.white.opacity(0.34), lineWidth: 1))
+            .shadow(color: (isReachable ? Color.green : Color.hermesDestructive).opacity(0.36), radius: 4)
+            .help("\(title) is \(statusText)")
+            .accessibilityLabel("\(title) \(statusText)")
     }
 }
 
