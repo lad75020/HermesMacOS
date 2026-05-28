@@ -393,6 +393,7 @@ struct ContentView: View {
     @State private var historySearchSession = HermesDashboardHistorySearchSession()
     @State private var sessionsStore = HermesSessionsStore()
     @State private var approvalsInboxStore = HermesApprovalsInboxStore()
+    @State private var kanbanStore = HermesKanbanStore()
     @State private var installationSession = HermesInstallationSession()
     @State private var configurationWebViewStore = HermesDashboardWebViewStore()
     @State private var selectedTab = HermesMacOSTab.ask
@@ -553,6 +554,14 @@ struct ContentView: View {
                 connectedHostName: connectedHostName,
                 connectedWindowID: windowID
             )
+        case .kanban:
+            HermesKanbanView(
+                apiSettings: apiSettings,
+                dashboardURL: dashboardURL,
+                store: kanbanStore,
+                connectedHostName: connectedHostName,
+                connectedWindowID: windowID
+            )
         case .dashboard:
             HermesDashboardView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .configuration:
@@ -648,6 +657,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case history
     case sessions
     case approvals
+    case kanban
     case dashboard
     case configuration
     case utilities
@@ -661,6 +671,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .history: "History"
         case .sessions: "Sessions"
         case .approvals: "Approvals Inbox"
+        case .kanban: "Kanban"
         case .dashboard: "Hermes Dashboard"
         case .configuration: "Configuration"
         case .utilities: "Utilities"
@@ -674,6 +685,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .history: "clock.arrow.circlepath"
         case .sessions: "rectangle.stack"
         case .approvals: "tray.full"
+        case .kanban: "rectangle.3.group.bubble.left"
         case .dashboard: "speedometer"
         case .configuration: "gearshape.2"
         case .utilities: "wrench.and.screwdriver"
