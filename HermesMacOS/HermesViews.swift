@@ -940,19 +940,75 @@ struct HermesCopyableBubbleContent: View {
         .hermesGlassPanel(tint: isUser ? Color.hermesActionBlue.opacity(0.86) : Color.hermesSurface.opacity(0.78), cornerRadius: 18, interactive: true)
         .foregroundStyle(isUser ? .white : .primary)
         .overlay(alignment: .topTrailing) {
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(copyText, forType: .string)
-            } label: {
-                Image(systemName: "doc.on.doc")
-                    .font(.caption)
+            HStack(spacing: 6) {
+                if !isUser {
+                    Button(action: printResponse) {
+                        Image(systemName: "printer")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(printableText.isEmpty)
+                    .opacity(printableText.isEmpty ? 0 : 0.65)
+                    .help("Print response")
+                    .accessibilityLabel("Print response")
+                }
+
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(copyText, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+                .disabled(copyText.isEmpty)
+                .opacity(copyText.isEmpty ? 0 : 0.65)
+                .help("Copy")
+                .accessibilityLabel("Copy message")
             }
-            .buttonStyle(.plain)
             .padding(6)
-            .opacity(copyText.isEmpty ? 0 : 0.65)
-            .disabled(copyText.isEmpty)
-            .help("Copy")
         }
+    }
+
+    private var printableText: String {
+        HermesBubbleTextFormatter.displayLineFeeds(in: copyText)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func printResponse() {
+        guard !printableText.isEmpty else { return }
+
+        let printWidth: CGFloat = 540
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: printWidth, height: 720))
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.backgroundColor = .clear
+        textView.textContainerInset = NSSize(width: 24, height: 24)
+        textView.textContainer?.containerSize = NSSize(width: printWidth, height: .greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textStorage?.setAttributedString(
+            NSAttributedString(
+                string: printableText,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: fontSize),
+                    .foregroundColor: NSColor.textColor
+                ]
+            )
+        )
+        textView.sizeToFit()
+
+        let printInfo = NSPrintInfo.shared.copy() as? NSPrintInfo ?? NSPrintInfo()
+        printInfo.horizontalPagination = .fit
+        printInfo.verticalPagination = .automatic
+        printInfo.isHorizontallyCentered = false
+        printInfo.isVerticallyCentered = false
+
+        let operation = NSPrintOperation(view: textView, printInfo: printInfo)
+        operation.showsPrintPanel = true
+        operation.showsProgressPanel = true
+        operation.run()
     }
 }
 
