@@ -260,7 +260,7 @@ struct HermesChatConsoleView: View {
                     } label: {
                         HermesComposerCircleButtonLabel(
                             systemImage: speechToText.buttonSystemImage,
-                            foreground: speechToText.isRecording ? Color.hermesDestructive : Color.primary
+                            foreground: (speechToText.isRecording || speechToText.isProcessing) ? Color.hermesDestructive : Color.primary
                         )
                     }
                     .buttonStyle(.plain)
@@ -271,7 +271,7 @@ struct HermesChatConsoleView: View {
                         HermesComposerSendButtonLabel()
                     }
                     .buttonStyle(.plain)
-                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending)
+                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || chatSession.isSending || speechToText.isRecording || speechToText.isProcessing)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .help("Send message (⌘↩)")
                 }

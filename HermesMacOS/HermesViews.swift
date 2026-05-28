@@ -359,7 +359,7 @@ struct HermesResponsesConsoleView: View {
                     } label: {
                         HermesComposerCircleButtonLabel(
                             systemImage: speechToText.buttonSystemImage,
-                            foreground: speechToText.isRecording ? Color.hermesDestructive : Color.primary
+                            foreground: (speechToText.isRecording || speechToText.isProcessing) ? Color.hermesDestructive : Color.primary
                         )
                     }
                     .buttonStyle(.plain)
@@ -372,7 +372,7 @@ struct HermesResponsesConsoleView: View {
                         HermesComposerSendButtonLabel()
                     }
                     .buttonStyle(.plain)
-                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending)
+                    .disabled((promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil) || responseSession.isSending || speechToText.isRecording || speechToText.isProcessing)
                     .keyboardShortcut(.return, modifiers: [.command])
                     .help("Send prompt (⌘↩)")
                 }

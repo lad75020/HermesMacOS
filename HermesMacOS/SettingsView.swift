@@ -13,6 +13,7 @@ struct SettingsView: View {
     @AppStorage("hermes.macOS.labelFont") private var labelFont: HermesWebsiteFont = .mondwest
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
+    @AppStorage(hermesSpeechToTextEngineStorageKey) private var speechToTextEngine: HermesSpeechToTextEngine = .appleLocal
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var draft = HermesSettingsStore.loadDraft()
     @State private var chatDraft = HermesSettingsStore.loadChatDraft()
@@ -75,6 +76,21 @@ struct SettingsView: View {
                         promptFontSize = 14
                     }
                     Text("Adjust the text size used in Ask Hermes chat bubbles and in the prompt composer.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+
+                Section("Speech to text") {
+                    Picker("Transcription engine", selection: $speechToTextEngine) {
+                        ForEach(HermesSpeechToTextEngine.allCases) { engine in
+                            Text(engine.title).tag(engine)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(speechToTextEngine.description)
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                    Text("The selected engine is used by the microphone button in both Ask Hermes and Chat with Hermes prompt composers.")
                         .font(.caption)
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
