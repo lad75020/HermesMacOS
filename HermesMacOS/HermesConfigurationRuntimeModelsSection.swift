@@ -20,8 +20,8 @@ extension HermesConfigurationView {
                         .foregroundStyle(Color.hermesSecondaryText)
 
                     VStack(alignment: .leading, spacing: 6) {
-                        configurationSummaryRow(label: "Hermes Home", value: localRuntimeModels.resolvedHermesHome.isEmpty ? "/Volumes/WDBlack4TB/.hermes" : localRuntimeModels.resolvedHermesHome)
-                        configurationSummaryRow(label: "Config", value: localRuntimeModels.configPath.isEmpty ? "/Volumes/WDBlack4TB/.hermes/config.yaml" : localRuntimeModels.configPath)
+                        configurationSummaryRow(label: "Hermes Home", value: localRuntimeModels.resolvedHermesHome.isEmpty ? HermesRuntimePaths.defaultHermesHome : localRuntimeModels.resolvedHermesHome)
+                        configurationSummaryRow(label: "Config", value: localRuntimeModels.configPath.isEmpty ? URL(fileURLWithPath: HermesRuntimePaths.defaultHermesHome).appendingPathComponent("config.yaml").path : localRuntimeModels.configPath)
                     }
 
                     HStack {

@@ -512,6 +512,7 @@ final class HermesSessionsStore {
     var isLoading = false
     var status = "Loading sessions"
     var lastErrorMessage = ""
+    var isDashboardHTTPActive = false
     var conversationResultsBySessionID: [String: HermesDashboardConversationResult] = [:]
     var loadingConversationIDs: Set<String> = []
     var conversationErrorBySessionID: [String: String] = [:]
@@ -677,9 +678,13 @@ final class HermesSessionsStore {
     }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
+        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
         let cacheKey = baseURL.absoluteString
         if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
-        let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(from: baseURL)
+        let session = HermesNetworkSessionFactory.session(for: apiSettings)
+        isDashboardHTTPActive = true
+        defer { isDashboardHTTPActive = false }
+        let (data, response) = try await session.data(from: baseURL)
         try HermesNetworkSessionFactory.validate(response: response)
         let html = String(decoding: data, as: UTF8.self)
         let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#

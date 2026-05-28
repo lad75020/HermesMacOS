@@ -356,6 +356,7 @@ final class HermesDashboardSchedulesStore {
     }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
+        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
         let cacheKey = baseURL.absoluteString
         if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
@@ -403,8 +404,8 @@ final class HermesDashboardSchedulesStore {
         guard !safeJobID.isEmpty, safeJobID == URL(fileURLWithPath: safeJobID).lastPathComponent, !safeJobID.contains("/"), !safeJobID.contains("\\") else {
             throw HermesDashboardSchedulesError.validation("Invalid cron job id for output lookup.")
         }
-        let home = URL(fileURLWithPath: hermesHome.isEmpty ? "/Volumes/WDBlack4TB/.hermes" : hermesHome, isDirectory: true)
-        let profileHome = resolvedProfileHome(for: job.profileLabel, under: home)
+        let home = URL(fileURLWithPath: hermesHome.isEmpty ? HermesRuntimePaths.defaultHermesHome : hermesHome, isDirectory: true).standardizedFileURL
+        let profileHome = try resolvedProfileHome(for: job.profileLabel, under: home)
         let outputDirectory = profileHome.appendingPathComponent("cron/output/\(safeJobID)", isDirectory: true)
         let fileManager = FileManager.default
         guard let files = try? fileManager.contentsOfDirectory(
@@ -427,15 +428,29 @@ final class HermesDashboardSchedulesStore {
         return "\(latest.lastPathComponent)\n\n\(limited)"
     }
 
-    private static func resolvedProfileHome(for profile: String, under root: URL) -> URL {
+    private static func resolvedProfileHome(for profile: String, under root: URL) throws -> URL {
         let cleanProfile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanProfile.isEmpty, cleanProfile.lowercased() != "default" else { return root }
-        let profilesDirectory = root.appendingPathComponent("profiles", isDirectory: true)
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        guard cleanProfile != ".",
+              cleanProfile != "..",
+              !cleanProfile.hasPrefix("-"),
+              !cleanProfile.contains("/"),
+              !cleanProfile.contains("\\"),
+              cleanProfile.rangeOfCharacter(from: allowed.inverted) == nil
+        else { throw HermesDashboardSchedulesError.validation("Invalid profile name for output lookup.") }
+        let profilesDirectory = root.appendingPathComponent("profiles", isDirectory: true).standardizedFileURL
+        let resolved: URL
         if let children = try? FileManager.default.contentsOfDirectory(at: profilesDirectory, includingPropertiesForKeys: nil),
            let exact = children.first(where: { $0.lastPathComponent.caseInsensitiveCompare(cleanProfile) == .orderedSame }) {
-            return exact
+            resolved = exact.standardizedFileURL.resolvingSymlinksInPath()
+        } else {
+            resolved = profilesDirectory.appendingPathComponent(cleanProfile, isDirectory: true).standardizedFileURL.resolvingSymlinksInPath()
         }
-        return profilesDirectory.appendingPathComponent(cleanProfile, isDirectory: true)
+        guard resolved.path.hasPrefix(profilesDirectory.resolvingSymlinksInPath().path + "/") else {
+            throw HermesDashboardSchedulesError.validation("Profile output path escaped the Hermes profiles directory.")
+        }
+        return resolved
     }
 }
 

@@ -129,6 +129,7 @@ final class HermesApprovalsInboxStore {
     }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
+        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
         let cacheKey = baseURL.absoluteString
         if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
@@ -151,6 +152,7 @@ final class HermesApprovalsInboxStore {
         request.timeoutInterval = 30
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if !apiSettings.apiKey.isEmpty {
+            try HermesEndpointSecurity.validateSensitiveURL(url)
             request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
         }
         let session = HermesNetworkSessionFactory.session(for: apiSettings)
@@ -168,6 +170,7 @@ final class HermesApprovalsInboxStore {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if !apiSettings.apiKey.isEmpty {
+            try HermesEndpointSecurity.validateSensitiveURL(url)
             request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
         }
         request.httpBody = try JSONEncoder().encode(HermesApprovalResolveBody(choice: choice, resolveAll: false, sessionKey: approval.sessionKey))

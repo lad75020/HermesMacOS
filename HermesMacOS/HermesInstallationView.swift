@@ -492,21 +492,22 @@ private final class HermesGitCommandRunner: @unchecked Sendable {
                     "LC_ALL": "C"
                 ]
             }
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-
-            do { try process.run() } catch {
+            let result: HermesProcessResult
+            do {
+                result = try HermesProcessRunner.run(
+                    executable: process.executableURL?.path ?? "/usr/bin/git",
+                    arguments: process.arguments ?? [],
+                    environment: process.environment,
+                    timeout: 180
+                )
+            } catch {
                 throw HermesInstallationError.commandFailed("Could not run git: \(error.localizedDescription)")
             }
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            let result = HermesGitCommandResult(exitCode: process.terminationStatus, combinedOutput: output)
-            if !allowFailure && process.terminationStatus != 0 {
-                throw HermesInstallationError.commandFailed(output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "git \(arguments.joined(separator: " ")) failed" : output.trimmingCharacters(in: .whitespacesAndNewlines))
+            let gitResult = HermesGitCommandResult(exitCode: result.exitCode, combinedOutput: result.output)
+            if !allowFailure && result.exitCode != 0 {
+                throw HermesInstallationError.commandFailed(result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "git \(arguments.joined(separator: " ")) failed" : result.output.trimmingCharacters(in: .whitespacesAndNewlines))
             }
-            return result
+            return gitResult
         }.value
     }
 

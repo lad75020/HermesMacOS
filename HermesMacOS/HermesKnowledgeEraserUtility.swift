@@ -75,7 +75,7 @@ final class HermesKnowledgeEraserStore {
     var resolvedWorkspacePath = ""
     var lastScanDate: Date?
 
-    private let workspacePath = "/Volumes/WDBlack4TB/.hermes"
+    private let workspacePath = HermesRuntimePaths.defaultHermesHome
     private let registry = HermesKnowledgeEraserRegistry()
 
     var selectedCount: Int { selectedItemIDs.count }

@@ -90,6 +90,7 @@ final class HermesDashboardToolsetsStore {
     }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
+        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
         let cacheKey = baseURL.absoluteString
         if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
 

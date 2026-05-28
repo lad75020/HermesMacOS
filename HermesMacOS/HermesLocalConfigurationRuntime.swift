@@ -32,8 +32,8 @@ final class HermesLocalConfigurationRuntime: ObservableObject {
     @Published var outputs: [HermesLocalConfigurationSection: String] = [:]
     @Published var runningSections: Set<HermesLocalConfigurationSection> = []
 
-    let hermesExecutable = "/Users/laurent/.hermes/hermes-agent/venv/bin/hermes"
-    let hermesHome = "/Volumes/WDBlack4TB/.hermes"
+    let hermesExecutable = HermesRuntimePaths.defaultHermesExecutable
+    let hermesHome = HermesRuntimePaths.defaultHermesHome
     var remoteHostName = defaultHermesMacHost
 
     func refreshAll() {
@@ -139,19 +139,15 @@ final class HermesLocalConfigurationRuntime: ObservableObject {
             process.environment = environment
         }
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
         do {
-            try process.run()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 120) {
-                if process.isRunning { process.terminate() }
-            }
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let text = String(data: data, encoding: .utf8) ?? ""
-            let status = isRemote ? "ssh \(normalizedHost) exit \(process.terminationStatus)" : "exit \(process.terminationStatus)"
-            return [commandLabel, status, text.isEmpty ? "No output." : text].joined(separator: "\n")
+            let result = try HermesProcessRunner.run(
+                executable: process.executableURL?.path ?? executable,
+                arguments: process.arguments ?? [],
+                environment: process.environment,
+                timeout: 120
+            )
+            let status = isRemote ? "ssh \(normalizedHost) \(result.statusLine)" : result.statusLine
+            return [commandLabel, status, result.output.isEmpty ? "No output." : result.output].joined(separator: "\n")
         } catch {
             return "Failed to run hermes \(arguments.joined(separator: " ")): \(error.localizedDescription)"
         }

@@ -38,7 +38,7 @@ final class HermesLocalRuntimeModelsStore {
     var isLoading = false
     var lastStatusMessage = "Not loaded yet."
 
-    private let hermesHome = "/Volumes/WDBlack4TB/.hermes"
+    private let hermesHome = HermesRuntimePaths.defaultHermesHome
     private var configURL: URL { URL(fileURLWithPath: hermesHome).appendingPathComponent("config.yaml") }
 
     static let defaultProviderOptions: [HermesRuntimeProviderOption] = [
@@ -351,17 +351,13 @@ final class HermesLocalRuntimeModelsStore {
     }
 
     private static func scalarValue(from line: String, key: String) -> String? {
-        guard let regex = try? NSRegularExpression(pattern: #"^\s*\#(key):\s*[\"']?([^\"'\n#]*)[\"']?"#),
-              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
-              match.numberOfRanges > 1,
-              let range = Range(match.range(at: 1), in: line) else { return nil }
-        return String(line[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+        HermesYAMLScalar.value(from: line, key: key)
     }
 
     private static func indentation(of line: String) -> Int { line.prefix { $0 == " " }.count }
 
     private static func quotedYAML(_ value: String) -> String {
-        "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
+        HermesYAMLScalar.quoted(value)
     }
 
     private static func firstMatch(in content: String, pattern: String) -> String? {

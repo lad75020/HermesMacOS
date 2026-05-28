@@ -32,7 +32,9 @@ struct HermesUtilitiesView: View {
     @AppStorage("hermes.macOS.utilities.debuggingExpanded") private var isDebuggingExpanded = false
     @AppStorage("hermes.macOS.utilities.installationExpanded") private var isInstallationExpanded = false
     @AppStorage("hermes.macOS.utilities.knowledgeEraserExpanded") private var isKnowledgeEraserExpanded = false
-    @State private var statusMessage = String(localized: "Monitoring the Mac clipboard while HermesMacOS is active.")
+    @AppStorage(HermesClipboardHistoryStore.monitoringEnabledKey) private var clipboardMonitoringEnabled = false
+    @AppStorage(HermesPromptHistoryStore.persistenceEnabledKey) private var messageHistoryPersistenceEnabled = true
+    @State private var statusMessage = String(localized: "Clipboard monitoring is off by default. Enable it here when you want HermesMacOS to retain recent clipboard items.")
     @State private var historyStatusMessage = String(localized: "Capturing prompts and responses sent from Ask Hermes and Chat with Hermes.")
     @State private var messagesHistoryMode: HermesMessagesHistoryMode = .prompt
     @State private var knowledgeEraser = HermesKnowledgeEraserStore()
@@ -114,7 +116,7 @@ struct HermesUtilitiesView: View {
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
         .onAppear {
-            clipboardHistory.captureCurrentPasteboardIfNeeded(force: true)
+            if clipboardMonitoringEnabled { clipboardHistory.captureCurrentPasteboardIfNeeded(force: true) }
             installationSession.remoteHostName = connectedHostName
         }
         .onChange(of: connectedHostName) { _, newValue in
@@ -167,10 +169,14 @@ struct HermesUtilitiesView: View {
     private var clipboardHistoryContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
+                Toggle("Monitor clipboard", isOn: $clipboardMonitoringEnabled)
+                    .tint(.hermesActionBlue)
+                Spacer()
                 Button { clipboardHistory.captureCurrentPasteboardIfNeeded(force: true); statusMessage = String(localized: "Clipboard checked.") } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
+                .disabled(!clipboardMonitoringEnabled)
                 Button(role: .destructive) { clipboardHistory.clear(); statusMessage = String(localized: "Clipboard history cleared.") } label: {
                     Label("Clear", systemImage: "trash")
                 }
@@ -179,7 +185,7 @@ struct HermesUtilitiesView: View {
             }
             Text(statusMessage).font(.caption).foregroundStyle(Color.hermesSecondaryText)
             if clipboardHistory.entries.isEmpty {
-                ContentUnavailableView("No clipboard history yet", systemImage: "clipboard", description: Text("Copy text, images, or files while HermesMacOS is active, then open this utility to paste them back later."))
+                ContentUnavailableView("No clipboard history yet", systemImage: "clipboard", description: Text(clipboardMonitoringEnabled ? "Copy text, images, or files while HermesMacOS is active, then open this utility to paste them back later." : "Clipboard monitoring is off. Enable it above to retain recent clipboard items while HermesMacOS is active."))
                     .frame(maxWidth: .infinity, minHeight: 220)
             } else {
                 LazyVStack(spacing: 10) {
@@ -205,6 +211,8 @@ struct HermesUtilitiesView: View {
                 ForEach(HermesMessagesHistoryMode.allCases) { mode in Text(mode.title).tag(mode) }
             }
             .pickerStyle(.segmented)
+            Toggle("Save prompt and response history", isOn: $messageHistoryPersistenceEnabled)
+                .tint(.hermesActionBlue)
             Button(role: .destructive) {
                 if messagesHistoryMode == .prompt { promptHistory.clear(); historyStatusMessage = String(localized: "Prompt history cleared.") }
                 else { promptHistory.clearResponses(); historyStatusMessage = String(localized: "Response history cleared.") }
@@ -407,6 +415,7 @@ private struct HermesClipboardHistoryRow: View {
 @MainActor
 @Observable
 final class HermesClipboardHistoryStore {
+    static let monitoringEnabledKey = "hermes.macOS.utilities.clipboardHistory.monitoringEnabled"
     private let defaultsKey = "hermes.macOS.utilities.clipboardHistory.entries"
     private let maxEntries = 10
     private let maxStoredBytes = 25 * 1024 * 1024
@@ -416,14 +425,16 @@ final class HermesClipboardHistoryStore {
     init() { load() }
 
     func runMonitoringLoop() async {
-        captureCurrentPasteboardIfNeeded(force: true)
         while !Task.isCancelled {
+            if UserDefaults.standard.bool(forKey: Self.monitoringEnabledKey) {
+                captureCurrentPasteboardIfNeeded()
+            }
             try? await Task.sleep(for: .seconds(1))
-            captureCurrentPasteboardIfNeeded()
         }
     }
 
     func captureCurrentPasteboardIfNeeded(force: Bool = false) {
+        guard force || UserDefaults.standard.bool(forKey: Self.monitoringEnabledKey) else { return }
         let pasteboard = NSPasteboard.general
         guard force || pasteboard.changeCount != lastObservedChangeCount else { return }
         lastObservedChangeCount = pasteboard.changeCount
@@ -527,13 +538,18 @@ struct HermesClipboardHistoryEntry: Identifiable, Codable, Equatable {
 @MainActor
 @Observable
 final class HermesPromptHistoryStore {
+    static let persistenceEnabledKey = "hermes.macOS.utilities.messageHistory.persistenceEnabled"
     private let promptDefaultsKey = "hermes.macOS.utilities.promptHistory.entries"
     private let responseDefaultsKey = "hermes.macOS.utilities.responseHistory.entries"
     private let maxEntries = 10
     var entries: [HermesPromptHistoryEntry] = []
     var responseEntries: [HermesResponseHistoryEntry] = []
-    init() { load() }
+    init() {
+        UserDefaults.standard.register(defaults: [Self.persistenceEnabledKey: true])
+        load()
+    }
     func record(_ prompt: String, source: HermesPromptHistoryEntry.Source = .askHermes) {
+        guard UserDefaults.standard.bool(forKey: Self.persistenceEnabledKey) else { return }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines); guard !trimmed.isEmpty else { return }
         let entry = HermesPromptHistoryEntry(prompt: trimmed, source: source)
         if entries.first?.fingerprint == entry.fingerprint { return }
@@ -542,6 +558,7 @@ final class HermesPromptHistoryStore {
         persistPrompts()
     }
     func recordResponse(_ response: String, source: HermesPromptHistoryEntry.Source = .askHermes) {
+        guard UserDefaults.standard.bool(forKey: Self.persistenceEnabledKey) else { return }
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines); guard !trimmed.isEmpty else { return }
         let entry = HermesResponseHistoryEntry(response: trimmed, source: source)
         if responseEntries.first?.fingerprint == entry.fingerprint { return }

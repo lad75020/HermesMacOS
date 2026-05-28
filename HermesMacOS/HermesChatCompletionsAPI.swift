@@ -412,6 +412,7 @@ final class HermesChatSession {
         guard let url = HermesAPISettings.chatCompletionsURL(from: apiSettings.baseURL) else {
             throw HermesResponsesError.invalidURL
         }
+        try HermesEndpointSecurity.validateSensitiveURL(url)
 
         let historyMessages = history.map { HermesChatRequestMessage(role: $0.role, content: .text($0.content)) }
         let userMessage = HermesChatRequestMessage(role: "user", content: HermesChatMessageContentPayload(prompt: draft.userPrompt, attachment: attachment))
@@ -449,6 +450,7 @@ final class HermesChatSession {
         request.setValue(profile.isEmpty ? "default" : profile, forHTTPHeaderField: "X-Hermes-Profile")
 
         if !apiSettings.apiKey.isEmpty {
+            try HermesEndpointSecurity.validateSensitiveURL(url)
             request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
         }
 
@@ -749,11 +751,7 @@ final class HermesChatSession {
         let payload = event.data == "[DONE]" ? "[DONE]" : Self.prettyPrintedJSON(from: event.data)
         let block = "event: \(eventName)\n\(payload)"
 
-        if rawStreamedJSON.isEmpty {
-            rawStreamedJSON = block
-        } else {
-            rawStreamedJSON += "\n\n\(block)"
-        }
+        rawStreamedJSON = HermesDebugLogBuffer.appending(rawStreamedJSON, block: block)
     }
 
     private func appendDebugEventText(_ event: HermesChatSSEEvent) {
@@ -793,7 +791,7 @@ final class HermesChatSession {
         }
 
         guard let block, !block.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        debugEventText = debugEventText.isEmpty ? block : debugEventText + "\n\n" + block
+        debugEventText = HermesDebugLogBuffer.appending(debugEventText, block: block, maxBytes: 120_000)
     }
 
     private static func debugBlock(title: String, lines: [String?]) -> String {

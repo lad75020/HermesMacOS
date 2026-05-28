@@ -49,6 +49,33 @@ struct HermesAPISettings: Codable, Equatable {
     var apiKey = ""
     var allowSelfSignedCertificates = false
 
+    enum CodingKeys: String, CodingKey { case baseURL, apiKey, allowSelfSignedCertificates }
+
+    init(baseURL: String = HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesAPIPort, path: "/v1"), apiKey: String = HermesAPIKeychain.loadAPIKey(), allowSelfSignedCertificates: Bool = false) {
+        self.baseURL = baseURL
+        self.apiKey = apiKey
+        self.allowSelfSignedCertificates = allowSelfSignedCertificates
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        baseURL = (try? container.decode(String.self, forKey: .baseURL)) ?? HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesAPIPort, path: "/v1")
+        allowSelfSignedCertificates = (try? container.decode(Bool.self, forKey: .allowSelfSignedCertificates)) ?? false
+        let migratedAPIKey = (try? container.decode(String.self, forKey: .apiKey))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !migratedAPIKey.isEmpty {
+            apiKey = migratedAPIKey
+            HermesAPIKeychain.saveAPIKey(migratedAPIKey)
+        } else {
+            apiKey = HermesAPIKeychain.loadAPIKey()
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(baseURL, forKey: .baseURL)
+        try container.encode(allowSelfSignedCertificates, forKey: .allowSelfSignedCertificates)
+    }
+
     var hostName: String { HermesHostEndpoints.displayHost(from: baseURL) }
 
     static func responseURL(from baseURL: String) -> URL? { endpointURL(from: baseURL, suffix: "responses") }
@@ -300,6 +327,7 @@ enum HermesRequestCancellation {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if !apiSettings.apiKey.isEmpty {
+            guard (try? HermesEndpointSecurity.validateSensitiveURL(url)) != nil else { return }
             request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
         }
         _ = try? await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
@@ -372,7 +400,10 @@ enum HermesSettingsStore {
     private static let defaultInstallationRepositoryPath = NSString(string: "~/.hermes/hermes-agent").expandingTildeInPath
 
     static func loadAPISettings() -> HermesAPISettings { load(HermesAPISettings.self, forKey: apiSettingsKey) ?? HermesAPISettings() }
-    static func saveAPISettings(_ value: HermesAPISettings) { save(value, forKey: apiSettingsKey) }
+    static func saveAPISettings(_ value: HermesAPISettings) {
+        HermesAPIKeychain.saveAPIKey(value.apiKey)
+        save(value, forKey: apiSettingsKey)
+    }
     static func loadDraft() -> HermesRequestDraft { load(HermesRequestDraft.self, forKey: requestDraftKey) ?? HermesRequestDraft() }
     static func saveDraft(_ value: HermesRequestDraft) { save(value, forKey: requestDraftKey) }
     static func loadChatDraft() -> HermesChatDraft { load(HermesChatDraft.self, forKey: chatDraftKey) ?? HermesChatDraft() }
@@ -503,7 +534,10 @@ enum HermesAPIProfilesClient {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if !apiSettings.apiKey.isEmpty { request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization") }
+        if !apiSettings.apiKey.isEmpty {
+            try HermesEndpointSecurity.validateSensitiveURL(url)
+            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        }
         let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
         try HermesNetworkSessionFactory.validate(response: response)
         return try JSONDecoder().decode(HermesAPIProfilesEnvelope.self, from: data).data.filter { !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -515,10 +549,15 @@ struct HermesPromptAttachment: Equatable {
     let mimeType: String
     let data: Data
     let fileExtension: String
+    let originalByteCount: Int64
 
     static let supportedFileExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "pdf", "docx", "pptx", "xlsx", "txt", "text", "json", "yaml", "yml", "toml", "swift"]
     static let imageFileExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
     static let utf8FileExtensions: Set<String> = ["txt", "text", "json", "yaml", "yml", "toml", "swift"]
+    static let maxImageBytes: Int64 = 20 * 1024 * 1024
+    static let maxTextBytes: Int64 = 1 * 1024 * 1024
+    static let maxDocumentBytes: Int64 = 8 * 1024 * 1024
+    static let maxInlineTextCharacters = 120_000
 
     static var supportedContentTypes: [UTType] {
         var types: [UTType] = [.pdf, .plainText, .text, .json, .sourceCode, .swiftSource]
@@ -530,31 +569,49 @@ struct HermesPromptAttachment: Equatable {
     static func load(from url: URL) throws -> HermesPromptAttachment {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
-        let values = try url.resourceValues(forKeys: [.contentTypeKey, .nameKey])
+        let values = try url.resourceValues(forKeys: [.contentTypeKey, .nameKey, .fileSizeKey])
+        let name = values.name ?? url.lastPathComponent
+        let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
+        guard Self.supportedFileExtensions.contains(ext) else { throw HermesAttachmentError.unsupportedFileType(ext.isEmpty ? name : ".\(ext)") }
+        let byteCount = Int64(values.fileSize ?? 0)
+        let maxBytes = Self.maxStoredBytes(forExtension: ext)
+        if byteCount > maxBytes { throw HermesAttachmentError.fileTooLarge(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file), ByteCountFormatter.string(fromByteCount: maxBytes, countStyle: .file)) }
         let data = try Data(contentsOf: url)
-        return try HermesPromptAttachment(filename: values.name ?? url.lastPathComponent, contentType: values.contentType, data: data)
+        return try HermesPromptAttachment(filename: name, contentType: values.contentType, data: data, originalByteCount: byteCount > 0 ? byteCount : Int64(data.count))
     }
 
-    init(filename: String, contentType: UTType?, data: Data) throws {
+    init(filename: String, contentType: UTType?, data: Data, originalByteCount: Int64? = nil) throws {
         let normalized = filename.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "attachment" : filename
         let ext = URL(fileURLWithPath: normalized).pathExtension.lowercased()
         guard Self.supportedFileExtensions.contains(ext) else { throw HermesAttachmentError.unsupportedFileType(ext.isEmpty ? normalized : ".\(ext)") }
+        let byteCount = originalByteCount ?? Int64(data.count)
+        let maxBytes = Self.maxStoredBytes(forExtension: ext)
+        if byteCount > maxBytes { throw HermesAttachmentError.fileTooLarge(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file), ByteCountFormatter.string(fromByteCount: maxBytes, countStyle: .file)) }
         self.filename = normalized
         self.fileExtension = ext
         self.mimeType = Self.mimeType(forExtension: ext, contentType: contentType)
         self.data = data
+        self.originalByteCount = byteCount
     }
 
     var isImage: Bool { Self.imageFileExtensions.contains(fileExtension) }
     var isUTF8Text: Bool { Self.utf8FileExtensions.contains(fileExtension) }
-    var formattedByteCount: String { ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file) }
+    var formattedByteCount: String { ByteCountFormatter.string(fromByteCount: originalByteCount, countStyle: .file) }
     var base64DataURL: String { "data:\(mimeType);base64,\(data.base64EncodedString())" }
     var textContent: String? { isUTF8Text ? String(data: data, encoding: .utf8) : nil }
     var textAttachmentBlock: String {
         if let textContent {
-            return "\n" + String(localized: "Attached file: \(filename) (\(mimeType), \(formattedByteCount))\n```\(fileExtension)\n\(textContent)\n```")
+            let limited = String(textContent.prefix(Self.maxInlineTextCharacters))
+            let suffix = textContent.count > Self.maxInlineTextCharacters ? "\n\n[Attachment text truncated in HermesMacOS before sending.]" : ""
+            return "\n" + String(localized: "Attached file: \(filename) (\(mimeType), \(formattedByteCount))\n```\(fileExtension)\n\(limited)\(suffix)\n```")
         }
-        return "\n" + String(localized: "Attached file: \(filename) (\(mimeType), \(formattedByteCount))\nThe file is provided as a base64 data URL. Decode it if you need to inspect or process the document bytes:\n\(base64DataURL)")
+        return "\n" + String(localized: "Attached file: \(filename) (\(mimeType), \(formattedByteCount))\nBinary document bytes are not inlined into the prompt by HermesMacOS. Use a file-aware tool or upload workflow if the model needs to inspect this document.")
+    }
+
+    private static func maxStoredBytes(forExtension ext: String) -> Int64 {
+        if imageFileExtensions.contains(ext) { return maxImageBytes }
+        if utf8FileExtensions.contains(ext) { return maxTextBytes }
+        return maxDocumentBytes
     }
 
     private static func mimeType(forExtension ext: String, contentType: UTType?) -> String {
@@ -579,7 +636,17 @@ struct HermesPromptAttachment: Equatable {
 
 enum HermesAttachmentError: LocalizedError {
     case unsupportedFileType(String)
-    var errorDescription: String? { String(localized: "Unsupported attachment type: \(typeDescription). Choose an image, PDF, Office document, text, JSON, YAML, TOML, or Swift file.") }
+    case fileTooLarge(String, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedFileType:
+            return String(localized: "Unsupported attachment type: \(typeDescription). Choose an image, PDF, Office document, text, JSON, YAML, TOML, or Swift file.")
+        case .fileTooLarge(let actual, let limit):
+            return String(localized: "Attachment is too large (\(actual)). Choose a file up to \(limit).")
+        }
+    }
+
     private var typeDescription: String { if case .unsupportedFileType(let value) = self { value } else { "file" } }
 }
 
@@ -592,7 +659,12 @@ final class HermesNetworkSessionDelegate: NSObject, URLSessionDelegate {
             completionHandler(.performDefaultHandling, nil)
             return
         }
-        completionHandler(.useCredential, URLCredential(trust: trust))
+        let (disposition, credential) = HermesPinnedCertificateTrust.handle(
+            trust: trust,
+            host: challenge.protectionSpace.host,
+            allowSelfSignedCertificates: allowSelfSignedCertificates
+        )
+        completionHandler(disposition, credential)
     }
 }
 
@@ -975,6 +1047,7 @@ final class HermesResponsesSession {
 
     private func buildRequest(apiSettings: HermesAPISettings, draft: HermesRequestDraft, attachment: HermesPromptAttachment?, stream: Bool, previousResponseID: String, hermesSessionID: String, cancellationRequestID: String) throws -> URLRequest {
         guard let url = HermesAPISettings.responseURL(from: apiSettings.baseURL) else { throw HermesResponsesError.invalidURL }
+        try HermesEndpointSecurity.validateSensitiveURL(url)
         let reasoning = HermesReasoningRequest(level: draft.reasoningLevel)
         let payload = HermesResponsesRequestBody(model: "hermes-agent", input: HermesResponsesInput(prompt: draft.userPrompt, attachment: attachment), stream: stream, store: true, previousResponseID: previousResponseID.isEmpty ? nil : previousResponseID, reasoning: reasoning)
         var request = URLRequest(url: url)
@@ -989,7 +1062,10 @@ final class HermesResponsesSession {
             request.setValue(hermesSessionID, forHTTPHeaderField: "X-Hermes-Session-Id")
             request.setValue(hermesSessionID, forHTTPHeaderField: "x-openclaw-session-key")
         }
-        if !apiSettings.apiKey.isEmpty { request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization") }
+        if !apiSettings.apiKey.isEmpty {
+            try HermesEndpointSecurity.validateSensitiveURL(url)
+            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+        }
         request.httpBody = try JSONEncoder().encode(payload)
         return request
     }
@@ -1034,7 +1110,8 @@ final class HermesResponsesSession {
     private func appendRawStreamedJSON(_ event: HermesSSEEvent) {
         let eventName = event.event ?? "message"
         let payload = event.data == "[DONE]" ? "[DONE]" : Self.prettyPrintedJSON(from: event.data)
-        rawStreamedJSON = rawStreamedJSON.isEmpty ? "event: \(eventName)\n\(payload)" : rawStreamedJSON + "\n\nevent: \(eventName)\n\(payload)"
+        let block = "event: \(eventName)\n\(payload)"
+        rawStreamedJSON = HermesDebugLogBuffer.appending(rawStreamedJSON, block: block)
     }
 
     private func persistLastResponseID(_ value: String) { let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines); if !trimmed.isEmpty { lastKnownResponseID = trimmed; HermesSettingsStore.saveLastResponsesSessionID(trimmed) } }

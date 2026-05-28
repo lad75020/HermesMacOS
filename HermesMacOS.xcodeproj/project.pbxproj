@@ -53,6 +53,7 @@
 		4900E27D3CD521102347EA76 /* HermesDashboardPluginsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4437B01E907E5462E44A4A76 /* HermesDashboardPluginsStore.swift */; };
 		5E0E039A833A7FFCC8BD7978 /* HermesLocalConfigurationRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1ABA1EC3061E717ECB0F498 /* HermesLocalConfigurationRuntime.swift */; };
 		14C65DC8219576B6E2800354 /* HermesConfigurationRuntimeModelSlotEditorCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F4213F56C5A38EC120ECCA9 /* HermesConfigurationRuntimeModelSlotEditorCard.swift */; };
+		38C7F4AA90D44881B91A4A5B /* HermesSecurityUtilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7BC54E98D84B76AA8B217C /* HermesSecurityUtilities.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -71,6 +72,7 @@
 		4501AB7BBEE0E95DA1F88BD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4D73F0052FC686E600A0C5B1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		512A9F162FCF1B3100A7E101 /* HermesReachabilityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesReachabilityMonitor.swift; sourceTree = "<group>"; };
+		5D7BC54E98D84B76AA8B217C /* HermesSecurityUtilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesSecurityUtilities.swift; sourceTree = "<group>"; };
 		59D8EC4527F9A1247F7B7D87 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		6696056CAFB17C7255BD45D7 /* HermesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesViews.swift; sourceTree = "<group>"; };
 		69CBD5F9B22B44BCCD839298 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 				F1A96D38C4B94A1AB3F0C7E2 /* HermesLocalProfiles.swift */,
 				D7B1C7E54F924B61902A3E89 /* HermesKnowledgeEraserUtility.swift */,
 				512A9F162FCF1B3100A7E101 /* HermesReachabilityMonitor.swift */,
+				5D7BC54E98D84B76AA8B217C /* HermesSecurityUtilities.swift */,
 				37F22943CF56D37CF71DD1CD /* HermesHistoryView.swift */,
 				11CEF196220572F395969711 /* HermesInstallationView.swift */,
 				1ACA6DE022F4184ED70D8DF8 /* HermesMacOS.entitlements */,
@@ -306,6 +309,7 @@
 				E62F41B8A9D54C2197B3084A /* HermesDashboardSchedules.swift in Sources */,
 				A94C8F1D39E247E4B5A61072 /* HermesLocalRuntimeModels.swift in Sources */,
 				512A9F172FCF1B3100A7E101 /* HermesReachabilityMonitor.swift in Sources */,
+				38C7F4AA90D44881B91A4A5B /* HermesSecurityUtilities.swift in Sources */,
 				E8D4C3B27A974F8196C2D5A0 /* HermesLocalProfiles.swift in Sources */,
 				C4E22D9B31A6404E9F216A11 /* HermesKnowledgeEraserUtility.swift in Sources */,
 				94CFB24AD7B68108672D0497 /* HermesHistoryView.swift in Sources */,

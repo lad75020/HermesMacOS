@@ -293,7 +293,14 @@ final class HermesLocalProfilesStore {
     private func normalizedProfileName(_ name: String) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
-        guard !trimmed.isEmpty, trimmed.rangeOfCharacter(from: allowed.inverted) == nil else { throw HermesLocalProfilesError.invalidProfileName }
+        guard !trimmed.isEmpty,
+              trimmed != ".",
+              trimmed != "..",
+              !trimmed.hasPrefix("-"),
+              !trimmed.contains("/"),
+              !trimmed.contains("\\"),
+              trimmed.rangeOfCharacter(from: allowed.inverted) == nil
+        else { throw HermesLocalProfilesError.invalidProfileName }
         return trimmed
     }
 
@@ -307,7 +314,10 @@ final class HermesLocalProfilesStore {
     }
 
     private func firstTopLevelYAMLScalar(named key: String, in content: String) -> String? {
-        firstMatch(in: content, pattern: #"^\#(key):\s*["']?([^"'\n#]+)["']?"#)
+        for line in content.components(separatedBy: "\n") where indentation(of: line) == 0 {
+            if let value = HermesYAMLScalar.value(from: line, key: key) { return value }
+        }
+        return nil
     }
 
     private func readYAMLScalar(content: String, section: String, key: String) -> String? {
@@ -325,7 +335,7 @@ final class HermesLocalProfilesStore {
     }
 
     private func scalarValue(from line: String, key: String) -> String? {
-        firstMatch(in: line, pattern: #"^\s*\#(key):\s*["']?([^"'\n#]+)["']?"#)
+        HermesYAMLScalar.value(from: line, key: key)
     }
 
     private func firstMatch(in content: String, pattern: String) -> String? {
@@ -366,7 +376,7 @@ final class HermesLocalProfilesStore {
     }
 
     private func quotedYAML(_ value: String) -> String {
-        "\"\(value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
+        HermesYAMLScalar.quoted(value)
     }
 }
 

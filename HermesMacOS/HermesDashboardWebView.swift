@@ -85,7 +85,7 @@ private enum HermesConfigurationWebURL {
             baseURL = URL(string: "https://\(trimmed)").flatMap { $0.host == nil ? nil : $0 }
         }
 
-        guard let baseURL else { return nil }
+        guard let baseURL, ["http", "https"].contains((baseURL.scheme ?? "").lowercased()), !HermesEndpointSecurity.isRemotePlaintext(baseURL) else { return nil }
         return themedURL(from: baseURL, pagePath: pagePath, colorScheme: colorScheme)
     }
 

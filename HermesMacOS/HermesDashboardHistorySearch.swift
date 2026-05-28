@@ -378,6 +378,7 @@ final class HermesDashboardHistorySearchSession {
     private func displayProfileName(_ value: String) -> String { let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines); return trimmed.isEmpty || trimmed == "default" ? "Default" : trimmed }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
+        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
         let cacheKey = baseURL.absoluteString
         if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
         status = "Fetching dashboard session token"

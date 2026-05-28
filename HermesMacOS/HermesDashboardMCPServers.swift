@@ -119,8 +119,8 @@ final class HermesDashboardMCPServersStore {
     private var activeTask: Task<Void, Never>?
     private var probeTask: Task<Void, Never>?
     private var cachedTokenByBaseURL: [String: String] = [:]
-    private let pythonExecutable = "/Users/laurent/.hermes/hermes-agent/venv/bin/python3"
-    private let hermesAgentRoot = "/Users/laurent/.hermes/hermes-agent"
+    private let pythonExecutable = HermesRuntimePaths.defaultPythonExecutable
+    private let hermesAgentRoot = HermesRuntimePaths.defaultHermesAgentRoot
 
     func refresh(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
         activeTask?.cancel()
@@ -323,6 +323,7 @@ final class HermesDashboardMCPServersStore {
     }
 
     private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
+        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
         let cacheKey = baseURL.absoluteString
         if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
 
@@ -461,22 +462,15 @@ except BaseException as exc:
     }
 
     private nonisolated static func runProcess(executable: String, arguments: [String], hermesHome: String, workdir: String, timeout: TimeInterval) -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        process.currentDirectoryURL = URL(fileURLWithPath: workdir)
-        process.environment = normalizedSubprocessEnvironment(hermesHome: hermesHome)
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
         do {
-            try process.run()
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
-                if process.isRunning { process.terminate() }
-            }
-            process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            return String(data: data, encoding: .utf8) ?? ""
+            let result = try HermesProcessRunner.run(
+                executable: executable,
+                arguments: arguments,
+                environment: normalizedSubprocessEnvironment(hermesHome: hermesHome),
+                currentDirectory: workdir,
+                timeout: timeout
+            )
+            return result.output
         } catch {
             return "{\"error\":\"\(error.localizedDescription)\",\"results\":[]}"
         }
