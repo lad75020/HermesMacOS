@@ -41,6 +41,18 @@
 		EA79CB1E2A998BE7404B71C6 /* HermesInstallationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11CEF196220572F395969711 /* HermesInstallationView.swift */; };
 		EC7B891993F3D2C1EA9AC233 /* HermesTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6205CE4D8DF6062D876C169 /* HermesTypography.swift */; };
 		F13714B10A79E7A22C66A8FA /* RulesExpanded-Bold.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 3B6DA44781589EEE8E783934 /* RulesExpanded-Bold.woff2 */; };
+		A77665ED6CD384D1BB7ADA2B /* HermesDashboardWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D33B2720F6D63DCEDA2F29A /* HermesDashboardWebView.swift */; };
+		B4AA08DD3A7AFC5848DAD9D0 /* HermesMCPServersYAML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88D74686F5D200F07DC30700 /* HermesMCPServersYAML.swift */; };
+		B12085FA4173877654A196ED /* HermesConfigurationSkillsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62113EAB4619B25D9DB1B639 /* HermesConfigurationSkillsSection.swift */; };
+		0340D29086199DA2DCD678CA /* HermesConfigurationPluginsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93F081DBC02D5FEA5537C188 /* HermesConfigurationPluginsSection.swift */; };
+		ECD067CA227AA4DCE4C7D994 /* HermesConfigurationRuntimeModelsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9667711A0262B4BFFEF681E2 /* HermesConfigurationRuntimeModelsSection.swift */; };
+		906DF787B61AD959319A473D /* HermesConfigurationProfilesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33BD85CBE10A0B72872E9842 /* HermesConfigurationProfilesSection.swift */; };
+		C05A616908C042060FC87F70 /* HermesConfigurationToolsetsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956F2BAEBD4D876FAE791207 /* HermesConfigurationToolsetsSection.swift */; };
+		6FE1BD053F36817D6FCDD40D /* HermesConfigurationMCPServersSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA6AE52C180522966100978 /* HermesConfigurationMCPServersSection.swift */; };
+		D88656D718D423D8AC4288F5 /* HermesConfigurationSchedulesSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79C481634E1C0CD4BD324838 /* HermesConfigurationSchedulesSection.swift */; };
+		4900E27D3CD521102347EA76 /* HermesDashboardPluginsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4437B01E907E5462E44A4A76 /* HermesDashboardPluginsStore.swift */; };
+		5E0E039A833A7FFCC8BD7978 /* HermesLocalConfigurationRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1ABA1EC3061E717ECB0F498 /* HermesLocalConfigurationRuntime.swift */; };
+		14C65DC8219576B6E2800354 /* HermesConfigurationRuntimeModelSlotEditorCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F4213F56C5A38EC120ECCA9 /* HermesConfigurationRuntimeModelSlotEditorCard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -84,6 +96,18 @@
 		FBC2DDAD3CDD391DBF2E2572 /* Mondwest-Regular.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Mondwest-Regular.woff2"; sourceTree = "<group>"; };
 		FC604AF483CFF67A41BA12A3 /* HermesDashboardSkills.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardSkills.swift; sourceTree = "<group>"; };
 		FF725DF544EB45BE8AC28558 /* HermesApprovalsInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesApprovalsInboxView.swift; sourceTree = "<group>"; };
+		8D33B2720F6D63DCEDA2F29A /* HermesDashboardWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardWebView.swift; sourceTree = "<group>"; };
+		88D74686F5D200F07DC30700 /* HermesMCPServersYAML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMCPServersYAML.swift; sourceTree = "<group>"; };
+		62113EAB4619B25D9DB1B639 /* HermesConfigurationSkillsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationSkillsSection.swift; sourceTree = "<group>"; };
+		93F081DBC02D5FEA5537C188 /* HermesConfigurationPluginsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationPluginsSection.swift; sourceTree = "<group>"; };
+		9667711A0262B4BFFEF681E2 /* HermesConfigurationRuntimeModelsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationRuntimeModelsSection.swift; sourceTree = "<group>"; };
+		33BD85CBE10A0B72872E9842 /* HermesConfigurationProfilesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationProfilesSection.swift; sourceTree = "<group>"; };
+		956F2BAEBD4D876FAE791207 /* HermesConfigurationToolsetsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationToolsetsSection.swift; sourceTree = "<group>"; };
+		BBA6AE52C180522966100978 /* HermesConfigurationMCPServersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationMCPServersSection.swift; sourceTree = "<group>"; };
+		79C481634E1C0CD4BD324838 /* HermesConfigurationSchedulesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationSchedulesSection.swift; sourceTree = "<group>"; };
+		4437B01E907E5462E44A4A76 /* HermesDashboardPluginsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardPluginsStore.swift; sourceTree = "<group>"; };
+		E1ABA1EC3061E717ECB0F498 /* HermesLocalConfigurationRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesLocalConfigurationRuntime.swift; sourceTree = "<group>"; };
+		9F4213F56C5A38EC120ECCA9 /* HermesConfigurationRuntimeModelSlotEditorCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationRuntimeModelSlotEditorCard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -132,11 +156,23 @@
 				03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */,
 				E23D78F8C8391F85BE1F3FFF /* HermesChatView.swift */,
 				43E8823EB1ED5D1894AC19DA /* HermesConfigurationView.swift */,
+				8D33B2720F6D63DCEDA2F29A /* HermesDashboardWebView.swift */,
+				62113EAB4619B25D9DB1B639 /* HermesConfigurationSkillsSection.swift */,
+				93F081DBC02D5FEA5537C188 /* HermesConfigurationPluginsSection.swift */,
+				9667711A0262B4BFFEF681E2 /* HermesConfigurationRuntimeModelsSection.swift */,
+				33BD85CBE10A0B72872E9842 /* HermesConfigurationProfilesSection.swift */,
+				956F2BAEBD4D876FAE791207 /* HermesConfigurationToolsetsSection.swift */,
+				BBA6AE52C180522966100978 /* HermesConfigurationMCPServersSection.swift */,
+				79C481634E1C0CD4BD324838 /* HermesConfigurationSchedulesSection.swift */,
+				4437B01E907E5462E44A4A76 /* HermesDashboardPluginsStore.swift */,
+				E1ABA1EC3061E717ECB0F498 /* HermesLocalConfigurationRuntime.swift */,
+				9F4213F56C5A38EC120ECCA9 /* HermesConfigurationRuntimeModelSlotEditorCard.swift */,
 				1BCC69016BAF846FF9F12014 /* HermesDashboardHistorySearch.swift */,
 				FF725DF544EB45BE8AC28558 /* HermesApprovalsInboxView.swift */,
 				FC604AF483CFF67A41BA12A3 /* HermesDashboardSkills.swift */,
 				B42E7D0A19C64F5A8E3D2710 /* HermesDashboardToolsets.swift */,
 				D51A8C72F6E04B8CA419E273 /* HermesDashboardMCPServers.swift */,
+				88D74686F5D200F07DC30700 /* HermesMCPServersYAML.swift */,
 				F73A52C91B4E4D4CA830692B /* HermesDashboardSchedules.swift */,
 				B86D4A7C2E9F41C6A5308D21 /* HermesLocalRuntimeModels.swift */,
 				F1A96D38C4B94A1AB3F0C7E2 /* HermesLocalProfiles.swift */,
@@ -249,12 +285,24 @@
 				E6744ACE824DD627E37B9020 /* HermesChatCompletionsAPI.swift in Sources */,
 				AB364C25AEB7E281976FF7DA /* HermesChatView.swift in Sources */,
 				D65D293D4E89089922501618 /* HermesConfigurationView.swift in Sources */,
+				A77665ED6CD384D1BB7ADA2B /* HermesDashboardWebView.swift in Sources */,
+				B12085FA4173877654A196ED /* HermesConfigurationSkillsSection.swift in Sources */,
+				0340D29086199DA2DCD678CA /* HermesConfigurationPluginsSection.swift in Sources */,
+				ECD067CA227AA4DCE4C7D994 /* HermesConfigurationRuntimeModelsSection.swift in Sources */,
+				906DF787B61AD959319A473D /* HermesConfigurationProfilesSection.swift in Sources */,
+				C05A616908C042060FC87F70 /* HermesConfigurationToolsetsSection.swift in Sources */,
+				6FE1BD053F36817D6FCDD40D /* HermesConfigurationMCPServersSection.swift in Sources */,
+				D88656D718D423D8AC4288F5 /* HermesConfigurationSchedulesSection.swift in Sources */,
+				4900E27D3CD521102347EA76 /* HermesDashboardPluginsStore.swift in Sources */,
+				5E0E039A833A7FFCC8BD7978 /* HermesLocalConfigurationRuntime.swift in Sources */,
+				14C65DC8219576B6E2800354 /* HermesConfigurationRuntimeModelSlotEditorCard.swift in Sources */,
 				ADA3B122D278EEEE2D7A34BD /* HermesDashboardHistorySearch.swift in Sources */,
 				32686F25A2C1B0B0D2FA6A05 /* HermesApprovalsInboxView.swift in Sources */,
 				0D0492D08725C1EF5F09E3F0 /* HermesDashboardSkills.swift in Sources */,
 				A12F0B9C87D34E1A9B6C5201 /* HermesDashboardToolsets.swift in Sources */,
 				4D73F0062FC686E600A0C5B1 /* SettingsView.swift in Sources */,
 				C83F9D6A214E4B7FA2D9C031 /* HermesDashboardMCPServers.swift in Sources */,
+				B4AA08DD3A7AFC5848DAD9D0 /* HermesMCPServersYAML.swift in Sources */,
 				E62F41B8A9D54C2197B3084A /* HermesDashboardSchedules.swift in Sources */,
 				A94C8F1D39E247E4B5A61072 /* HermesLocalRuntimeModels.swift in Sources */,
 				512A9F172FCF1B3100A7E101 /* HermesReachabilityMonitor.swift in Sources */,
