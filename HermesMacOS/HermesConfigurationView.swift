@@ -14,10 +14,13 @@ struct HermesDashboardView: View {
     let colorScheme: ColorScheme
     let connectedHostName: String
     let connectedWindowID: UUID
+    var title = "Hermes Dashboard"
+    var systemImage = "speedometer"
+    var pagePath = ""
     @State private var reloadToken = UUID()
 
     private var normalizedDashboardURL: URL? {
-        HermesConfigurationWebURL.normalizedURL(from: dashboardURL, colorScheme: colorScheme)
+        HermesConfigurationWebURL.normalizedURL(from: dashboardURL, pagePath: pagePath, colorScheme: colorScheme)
     }
 
     var body: some View {
@@ -36,7 +39,7 @@ struct HermesDashboardView: View {
                     ContentUnavailableView(
                         "Dashboard URL required",
                         systemImage: "exclamationmark.triangle",
-                        description: Text("Set the Hermes Dashboard URL in Settings, then return here to load Hermes Dashboard.")
+                        description: Text("Set the Hermes Dashboard URL in Settings, then return here to load \(title).")
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.72), cornerRadius: 20)
@@ -49,7 +52,7 @@ struct HermesDashboardView: View {
 
     private var header: some View {
         HStack(spacing: 12) {
-            Label("Hermes Dashboard", systemImage: "speedometer")
+            Label(title, systemImage: systemImage)
                 .hermesWebsiteTitleFont(size: 22, weight: .bold)
             Button {
                 reloadToken = UUID()
@@ -63,7 +66,7 @@ struct HermesDashboardView: View {
             .accessibilityLabel("Reload")
             Spacer()
             HermesConnectedHostLabel(hostName: connectedHostName, windowID: connectedWindowID)
-            Text("Hermes Dashboard")
+            Text(title)
                 .hermesWebsiteLabelFont(size: 11, weight: .bold)
                 .foregroundStyle(Color.hermesSecondaryText)
         }
@@ -73,7 +76,7 @@ struct HermesDashboardView: View {
 }
 
 private enum HermesConfigurationWebURL {
-    static func normalizedURL(from string: String, colorScheme: ColorScheme) -> URL? {
+    static func normalizedURL(from string: String, pagePath: String = "", colorScheme: ColorScheme) -> URL? {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
@@ -85,14 +88,18 @@ private enum HermesConfigurationWebURL {
         }
 
         guard let baseURL else { return nil }
-        return themedURL(from: baseURL, colorScheme: colorScheme)
+        return themedURL(from: baseURL, pagePath: pagePath, colorScheme: colorScheme)
     }
 
     private static let darkDashboardThemeName = "mono"
     private static let lightDashboardThemeName = "solarized-light"
 
-    private static func themedURL(from url: URL, colorScheme: ColorScheme) -> URL? {
+    private static func themedURL(from url: URL, pagePath: String, colorScheme: ColorScheme) -> URL? {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let normalizedPagePath = pagePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !normalizedPagePath.isEmpty {
+            components.path = normalizedPagePath.hasPrefix("/") ? normalizedPagePath : "/\(normalizedPagePath)"
+        }
         var queryItems = components.queryItems?.filter { $0.name.lowercased() != "theme" } ?? []
         queryItems.append(URLQueryItem(name: "theme", value: colorScheme == .dark ? darkDashboardThemeName : lightDashboardThemeName))
         components.queryItems = queryItems

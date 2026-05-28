@@ -395,6 +395,7 @@ struct ContentView: View {
     @State private var approvalsInboxStore = HermesApprovalsInboxStore()
     @State private var installationSession = HermesInstallationSession()
     @State private var configurationWebViewStore = HermesDashboardWebViewStore()
+    @State private var kanbanWebViewStore = HermesDashboardWebViewStore()
     @State private var selectedTab = HermesMacOSTab.ask
     @State private var acknowledgedChatCompletionToken = ""
     @State private var acknowledgedChatFailureToken = ""
@@ -553,6 +554,17 @@ struct ContentView: View {
                 connectedHostName: connectedHostName,
                 connectedWindowID: windowID
             )
+        case .kanban:
+            HermesDashboardView(
+                dashboardURL: dashboardURL,
+                webViewStore: kanbanWebViewStore,
+                colorScheme: effectiveColorScheme,
+                connectedHostName: connectedHostName,
+                connectedWindowID: windowID,
+                title: "Kanban",
+                systemImage: "square.grid.3x3",
+                pagePath: "/kanban"
+            )
         case .dashboard:
             HermesDashboardView(dashboardURL: dashboardURL, webViewStore: configurationWebViewStore, colorScheme: effectiveColorScheme, connectedHostName: connectedHostName, connectedWindowID: windowID)
         case .configuration:
@@ -648,6 +660,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case history
     case sessions
     case approvals
+    case kanban
     case dashboard
     case configuration
     case utilities
@@ -661,6 +674,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .history: "History"
         case .sessions: "Sessions"
         case .approvals: "Approvals Inbox"
+        case .kanban: "Kanban"
         case .dashboard: "Hermes Dashboard"
         case .configuration: "Configuration"
         case .utilities: "Utilities"
@@ -674,6 +688,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         case .history: "clock.arrow.circlepath"
         case .sessions: "rectangle.stack"
         case .approvals: "tray.full"
+        case .kanban: "square.grid.3x3"
         case .dashboard: "speedometer"
         case .configuration: "gearshape.2"
         case .utilities: "wrench.and.screwdriver"
