@@ -132,11 +132,13 @@ struct HermesSideTabSwitcher: View {
 
     private var activeAskAttention: HermesAskWorkspaceAttention? {
         switch askAttention {
+        case .failed:
+            return .failed
         case .completed:
             return .completed
         case .streaming:
             return .streaming
-        case .failed, nil:
+        case nil:
             return nil
         }
     }
@@ -197,11 +199,13 @@ struct HermesSideTabSwitcher: View {
     private func backgroundColor(for tab: HermesMacOSTab) -> Color {
         if tab == .ask {
             switch activeAskAttention {
+            case .failed:
+                return .hermesDestructive
             case .completed:
                 return .green
             case .streaming:
                 return .hermesOrange
-            case .failed, nil:
+            case nil:
                 break
             }
         }
@@ -255,11 +259,13 @@ struct HermesSideTabSwitcher: View {
     private func shadowColor(for tab: HermesMacOSTab) -> Color {
         if tab == .ask {
             switch activeAskAttention {
+            case .failed:
+                return .hermesDestructive.opacity(0.24)
             case .completed:
                 return .green.opacity(0.24)
             case .streaming:
                 return .hermesOrange.opacity(0.24)
-            case .failed, nil:
+            case nil:
                 break
             }
         }
@@ -409,6 +415,7 @@ struct ContentView: View {
     }
 
     private var askTabAttention: HermesAskWorkspaceAttention? {
+        if askWorkspaces.contains(where: { $0.attention == .failed }) { return .failed }
         if askWorkspaces.contains(where: { $0.attention == .completed }) { return .completed }
         if askWorkspaces.contains(where: { $0.attention == .streaming }) { return .streaming }
         return nil
