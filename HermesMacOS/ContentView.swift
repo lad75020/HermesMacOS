@@ -628,6 +628,11 @@ struct ContentView: View {
 
     private func loadPersistedStartupValuesIfNeeded() async {
         guard !didLoadPersistedStartupValues else { return }
+        do {
+            try await HermesSecretUnlockGate.shared.unlockIfNeeded()
+        } catch {
+            return
+        }
         didLoadPersistedStartupValues = true
         let values = await Task.detached(priority: .userInitiated) {
             HermesContentPersistedStartupValues.load()

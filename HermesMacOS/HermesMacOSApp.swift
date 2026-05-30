@@ -101,24 +101,74 @@ private struct HermesWindowCommands: Commands {
 }
 
 private struct HermesMacOSRootView: View {
-    @State private var isShowingSplash = true
+    @State private var startupState: HermesMacOSStartupState = .splash
 
     var body: some View {
         Group {
-            if isShowingSplash {
+            switch startupState {
+            case .splash, .unlocking:
                 SplashView()
                     .transition(.opacity)
-            } else {
+            case .unlocked:
                 ContentView()
                     .transition(.opacity)
+            case .failed(let message):
+                HermesSecretUnlockFailureView(message: message) {
+                    Task { await unlockAndShowContent() }
+                }
+                .transition(.opacity)
             }
         }
         .task {
-            guard isShowingSplash else { return }
-            try? await Task.sleep(for: .seconds(2))
+            guard startupState == .splash else { return }
+            await unlockAndShowContent()
+        }
+    }
+
+    private func unlockAndShowContent() async {
+        startupState = .unlocking
+        try? await Task.sleep(for: .seconds(2))
+        do {
+            try await HermesSecretUnlockGate.shared.unlockIfNeeded()
             withAnimation(.easeOut(duration: 0.25)) {
-                isShowingSplash = false
+                startupState = .unlocked
+            }
+        } catch {
+            withAnimation(.easeOut(duration: 0.2)) {
+                startupState = .failed(error.localizedDescription)
             }
         }
+    }
+}
+
+private enum HermesMacOSStartupState: Equatable {
+    case splash
+    case unlocking
+    case unlocked
+    case failed(String)
+}
+
+private struct HermesSecretUnlockFailureView: View {
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "lock.trianglebadge.exclamationmark")
+                .font(.system(size: 44, weight: .semibold))
+                .foregroundStyle(Color.hermesDestructive)
+            Text("HermesMacOS secrets are locked")
+                .font(.title2.weight(.semibold))
+            Text(message)
+                .font(.callout)
+                .foregroundStyle(Color.hermesSecondaryText)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            Button("Unlock HermesMacOS", action: retry)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(36)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(HermesLiquidGlassCanvas().ignoresSafeArea())
     }
 }

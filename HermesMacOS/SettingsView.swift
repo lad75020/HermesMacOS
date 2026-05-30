@@ -366,6 +366,11 @@ struct SettingsView: View {
 
     private func loadPersistedValuesIfNeeded() async {
         guard !didLoadPersistedValues else { return }
+        do {
+            try await HermesSecretUnlockGate.shared.unlockIfNeeded()
+        } catch {
+            return
+        }
         didLoadPersistedValues = true
         let values = await Task.detached(priority: .userInitiated) {
             HermesSettingsPersistedValues.load()

@@ -184,32 +184,87 @@ struct HermesSSHHostCredentials: Codable, Equatable, Sendable {
 
 enum HermesSSHKeychain {
     private static let service = "HermesMacOS.SSHPrivateKeys"
+    private static let privateKeyCache = HermesKeyedCachedSecret<String, Data>()
+    private static let privateKeyPresenceCache = HermesKeyedCachedSecret<String, Bool>()
 
-    static func hasPrivateKey(forHost host: String) -> Bool { privateKeyData(forHost: host) != nil }
+    static func hasPrivateKey(forHost host: String) -> Bool {
+        let account = accountName(forHost: host)
+        let cachedKey = privateKeyCache.value(for: account)
+        if cachedKey.isCached { return cachedKey.value != nil }
+        let cachedPresence = privateKeyPresenceCache.value(for: account)
+        if cachedPresence.isCached { return cachedPresence.value ?? false }
+        let hasKey = hasPrivateKey(account: account, dataProtection: true) || hasPrivateKey(account: account, dataProtection: false)
+        privateKeyPresenceCache.store(hasKey, for: account)
+        return hasKey
+    }
 
     static func savePrivateKey(_ data: Data, displayName: String, forHost host: String) throws {
         let account = accountName(forHost: host)
+        HermesKeychainDataProtection.deleteGenericPassword(service: service, account: account)
         var query = baseQuery(account: account)
-        SecItemDelete(query as CFDictionary)
         query[kSecValueData as String] = data
         query[kSecAttrLabel as String] = displayName
         query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let status = SecItemAdd(query as CFDictionary, nil)
         guard status == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(status)) }
+        privateKeyCache.store(data, for: account)
+        privateKeyPresenceCache.store(true, for: account)
     }
 
     static func deletePrivateKey(forHost host: String) {
-        SecItemDelete(baseQuery(account: accountName(forHost: host)) as CFDictionary)
+        let account = accountName(forHost: host)
+        HermesKeychainDataProtection.deleteGenericPassword(service: service, account: account)
+        privateKeyCache.store(nil, for: account)
+        privateKeyPresenceCache.store(false, for: account)
     }
 
     static func privateKeyData(forHost host: String) -> Data? {
-        var query = baseQuery(account: accountName(forHost: host))
+        let account = accountName(forHost: host)
+        let cached = privateKeyCache.value(for: account)
+        if cached.isCached { return cached.value }
+        if let data = privateKeyData(account: account, dataProtection: true) {
+            privateKeyCache.store(data, for: account)
+            privateKeyPresenceCache.store(true, for: account)
+            return data
+        }
+        if let legacy = privateKeyData(account: account, dataProtection: false) {
+            migratePrivateKeyToDataProtection(legacy, account: account)
+            privateKeyCache.store(legacy, for: account)
+            privateKeyPresenceCache.store(true, for: account)
+            return legacy
+        }
+        privateKeyCache.store(nil, for: account)
+        privateKeyPresenceCache.store(false, for: account)
+        return nil
+    }
+
+    private static func hasPrivateKey(account: String, dataProtection: Bool) -> Bool {
+        var query = baseQuery(account: account, dataProtection: dataProtection)
+        query[kSecReturnAttributes as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        return SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess
+    }
+
+    private static func privateKeyData(account: String, dataProtection: Bool) -> Data? {
+        var query = baseQuery(account: account, dataProtection: dataProtection)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess else { return nil }
         return item as? Data
+    }
+
+    private static func migratePrivateKeyToDataProtection(_ data: Data, account: String) {
+        var query = baseQuery(account: account, dataProtection: true)
+        query[kSecValueData as String] = data
+        query[kSecAttrLabel as String] = "SSH private key"
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecSuccess || status == errSecDuplicateItem {
+            SecItemDelete(baseQuery(account: account, dataProtection: false) as CFDictionary)
+        }
     }
 
     static func temporaryIdentityFile(forHost host: String) throws -> URL {
@@ -253,12 +308,8 @@ enum HermesSSHKeychain {
         HermesHostEndpoints.normalizedHost(host).lowercased()
     }
 
-    private static func baseQuery(account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
+    private static func baseQuery(account: String, dataProtection: Bool = true) -> [String: Any] {
+        HermesKeychainDataProtection.genericPasswordQuery(service: service, account: account, dataProtection: dataProtection)
     }
 }
 

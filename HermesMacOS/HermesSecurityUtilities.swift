@@ -6,6 +6,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import LocalAuthentication
 import Observation
 import Security
 
@@ -23,6 +24,7 @@ enum HermesSecurityError: LocalizedError {
     case insecureTransport(String)
     case encryptionUnavailable
     case localApprovalDenied(String)
+    case authenticationFailed(String)
     case dashboardSessionTokenMissing
     case dashboardURLInvalid
     case dashboardConfigChanged
@@ -35,6 +37,8 @@ enum HermesSecurityError: LocalizedError {
             return String(localized: "HermesMacOS could not access its local encryption key.")
         case .localApprovalDenied(let path):
             return String(localized: "Local filesystem access was denied for \(path).")
+        case .authenticationFailed(let reason):
+            return String(localized: "HermesMacOS secrets could not be unlocked: \(reason)")
         case .dashboardSessionTokenMissing:
             return String(localized: "The dashboard session token was not found in the dashboard HTML.")
         case .dashboardURLInvalid:
@@ -61,23 +65,138 @@ enum HermesEndpointSecurity {
     }
 }
 
+actor HermesSecretUnlockGate {
+    static let shared = HermesSecretUnlockGate()
+
+    private var isUnlocked = false
+    private var inFlightUnlock: Task<Void, Error>?
+
+    func unlockIfNeeded() async throws {
+        if isUnlocked { return }
+        if let inFlightUnlock {
+            try await inFlightUnlock.value
+            return
+        }
+        let task = Task {
+            let context = LAContext()
+            context.localizedCancelTitle = String(localized: "Cancel")
+            var error: NSError?
+            guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+                throw HermesSecurityError.authenticationFailed(error?.localizedDescription ?? String(localized: "local authentication is unavailable"))
+            }
+            try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: String(localized: "Unlock HermesMacOS secrets for this login session.")
+            )
+        }
+        inFlightUnlock = task
+        do {
+            try await task.value
+            isUnlocked = true
+            inFlightUnlock = nil
+        } catch {
+            inFlightUnlock = nil
+            throw error
+        }
+    }
+}
+
+private final class HermesCachedSecret<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var isCached = false
+    private var cachedValue: Value?
+
+    func value() -> (isCached: Bool, value: Value?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (isCached, cachedValue)
+    }
+
+    func store(_ value: Value?) {
+        lock.lock()
+        cachedValue = value
+        isCached = true
+        lock.unlock()
+    }
+
+    func clear() {
+        lock.lock()
+        cachedValue = nil
+        isCached = false
+        lock.unlock()
+    }
+}
+
+final class HermesKeyedCachedSecret<Key: Hashable, Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cachedValues: [Key: Value?] = [:]
+    private var cachedKeys = Set<Key>()
+
+    func value(for key: Key) -> (isCached: Bool, value: Value?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (cachedKeys.contains(key), cachedValues[key] ?? nil)
+    }
+
+    func store(_ value: Value?, for key: Key) {
+        lock.lock()
+        cachedValues[key] = value
+        cachedKeys.insert(key)
+        lock.unlock()
+    }
+
+    func clear(for key: Key) {
+        lock.lock()
+        cachedValues.removeValue(forKey: key)
+        cachedKeys.remove(key)
+        lock.unlock()
+    }
+}
+
+enum HermesKeychainDataProtection {
+    static func genericPasswordQuery(service: String, account: String, dataProtection: Bool = true) -> [String: Any] {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        if dataProtection {
+            query[kSecUseDataProtectionKeychain as String] = true
+        }
+        return query
+    }
+
+    static func deleteGenericPassword(service: String, account: String) {
+        SecItemDelete(genericPasswordQuery(service: service, account: account, dataProtection: true) as CFDictionary)
+        SecItemDelete(genericPasswordQuery(service: service, account: account, dataProtection: false) as CFDictionary)
+    }
+}
+
 enum HermesAPIKeychain {
     private static let service = "HermesMacOS.APIKeys"
     private static let account = "default"
+    private static let cache = HermesCachedSecret<String>()
 
     static func loadAPIKey() -> String {
-        var query = baseQuery()
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess, let data = item as? Data, let key = String(data: data, encoding: .utf8) else { return "" }
-        return key
+        let cached = cache.value()
+        if cached.isCached { return cached.value ?? "" }
+        if let key = loadAPIKey(dataProtection: true) {
+            cache.store(key)
+            return key
+        }
+        if let legacyKey = loadAPIKey(dataProtection: false) {
+            migrateAPIKeyToDataProtection(legacyKey)
+            cache.store(legacyKey)
+            return legacyKey
+        }
+        cache.store("")
+        return ""
     }
 
     static func saveAPIKey(_ value: String) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        SecItemDelete(baseQuery() as CFDictionary)
+        HermesKeychainDataProtection.deleteGenericPassword(service: service, account: account)
+        cache.store(trimmed)
         guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8) else { return }
         var query = baseQuery()
         query[kSecValueData as String] = data
@@ -85,12 +204,29 @@ enum HermesAPIKeychain {
         SecItemAdd(query as CFDictionary, nil)
     }
 
-    private static func baseQuery() -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
+    private static func loadAPIKey(dataProtection: Bool) -> String? {
+        var query = baseQuery(dataProtection: dataProtection)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private static func migrateAPIKeyToDataProtection(_ key: String) {
+        guard !key.isEmpty, let data = key.data(using: .utf8) else { return }
+        var query = baseQuery(dataProtection: true)
+        query[kSecValueData as String] = data
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecSuccess || status == errSecDuplicateItem {
+            SecItemDelete(baseQuery(dataProtection: false) as CFDictionary)
+        }
+    }
+
+    private static func baseQuery(dataProtection: Bool = true) -> [String: Any] {
+        HermesKeychainDataProtection.genericPasswordQuery(service: service, account: account, dataProtection: dataProtection)
     }
 }
 
@@ -121,6 +257,7 @@ enum HermesEncryptedRetentionStore {
     private static let keyAccount = "AES-GCM"
     private static let encryptedPrefix = "hermes.macOS.encrypted."
     private static let version: UInt8 = 1
+    private static let keyCache = HermesCachedSecret<Data>()
 
     static func load<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
         if let encrypted = UserDefaults.standard.data(forKey: encryptedKey(key)),
@@ -202,11 +339,28 @@ enum HermesEncryptedRetentionStore {
         query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         let status = SecItemAdd(query as CFDictionary, nil)
         guard status == errSecSuccess || status == errSecDuplicateItem else { throw HermesSecurityError.encryptionUnavailable }
+        keyCache.store(data)
         return SymmetricKey(data: data)
     }
 
     private static func keyData() -> Data? {
-        var query = keyQuery()
+        let cached = keyCache.value()
+        if cached.isCached { return cached.value }
+        if let existing = keyData(dataProtection: true) {
+            keyCache.store(existing)
+            return existing
+        }
+        if let legacy = keyData(dataProtection: false) {
+            migrateKeyToDataProtection(legacy)
+            keyCache.store(legacy)
+            return legacy
+        }
+        keyCache.store(nil)
+        return nil
+    }
+
+    private static func keyData(dataProtection: Bool) -> Data? {
+        var query = keyQuery(dataProtection: dataProtection)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
@@ -215,12 +369,18 @@ enum HermesEncryptedRetentionStore {
         return item as? Data
     }
 
-    private static func keyQuery() -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: keyService,
-            kSecAttrAccount as String: keyAccount
-        ]
+    private static func migrateKeyToDataProtection(_ data: Data) {
+        var query = keyQuery(dataProtection: true)
+        query[kSecValueData as String] = data
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecSuccess || status == errSecDuplicateItem {
+            SecItemDelete(keyQuery(dataProtection: false) as CFDictionary)
+        }
+    }
+
+    private static func keyQuery(dataProtection: Bool = true) -> [String: Any] {
+        HermesKeychainDataProtection.genericPasswordQuery(service: keyService, account: keyAccount, dataProtection: dataProtection)
     }
 }
 
@@ -359,6 +519,8 @@ actor HermesDashboardClient {
 }
 
 enum HermesPinnedCertificateTrust {
+    private static let pinService = "HermesMacOS.CertificatePins"
+
     static func handle(trust: SecTrust, host: String, allowSelfSignedCertificates: Bool) -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard allowSelfSignedCertificates else { return (.performDefaultHandling, nil) }
         var trustError: CFError?
@@ -377,7 +539,7 @@ enum HermesPinnedCertificateTrust {
 
     static func approvePin(host: String, fingerprint: String) {
         let normalized = normalizedHost(host)
-        SecItemDelete(pinQuery(host: normalized) as CFDictionary)
+        HermesKeychainDataProtection.deleteGenericPassword(service: pinService, account: normalized)
         guard let data = fingerprint.data(using: .utf8) else { return }
         var query = pinQuery(host: normalized)
         query[kSecValueData as String] = data
@@ -387,7 +549,7 @@ enum HermesPinnedCertificateTrust {
     }
 
     static func resetPin(host: String) {
-        SecItemDelete(pinQuery(host: normalizedHost(host)) as CFDictionary)
+        HermesKeychainDataProtection.deleteGenericPassword(service: pinService, account: normalizedHost(host))
     }
 
     private static func normalizedHost(_ host: String) -> String {
@@ -395,13 +557,10 @@ enum HermesPinnedCertificateTrust {
     }
 
     private static func loadPin(forHost host: String) -> String? {
-        var query = pinQuery(host: host)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data {
-            return String(data: data, encoding: .utf8)
+        if let pin = loadPin(forHost: host, dataProtection: true) { return pin }
+        if let legacyPin = loadPin(forHost: host, dataProtection: false) {
+            approvePin(host: host, fingerprint: legacyPin)
+            return legacyPin
         }
         let legacyKey = "hermes.macOS.pinnedServerCertificateSHA256.\(host)"
         if let legacy = UserDefaults.standard.string(forKey: legacyKey), !legacy.isEmpty {
@@ -411,12 +570,20 @@ enum HermesPinnedCertificateTrust {
         return nil
     }
 
-    private static func pinQuery(host: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "HermesMacOS.CertificatePins",
-            kSecAttrAccount as String: host
-        ]
+    private static func loadPin(forHost host: String, dataProtection: Bool) -> String? {
+        var query = pinQuery(host: host, dataProtection: dataProtection)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+           let data = item as? Data {
+            return String(data: data, encoding: .utf8)
+        }
+        return nil
+    }
+
+    private static func pinQuery(host: String, dataProtection: Bool = true) -> [String: Any] {
+        HermesKeychainDataProtection.genericPasswordQuery(service: pinService, account: host, dataProtection: dataProtection)
     }
 
     private static func leafCertificateFingerprint(trust: SecTrust) -> String? {
