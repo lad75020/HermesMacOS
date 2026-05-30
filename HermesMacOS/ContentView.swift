@@ -410,7 +410,7 @@ private struct HermesContentPersistedStartupValues: Sendable {
 struct ContentView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
-    @State private var apiSettings = HermesAPISettings(apiKey: "")
+    @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var dashboardURL = UserDefaults.standard.string(forKey: hermesDashboardURLStorageKey) ?? defaultHermesDashboardURL
     @State private var windowID = UUID()
     @State private var connectionCenter = HermesWindowConnectionCenter.shared

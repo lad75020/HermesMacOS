@@ -59,10 +59,15 @@ final class HermesReachabilityMonitor {
         request.httpMethod = "GET"
         request.timeoutInterval = 2
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let apiKey = HermesAPIKeychain.loadAPIKey()
+        if !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
 
         do {
             let (_, response) = try await URLSession.shared.bytes(for: request)
-            return (response as? HTTPURLResponse)?.statusCode == 200
+            guard let httpResponse = response as? HTTPURLResponse else { return false }
+            return (200..<500).contains(httpResponse.statusCode)
         } catch {
             return false
         }
