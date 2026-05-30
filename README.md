@@ -17,10 +17,21 @@ HermesMacOS is a native SwiftUI macOS control surface for Hermes Agent APIs, das
 ├── project.yml                    # XcodeGen project definition
 ├── HermesMacOS.xcodeproj/         # Generated Xcode project
 ├── HermesMacOS/                   # SwiftUI app source, resources, entitlements
+├── docs/                          # App docs and source maps
 └── README.md
 ```
 
 Key source files include `ContentView.swift`, `HermesViews.swift`, `HermesChatView.swift`, `HermesModelsAPI.swift`, `HermesChatCompletionsAPI.swift`, `HermesHistoryView.swift`, `HermesConfigurationView.swift`, `HermesUtilitiesView.swift`, and `HermesInstallationView.swift`.
+
+## Documentation
+
+Start with [`docs/README.md`](docs/README.md). It links to:
+
+- A getting-started tutorial for building the app and sending the first Ask Hermes prompt.
+- How-to guides for endpoints, Ask/Chat workflows, and runtime management.
+- Reference docs for the application surface, APIs, storage, and local files.
+- Explanations of the architecture and security model.
+- Codebase maps in `docs/codebase/` for stack, structure, architecture, conventions, integrations, testing, and concerns.
 
 ## Prerequisites
 
