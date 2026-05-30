@@ -27,6 +27,7 @@ struct HermesRuntimeMainModel: Equatable {
     var baseURL: String
 }
 
+@MainActor
 @Observable
 final class HermesLocalRuntimeModelsStore {
     var mainModel = HermesRuntimeMainModel(provider: "auto", model: "", baseURL: "")
@@ -54,7 +55,7 @@ final class HermesLocalRuntimeModelsStore {
         .init(value: "custom", label: "Local / Custom")
     ]
 
-    private static let auxiliaryModelSlots: [(key: String, label: String)] = [
+    nonisolated private static let auxiliaryModelSlots: [(key: String, label: String)] = [
         ("vision", "Vision"),
         ("web_extract", "Web Extract"),
         ("compression", "Compression"),
@@ -71,8 +72,16 @@ final class HermesLocalRuntimeModelsStore {
         lastStatusMessage = "Loading runtime model routing from local config.yaml…"
         let hermesHome = self.hermesHome
         let configURL = self.configURL
-        Task.detached(priority: .userInitiated) {
-            let result = Self.loadModels(hermesHome: hermesHome, configURL: configURL)
+        Task {
+            do { try await HermesFilesystemAccessPolicy.requireAccess(to: hermesHome, operation: "Read local Hermes model config") }
+            catch {
+                self.lastStatusMessage = error.localizedDescription
+                self.isLoading = false
+                return
+            }
+            let result = await Task.detached(priority: .userInitiated) {
+                Self.loadModels(hermesHome: hermesHome, configURL: configURL)
+            }.value
             await MainActor.run {
                 self.resolvedHermesHome = hermesHome
                 self.configPath = configURL.path
@@ -96,8 +105,16 @@ final class HermesLocalRuntimeModelsStore {
         let cleanModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         lastStatusMessage = "Saving main model routing…"
         let configURL = self.configURL
-        Task.detached(priority: .userInitiated) {
-            let result = Result { try Self.writeMain(configURL: configURL, provider: cleanProvider, model: cleanModel) }
+        Task {
+            do { try await HermesFilesystemAccessPolicy.requireAccess(to: configURL.path, operation: "Write local Hermes model config") }
+            catch {
+                self.lastStatusMessage = error.localizedDescription
+                self.isLoading = false
+                return
+            }
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try Self.writeMain(configURL: configURL, provider: cleanProvider, model: cleanModel) }
+            }.value
             await MainActor.run {
                 switch result {
                 case .success:
@@ -119,8 +136,16 @@ final class HermesLocalRuntimeModelsStore {
         let cleanModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         lastStatusMessage = "Saving \(slot.label) model routing…"
         let configURL = self.configURL
-        Task.detached(priority: .userInitiated) {
-            let result = Result { try Self.writeSlot(configURL: configURL, slot: slot, provider: cleanProvider, model: cleanModel) }
+        Task {
+            do { try await HermesFilesystemAccessPolicy.requireAccess(to: configURL.path, operation: "Write local Hermes model config") }
+            catch {
+                self.lastStatusMessage = error.localizedDescription
+                self.isLoading = false
+                return
+            }
+            let result = await Task.detached(priority: .userInitiated) {
+                Result { try Self.writeSlot(configURL: configURL, slot: slot, provider: cleanProvider, model: cleanModel) }
+            }.value
             await MainActor.run {
                 switch result {
                 case .success:
@@ -147,7 +172,7 @@ final class HermesLocalRuntimeModelsStore {
         let auxiliary: [HermesRuntimeModelSlot]
     }
 
-    private static func loadModels(hermesHome: String, configURL: URL) -> Result<LoadedModels, Error> {
+    nonisolated private static func loadModels(hermesHome: String, configURL: URL) -> Result<LoadedModels, Error> {
         Result {
             let content = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
             let main = HermesRuntimeMainModel(
@@ -177,7 +202,7 @@ final class HermesLocalRuntimeModelsStore {
         }
     }
 
-    private static func writeMain(configURL: URL, provider: String, model: String) throws {
+    nonisolated private static func writeMain(configURL: URL, provider: String, model: String) throws {
         var content = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
         content = setYAMLScalar(content: content, section: "model", key: "provider", value: provider)
         content = setYAMLScalar(content: content, section: "model", key: "default", value: model)
@@ -185,7 +210,7 @@ final class HermesLocalRuntimeModelsStore {
         try write(content, to: configURL)
     }
 
-    private static func writeSlot(configURL: URL, slot: HermesRuntimeModelSlot, provider: String, model: String) throws {
+    nonisolated private static func writeSlot(configURL: URL, slot: HermesRuntimeModelSlot, provider: String, model: String) throws {
         var content = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
         if slot.section == "delegation" {
             content = setYAMLScalar(content: content, section: "delegation", key: "provider", value: provider)
@@ -197,7 +222,7 @@ final class HermesLocalRuntimeModelsStore {
         try write(content, to: configURL)
     }
 
-    private static func auxiliaryModelSlotDefinitions(content: String) -> [(key: String, label: String)] {
+    nonisolated private static func auxiliaryModelSlotDefinitions(content: String) -> [(key: String, label: String)] {
         var slots = Self.auxiliaryModelSlots
         let knownKeys = Set(slots.map(\.key))
         for key in configuredAuxiliaryModelKeys(content: content) where !knownKeys.contains(key) {
@@ -206,7 +231,7 @@ final class HermesLocalRuntimeModelsStore {
         return slots
     }
 
-    private static func configuredAuxiliaryModelKeys(content: String) -> [String] {
+    nonisolated private static func configuredAuxiliaryModelKeys(content: String) -> [String] {
         let lines = content.components(separatedBy: "\n")
         guard let sectionIndex = lines.firstIndex(where: { $0.range(of: #"^auxiliary:\s*(#.*)?$"#, options: .regularExpression) != nil }) else { return [] }
         let sectionIndent = indentation(of: lines[sectionIndex])
@@ -226,7 +251,7 @@ final class HermesLocalRuntimeModelsStore {
         return keys
     }
 
-    private static func mappingKey(from line: String) -> String? {
+    nonisolated private static func mappingKey(from line: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: #"^\s*([A-Za-z0-9_-]+):\s*(#.*)?$"#),
               let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
               match.numberOfRanges > 1,
@@ -234,7 +259,7 @@ final class HermesLocalRuntimeModelsStore {
         return String(line[range]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func humanizedAuxiliaryLabel(for key: String) -> String {
+    nonisolated private static func humanizedAuxiliaryLabel(for key: String) -> String {
         key.split(separator: "_")
             .map { word in
                 guard let first = word.first else { return "" }
@@ -243,11 +268,11 @@ final class HermesLocalRuntimeModelsStore {
             .joined(separator: " ")
     }
 
-    private static func readTopLevelYAMLScalar(content: String, key: String) -> String? {
+    nonisolated private static func readTopLevelYAMLScalar(content: String, key: String) -> String? {
         firstMatch(in: content, pattern: #"^\#(key):\s*[\"']?([^\"'\n#]*)[\"']?"#)
     }
 
-    private static func readYAMLScalar(content: String, section: String, child: String? = nil, key: String) -> String? {
+    nonisolated private static func readYAMLScalar(content: String, section: String, child: String? = nil, key: String) -> String? {
         let lines = content.components(separatedBy: "\n")
         guard let sectionIndex = lines.firstIndex(where: { $0.range(of: #"^\#(section):\s*(#.*)?$"#, options: .regularExpression) != nil }) else { return nil }
         let sectionIndent = indentation(of: lines[sectionIndex])
@@ -283,7 +308,7 @@ final class HermesLocalRuntimeModelsStore {
         return nil
     }
 
-    private static func setYAMLScalar(content: String, section: String, child: String? = nil, key: String, value: String? = nil, rawValue: String? = nil) -> String {
+    nonisolated private static func setYAMLScalar(content: String, section: String, child: String? = nil, key: String, value: String? = nil, rawValue: String? = nil) -> String {
         var lines = content.components(separatedBy: "\n")
         if lines == [""] { lines = [] }
         let replacementValue = rawValue ?? quotedYAML(value ?? "")
@@ -350,17 +375,17 @@ final class HermesLocalRuntimeModelsStore {
         return lines.joined(separator: "\n")
     }
 
-    private static func scalarValue(from line: String, key: String) -> String? {
+    nonisolated private static func scalarValue(from line: String, key: String) -> String? {
         HermesYAMLScalar.value(from: line, key: key)
     }
 
-    private static func indentation(of line: String) -> Int { line.prefix { $0 == " " }.count }
+    nonisolated private static func indentation(of line: String) -> Int { line.prefix { $0 == " " }.count }
 
-    private static func quotedYAML(_ value: String) -> String {
+    nonisolated private static func quotedYAML(_ value: String) -> String {
         HermesYAMLScalar.quoted(value)
     }
 
-    private static func firstMatch(in content: String, pattern: String) -> String? {
+    nonisolated private static func firstMatch(in content: String, pattern: String) -> String? {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]),
               let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)),
               match.numberOfRanges > 1,
@@ -368,7 +393,7 @@ final class HermesLocalRuntimeModelsStore {
         return String(content[range]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func write(_ content: String, to url: URL) throws {
+    nonisolated private static func write(_ content: String, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try content.write(to: url, atomically: true, encoding: .utf8)
     }

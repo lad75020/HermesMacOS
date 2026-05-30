@@ -6,6 +6,7 @@
 import CryptoKit
 import Darwin
 import Foundation
+import Observation
 import Security
 
 struct HermesProcessResult: Equatable {
@@ -20,11 +21,26 @@ struct HermesProcessResult: Equatable {
 
 enum HermesSecurityError: LocalizedError {
     case insecureTransport(String)
+    case encryptionUnavailable
+    case localApprovalDenied(String)
+    case dashboardSessionTokenMissing
+    case dashboardURLInvalid
+    case dashboardConfigChanged
 
     var errorDescription: String? {
         switch self {
         case .insecureTransport(let host):
             return String(localized: "Remote HTTP is blocked for sensitive Hermes traffic to \(host). Use HTTPS or localhost.")
+        case .encryptionUnavailable:
+            return String(localized: "HermesMacOS could not access its local encryption key.")
+        case .localApprovalDenied(let path):
+            return String(localized: "Local filesystem access was denied for \(path).")
+        case .dashboardSessionTokenMissing:
+            return String(localized: "The dashboard session token was not found in the dashboard HTML.")
+        case .dashboardURLInvalid:
+            return String(localized: "The Hermes dashboard URL is invalid.")
+        case .dashboardConfigChanged:
+            return String(localized: "The dashboard config changed before HermesMacOS could save it. Refresh and retry.")
         }
     }
 }
@@ -78,26 +94,329 @@ enum HermesAPIKeychain {
     }
 }
 
-enum HermesPinnedCertificateTrust {
-    private static let defaultsPrefix = "hermes.macOS.pinnedServerCertificateSHA256."
+enum HermesSecretRedactor {
+    static func redact(_ text: String) -> String {
+        guard !text.isEmpty else { return text }
+        var result = text
+        let replacements: [(String, String)] = [
+            (#"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"#, "[PRIVATE KEY REDACTED]"),
+            (#"data:[A-Za-z0-9.+-]+/[A-Za-z0-9.+-]+(?:;[A-Za-z0-9=.+-]+)*;base64,[A-Za-z0-9+/=\r\n]{32,}"#, "[DATA URL REDACTED]"),
+            (#"(?i)\b(authorization\s*[:=]\s*bearer\s+)[^\s"'`]+"#, "$1[REDACTED]"),
+            (#"(?im)^(\s*(?:api[_-]?key|secret|password|passwd|token|access[_-]?token|refresh[_-]?token|client[_-]?secret)\s*[:=]\s*).+$"#, "$1[REDACTED]"),
+            (#"\bsk-[A-Za-z0-9_-]{20,}\b"#, "[OPENAI KEY REDACTED]"),
+            (#"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"#, "[GITHUB TOKEN REDACTED]"),
+            (#"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"#, "[SLACK TOKEN REDACTED]"),
+            (#"\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b"#, "[JWT REDACTED]"),
+            (#"\b(?:bearer|token)\s+[A-Za-z0-9._~+/=-]{24,}\b"#, "[TOKEN REDACTED]")
+        ]
+        for (pattern, replacement) in replacements {
+            result = result.replacingOccurrences(of: pattern, with: replacement, options: [.regularExpression])
+        }
+        return result
+    }
+}
 
+enum HermesEncryptedRetentionStore {
+    private static let keyService = "HermesMacOS.LocalRetentionKey"
+    private static let keyAccount = "AES-GCM"
+    private static let encryptedPrefix = "hermes.macOS.encrypted."
+    private static let version: UInt8 = 1
+
+    static func load<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
+        if let encrypted = UserDefaults.standard.data(forKey: encryptedKey(key)),
+           let plaintext = try? decrypt(encrypted) {
+            return try? JSONDecoder().decode(type, from: plaintext)
+        }
+        guard let plaintext = UserDefaults.standard.data(forKey: key),
+              let decoded = try? JSONDecoder().decode(type, from: plaintext)
+        else { return nil }
+        if saveData(plaintext, forKey: key) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        return decoded
+    }
+
+    @discardableResult
+    static func save<T: Encodable>(_ value: T, forKey key: String) -> Bool {
+        guard let data = try? JSONEncoder().encode(value) else { return false }
+        return saveData(data, forKey: key)
+    }
+
+    static func loadString(forKey key: String) -> String {
+        if let encrypted = UserDefaults.standard.data(forKey: encryptedKey(key)),
+           let plaintext = try? decrypt(encrypted),
+           let string = String(data: plaintext, encoding: .utf8) {
+            return string
+        }
+        guard let value = UserDefaults.standard.string(forKey: key) else { return "" }
+        if saveString(value, forKey: key) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        return value
+    }
+
+    @discardableResult
+    static func saveString(_ value: String, forKey key: String) -> Bool {
+        saveData(Data(HermesSecretRedactor.redact(value).utf8), forKey: key)
+    }
+
+    static func removeValue(forKey key: String) {
+        UserDefaults.standard.removeObject(forKey: encryptedKey(key))
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    @discardableResult
+    private static func saveData(_ data: Data, forKey key: String) -> Bool {
+        do {
+            let encrypted = try encrypt(data)
+            UserDefaults.standard.set(encrypted, forKey: encryptedKey(key))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private static func encryptedKey(_ key: String) -> String { encryptedPrefix + key }
+
+    private static func encrypt(_ data: Data) throws -> Data {
+        let sealedBox = try AES.GCM.seal(data, using: key())
+        guard let combined = sealedBox.combined else { throw HermesSecurityError.encryptionUnavailable }
+        return Data([version]) + combined
+    }
+
+    private static func decrypt(_ data: Data) throws -> Data {
+        guard data.first == version else { throw HermesSecurityError.encryptionUnavailable }
+        let combined = Data(data.dropFirst())
+        return try AES.GCM.open(AES.GCM.SealedBox(combined: combined), using: key())
+    }
+
+    private static func key() throws -> SymmetricKey {
+        if let existing = keyData() { return SymmetricKey(data: existing) }
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw HermesSecurityError.encryptionUnavailable
+        }
+        let data = Data(bytes)
+        var query = keyQuery()
+        query[kSecValueData as String] = data
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess || status == errSecDuplicateItem else { throw HermesSecurityError.encryptionUnavailable }
+        return SymmetricKey(data: data)
+    }
+
+    private static func keyData() -> Data? {
+        var query = keyQuery()
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess else { return nil }
+        return item as? Data
+    }
+
+    private static func keyQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keyService,
+            kSecAttrAccount as String: keyAccount
+        ]
+    }
+}
+
+struct HermesDashboardRawConfig {
+    let yaml: String
+    let eTag: String?
+    let lastModified: String?
+    let revision: String?
+}
+
+private struct HermesDashboardRawConfigUpdate: Encodable {
+    let yamlText: String
+    enum CodingKeys: String, CodingKey { case yamlText = "yaml_text" }
+}
+
+actor HermesDashboardClient {
+    static let shared = HermesDashboardClient()
+    private var cachedTokenByBaseURL: [String: String] = [:]
+
+    func resolvedBaseURL(dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
+        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
+        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
+        guard let url = normalizedBaseURL(from: fallback) else { throw HermesSecurityError.dashboardURLInvalid }
+        return url
+    }
+
+    func sessionToken(baseURL: URL, apiSettings: HermesAPISettings, refresh: Bool = false) async throws -> String {
+        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
+        let cacheKey = baseURL.absoluteString
+        if !refresh, let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
+        let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(from: baseURL)
+        try HermesNetworkSessionFactory.validate(response: response)
+        let html = String(decoding: data, as: UTF8.self)
+        let regex = try NSRegularExpression(pattern: #"window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)""#)
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        guard let match = regex.firstMatch(in: html, range: range), let tokenRange = Range(match.range(at: 1), in: html) else {
+            throw HermesSecurityError.dashboardSessionTokenMissing
+        }
+        let token = String(html[tokenRange])
+        cachedTokenByBaseURL[cacheKey] = token
+        return token
+    }
+
+    func getJSON<Response: Decodable>(_ type: Response.Type, baseURL: URL, path: String, queryItems: [URLQueryItem] = [], apiSettings: HermesAPISettings, timeout: TimeInterval = 30) async throws -> Response {
+        let token = try await sessionToken(baseURL: baseURL, apiSettings: apiSettings)
+        var request = try request(baseURL: baseURL, path: path, queryItems: queryItems, method: "GET", token: token, timeout: timeout)
+        let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
+        do {
+            try HermesNetworkSessionFactory.validate(response: response)
+        } catch HermesResponsesError.httpError(401) {
+            let refreshed = try await sessionToken(baseURL: baseURL, apiSettings: apiSettings, refresh: true)
+            request = try self.request(baseURL: baseURL, path: path, queryItems: queryItems, method: "GET", token: refreshed, timeout: timeout)
+            let retry = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
+            try HermesNetworkSessionFactory.validate(response: retry.1)
+            return try JSONDecoder().decode(type, from: retry.0)
+        }
+        return try JSONDecoder().decode(type, from: data)
+    }
+
+    func sendJSON<Body: Encodable>(baseURL: URL, path: String, queryItems: [URLQueryItem] = [], method: String, apiSettings: HermesAPISettings, body: Body?, timeout: TimeInterval = 30) async throws -> Data {
+        let token = try await sessionToken(baseURL: baseURL, apiSettings: apiSettings)
+        var request = try request(baseURL: baseURL, path: path, queryItems: queryItems, method: method, token: token, timeout: timeout)
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONEncoder().encode(body)
+        }
+        let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
+        try HermesNetworkSessionFactory.validate(response: response)
+        return data
+    }
+
+    func rawConfig(baseURL: URL, apiSettings: HermesAPISettings) async throws -> HermesDashboardRawConfig {
+        let token = try await sessionToken(baseURL: baseURL, apiSettings: apiSettings)
+        let request = try request(baseURL: baseURL, path: "api/config/raw", method: "GET", token: token, timeout: 30)
+        let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
+        try HermesNetworkSessionFactory.validate(response: response)
+        let http = response as? HTTPURLResponse
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let yaml = object?["yaml"] as? String ?? object?["yaml_text"] as? String ?? String(decoding: data, as: UTF8.self)
+        let revisionValue = object?["revision"] ?? object?["version"] ?? object?["config_revision"]
+        return HermesDashboardRawConfig(
+            yaml: yaml,
+            eTag: http?.value(forHTTPHeaderField: "ETag"),
+            lastModified: http?.value(forHTTPHeaderField: "Last-Modified"),
+            revision: revisionValue.map { "\($0)" }
+        )
+    }
+
+    func mutateRawConfig(baseURL: URL, apiSettings: HermesAPISettings, transform: (String) throws -> String) async throws {
+        let fetched = try await rawConfig(baseURL: baseURL, apiSettings: apiSettings)
+        let updated = try transform(fetched.yaml)
+        guard updated != fetched.yaml else { return }
+        if fetched.eTag == nil, fetched.lastModified == nil, fetched.revision == nil {
+            let latest = try await rawConfig(baseURL: baseURL, apiSettings: apiSettings)
+            guard latest.yaml == fetched.yaml else { throw HermesSecurityError.dashboardConfigChanged }
+        }
+        try await updateRawConfig(updated, previous: fetched, baseURL: baseURL, apiSettings: apiSettings)
+    }
+
+    func updateRawConfig(_ yaml: String, previous: HermesDashboardRawConfig, baseURL: URL, apiSettings: HermesAPISettings) async throws {
+        let token = try await sessionToken(baseURL: baseURL, apiSettings: apiSettings)
+        var request = try request(baseURL: baseURL, path: "api/config/raw", method: "PUT", token: token, timeout: 30)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let eTag = previous.eTag, !eTag.isEmpty { request.setValue(eTag, forHTTPHeaderField: "If-Match") }
+        if let lastModified = previous.lastModified, !lastModified.isEmpty { request.setValue(lastModified, forHTTPHeaderField: "If-Unmodified-Since") }
+        if let revision = previous.revision, !revision.isEmpty { request.setValue(revision, forHTTPHeaderField: "X-Hermes-Config-Revision") }
+        request.httpBody = try JSONEncoder().encode(HermesDashboardRawConfigUpdate(yamlText: yaml))
+        let (_, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
+        try HermesNetworkSessionFactory.validate(response: response)
+    }
+
+    private func request(baseURL: URL, path: String, queryItems: [URLQueryItem] = [], method: String, token: String, timeout: TimeInterval) throws -> URLRequest {
+        var url = baseURL
+        for component in path.split(separator: "/").map(String.init) {
+            url.appendPathComponent(component)
+        }
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { throw HermesSecurityError.dashboardURLInvalid }
+        if !queryItems.isEmpty { components.queryItems = queryItems }
+        guard let finalURL = components.url else { throw HermesSecurityError.dashboardURLInvalid }
+        var request = URLRequest(url: finalURL)
+        request.httpMethod = method
+        request.timeoutInterval = timeout
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
+        return request
+    }
+
+    private func normalizedBaseURL(from value: String) -> URL? {
+        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while trimmed.hasSuffix("/") { trimmed.removeLast() }
+        guard let url = URL(string: trimmed), ["http", "https"].contains((url.scheme ?? "").lowercased()) else { return nil }
+        return url
+    }
+}
+
+enum HermesPinnedCertificateTrust {
     static func handle(trust: SecTrust, host: String, allowSelfSignedCertificates: Bool) -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         guard allowSelfSignedCertificates else { return (.performDefaultHandling, nil) }
         var trustError: CFError?
         if SecTrustEvaluateWithError(trust, &trustError) { return (.performDefaultHandling, nil) }
         guard let fingerprint = leafCertificateFingerprint(trust: trust) else { return (.cancelAuthenticationChallenge, nil) }
-        let key = defaultsPrefix + normalizedHost(host)
-        let defaults = UserDefaults.standard
-        if let pinned = defaults.string(forKey: key), !pinned.isEmpty {
+        let normalized = normalizedHost(host)
+        if let pinned = loadPin(forHost: normalized), !pinned.isEmpty {
             guard pinned == fingerprint else { return (.cancelAuthenticationChallenge, nil) }
             return (.useCredential, URLCredential(trust: trust))
         }
-        defaults.set(fingerprint, forKey: key)
-        return (.useCredential, URLCredential(trust: trust))
+        Task { @MainActor in
+            HermesLocalApprovalCenter.shared.enqueueCertificatePinApproval(host: normalized, fingerprint: fingerprint)
+        }
+        return (.cancelAuthenticationChallenge, nil)
+    }
+
+    static func approvePin(host: String, fingerprint: String) {
+        let normalized = normalizedHost(host)
+        SecItemDelete(pinQuery(host: normalized) as CFDictionary)
+        guard let data = fingerprint.data(using: .utf8) else { return }
+        var query = pinQuery(host: normalized)
+        query[kSecValueData as String] = data
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        SecItemAdd(query as CFDictionary, nil)
+        UserDefaults.standard.removeObject(forKey: "hermes.macOS.pinnedServerCertificateSHA256.\(normalized)")
+    }
+
+    static func resetPin(host: String) {
+        SecItemDelete(pinQuery(host: normalizedHost(host)) as CFDictionary)
     }
 
     private static func normalizedHost(_ host: String) -> String {
         host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private static func loadPin(forHost host: String) -> String? {
+        var query = pinQuery(host: host)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+           let data = item as? Data {
+            return String(data: data, encoding: .utf8)
+        }
+        let legacyKey = "hermes.macOS.pinnedServerCertificateSHA256.\(host)"
+        if let legacy = UserDefaults.standard.string(forKey: legacyKey), !legacy.isEmpty {
+            approvePin(host: host, fingerprint: legacy)
+            return legacy
+        }
+        return nil
+    }
+
+    private static func pinQuery(host: String) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "HermesMacOS.CertificatePins",
+            kSecAttrAccount as String: host
+        ]
     }
 
     private static func leafCertificateFingerprint(trust: SecTrust) -> String? {
@@ -106,6 +425,119 @@ enum HermesPinnedCertificateTrust {
             return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         }
         return nil
+    }
+}
+
+struct HermesLocalApprovalRequest: Identifiable, Equatable {
+    enum Kind: String {
+        case filesystem
+        case certificatePin
+    }
+
+    let id: String
+    let kind: Kind
+    let title: String
+    let command: String
+    let description: String
+    let createdAt: Date
+    let host: String?
+    let fingerprint: String?
+}
+
+@MainActor
+@Observable
+final class HermesLocalApprovalCenter {
+    static let shared = HermesLocalApprovalCenter()
+    private(set) var pending: [HermesLocalApprovalRequest] = []
+    private var continuations: [String: CheckedContinuation<Bool, Never>] = [:]
+
+    private init() {}
+
+    func requestFilesystemAccess(path: String, operation: String) async -> Bool {
+        let normalized = HermesFilesystemAccessPolicy.standardizedPath(path)
+        let id = "local-fs-\(SHA256.hash(data: Data((operation + normalized).utf8)).map { String(format: "%02x", $0) }.joined())"
+        if continuations[id] != nil { return await withCheckedContinuation { continuations[id] = $0 } }
+        let request = HermesLocalApprovalRequest(
+            id: id,
+            kind: .filesystem,
+            title: "Filesystem access",
+            command: operation,
+            description: normalized,
+            createdAt: Date(),
+            host: nil,
+            fingerprint: nil
+        )
+        pending.removeAll { $0.id == id }
+        pending.insert(request, at: 0)
+        return await withCheckedContinuation { continuation in
+            continuations[id] = continuation
+        }
+    }
+
+    func enqueueCertificatePinApproval(host: String, fingerprint: String) {
+        let id = "local-tls-\(host)-\(fingerprint)"
+        guard !pending.contains(where: { $0.id == id }) else { return }
+        pending.insert(
+            HermesLocalApprovalRequest(
+                id: id,
+                kind: .certificatePin,
+                title: "Trust self-signed certificate",
+                command: host,
+                description: fingerprint,
+                createdAt: Date(),
+                host: host,
+                fingerprint: fingerprint
+            ),
+            at: 0
+        )
+    }
+
+    func resolve(id: String, approved: Bool) {
+        guard let request = pending.first(where: { $0.id == id }) else { return }
+        pending.removeAll { $0.id == id }
+        if request.kind == .certificatePin, approved, let host = request.host, let fingerprint = request.fingerprint {
+            HermesPinnedCertificateTrust.approvePin(host: host, fingerprint: fingerprint)
+        }
+        continuations.removeValue(forKey: id)?.resume(returning: approved)
+    }
+}
+
+enum HermesFilesystemAccessPolicy {
+    static let allowedFoldersKey = "hermes.macOS.security.allowedFolders"
+
+    static func allowedFolders() -> [String] {
+        let data = UserDefaults.standard.data(forKey: allowedFoldersKey)
+        let stored = data.flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? []
+        let defaults = [
+            HermesRuntimePaths.defaultHermesHome,
+            HermesRuntimePaths.defaultHermesAgentRoot,
+            NSHomeDirectory()
+        ]
+        return Array(Set((stored + defaults).map(standardizedPath).filter { !$0.isEmpty })).sorted()
+    }
+
+    static func saveAllowedFolders(_ folders: [String]) {
+        let cleaned = folders.map(standardizedPath).filter { !$0.isEmpty }
+        if let data = try? JSONEncoder().encode(Array(Set(cleaned)).sorted()) {
+            UserDefaults.standard.set(data, forKey: allowedFoldersKey)
+        }
+    }
+
+    static func isAllowed(_ path: String) -> Bool {
+        let target = standardizedPath(path)
+        return allowedFolders().contains { folder in
+            target == folder || target.hasPrefix(folder.hasSuffix("/") ? folder : folder + "/")
+        }
+    }
+
+    static func requireAccess(to path: String, operation: String) async throws {
+        guard !isAllowed(path) else { return }
+        let approved = await HermesLocalApprovalCenter.shared.requestFilesystemAccess(path: path, operation: operation)
+        guard approved else { throw HermesSecurityError.localApprovalDenied(path) }
+    }
+
+    static func standardizedPath(_ path: String) -> String {
+        URL(fileURLWithPath: NSString(string: path.trimmingCharacters(in: .whitespacesAndNewlines)).expandingTildeInPath).standardizedFileURL.path
     }
 }
 

@@ -488,7 +488,6 @@ final class HermesKanbanStore {
     var selectedTaskLogTruncated = false
     var commentDraft = ""
 
-    private var cachedTokenByBaseURL: [String: String] = [:]
     private var webSocketTask: URLSessionWebSocketTask?
 
     var allTasks: [HermesKanbanTask] { columns.flatMap(\.tasks) }
@@ -669,8 +668,8 @@ final class HermesKanbanStore {
         await loadAll(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, updateDetails: false)
         while !Task.isCancelled {
             do {
-                let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-                let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+                let token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings)
                 let url = try eventsURL(baseURL: baseURL, token: token)
                 let session = HermesNetworkSessionFactory.session(for: apiSettings)
                 let webSocketTask = session.webSocketTask(with: url)
@@ -722,8 +721,8 @@ final class HermesKanbanStore {
         lastActionMessage = startedMessage
         defer { isMutating = false }
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings)
             try await action(baseURL, token)
             if reloadBoard { await loadAll(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, updateDetails: true) }
         } catch HermesKanbanError.httpStatus(401, _) {
@@ -740,9 +739,8 @@ final class HermesKanbanStore {
         action: @escaping (URL, String) async throws -> Void
     ) async {
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings, refresh: true)
             try await action(baseURL, token)
             if reloadBoard { await loadAll(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, updateDetails: true) }
         } catch {
@@ -755,8 +753,8 @@ final class HermesKanbanStore {
         lastErrorMessage = ""
         defer { isLoading = false }
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings)
             async let boardResponse: HermesKanbanBoardResponse = request(
                 baseURL: baseURL,
                 path: ["api", "plugins", "kanban", "board"],
@@ -802,8 +800,8 @@ final class HermesKanbanStore {
             if updateDetails, let selectedTaskID { await loadTaskDetails(taskID: selectedTaskID, dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
         } catch HermesKanbanError.httpStatus(401, _) {
             do {
-                let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-                cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
+                let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+                _ = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings, refresh: true)
                 await loadAll(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, updateDetails: updateDetails)
             } catch {
                 lastErrorMessage = error.localizedDescription
@@ -816,8 +814,8 @@ final class HermesKanbanStore {
 
     private func loadTaskDetails(taskID: String, dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings)
             let details: HermesKanbanTaskDetails = try await request(
                 baseURL: baseURL,
                 path: ["api", "plugins", "kanban", "tasks", taskID],
@@ -872,24 +870,6 @@ final class HermesKanbanStore {
     private func normalizedColumns(from fetched: [HermesKanbanColumn]) -> [HermesKanbanColumn] {
         let byName = Dictionary(uniqueKeysWithValues: fetched.map { ($0.name, $0) })
         return HermesKanbanColumnStatus.visibleOrder.map { status in byName[status.rawValue] ?? HermesKanbanColumn(name: status.rawValue, tasks: []) }
-    }
-
-    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
-        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
-        let cacheKey = baseURL.absoluteString
-        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(from: baseURL)
-        try validate(response: response, data: data)
-        let html = String(decoding: data, as: UTF8.self)
-        let regex = try NSRegularExpression(pattern: #"window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)""#)
-        let range = NSRange(html.startIndex..<html.endIndex, in: html)
-        guard let match = regex.firstMatch(in: html, range: range), let tokenRange = Range(match.range(at: 1), in: html) else {
-            throw HermesKanbanError.missingDashboardSessionToken
-        }
-        let token = String(html[tokenRange])
-        cachedTokenByBaseURL[cacheKey] = token
-        return token
     }
 
     private func request<Response: Decodable, Body: Encodable>(
@@ -956,21 +936,6 @@ final class HermesKanbanStore {
         return String(decoding: data.prefix(500), as: UTF8.self)
     }
 
-    private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
-        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
-        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
-        guard let url = normalizedBaseURL(from: fallback) else { throw HermesKanbanError.invalidDashboardURL }
-        return url
-    }
-
-    private func normalizedBaseURL(from value: String) -> URL? {
-        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        guard let url = URL(string: trimmed), ["http", "https"].contains((url.scheme ?? "").lowercased()) else { return nil }
-        return url
-    }
 }
 
 private extension String {

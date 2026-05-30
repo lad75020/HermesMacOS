@@ -25,6 +25,7 @@ struct HermesDashboardToolset: Codable, Identifiable, Equatable {
     }
 }
 
+@MainActor
 @Observable
 final class HermesDashboardToolsetsStore {
     var toolsets: [HermesDashboardToolset] = []
@@ -32,7 +33,6 @@ final class HermesDashboardToolsetsStore {
     var lastErrorMessage = ""
 
     private var activeTask: Task<Void, Never>?
-    private var cachedTokenByBaseURL: [String: String] = [:]
 
     func refresh(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
         activeTask?.cancel()
@@ -50,9 +50,8 @@ final class HermesDashboardToolsetsStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            let fetched = try await fetchToolsets(baseURL: baseURL, token: token, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let fetched = try await HermesDashboardClient.shared.getJSON([HermesDashboardToolset].self, baseURL: baseURL, path: "api/tools/toolsets", apiSettings: apiSettings)
             toolsets = fetched.sorted { lhs, rhs in
                 lhs.displayLabel.localizedCaseInsensitiveCompare(rhs.displayLabel) == .orderedAscending
             }
@@ -67,9 +66,6 @@ final class HermesDashboardToolsetsStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            let rawConfig = try await fetchRawConfig(baseURL: baseURL, token: token, apiSettings: apiSettings)
             var enabledNames = Set(toolsets.filter(\.enabled).map(\.name))
             if enabled {
                 enabledNames.insert(toolset.name)
@@ -77,115 +73,20 @@ final class HermesDashboardToolsetsStore {
                 enabledNames.remove(toolset.name)
             }
             let allConfigurableToolsets = Set(toolsets.map(\.name))
-            let updatedYAML = HermesToolsetsYAMLUpdater.updatedYAML(
-                rawConfig.yaml,
-                enabledToolsets: enabledNames,
-                allConfigurableToolsets: allConfigurableToolsets
-            )
-            try await updateRawConfig(updatedYAML, baseURL: baseURL, token: token, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            try await HermesDashboardClient.shared.mutateRawConfig(baseURL: baseURL, apiSettings: apiSettings) { yaml in
+                HermesToolsetsYAMLUpdater.updatedYAML(
+                    yaml,
+                    enabledToolsets: enabledNames,
+                    allConfigurableToolsets: allConfigurableToolsets
+                )
+            }
             await loadToolsets(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         } catch {
             lastErrorMessage = error.localizedDescription
         }
     }
 
-    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
-        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
-        let cacheKey = baseURL.absoluteString
-        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
-
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(from: baseURL)
-        try HermesNetworkSessionFactory.validate(response: response)
-        let html = String(decoding: data, as: UTF8.self)
-        let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#
-        let regex = try NSRegularExpression(pattern: pattern)
-        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-        guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else {
-            throw HermesDashboardToolsetsError.missingDashboardSessionToken
-        }
-        let token = String(html[tokenRange])
-        cachedTokenByBaseURL[cacheKey] = token
-        return token
-    }
-
-    private func fetchToolsets(baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws -> [HermesDashboardToolset] {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/tools/toolsets"))
-        request.httpMethod = "GET"
-        request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(for: request)
-        try HermesNetworkSessionFactory.validate(response: response)
-        return try JSONDecoder().decode([HermesDashboardToolset].self, from: data)
-    }
-
-    private func fetchRawConfig(baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws -> HermesDashboardRawConfigResponse {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/config/raw"))
-        request.httpMethod = "GET"
-        request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(for: request)
-        try HermesNetworkSessionFactory.validate(response: response)
-        return try JSONDecoder().decode(HermesDashboardRawConfigResponse.self, from: data)
-    }
-
-    private func updateRawConfig(_ yaml: String, baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/config/raw"))
-        request.httpMethod = "PUT"
-        request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-        request.httpBody = try JSONEncoder().encode(HermesDashboardRawConfigUpdate(yamlText: yaml))
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (_, response) = try await session.data(for: request)
-        try HermesNetworkSessionFactory.validate(response: response)
-    }
-
-    private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
-        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
-        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
-        guard let url = normalizedBaseURL(from: fallback) else { throw HermesDashboardToolsetsError.invalidDashboardURL }
-        return url
-    }
-
-    private func normalizedBaseURL(from value: String) -> URL? {
-        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return URL(string: trimmed)
-    }
-}
-
-private struct HermesDashboardRawConfigResponse: Decodable {
-    let yaml: String
-}
-
-private struct HermesDashboardRawConfigUpdate: Encodable {
-    let yamlText: String
-
-    enum CodingKeys: String, CodingKey {
-        case yamlText = "yaml_text"
-    }
-}
-
-enum HermesDashboardToolsetsError: LocalizedError {
-    case invalidDashboardURL
-    case missingDashboardSessionToken
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidDashboardURL:
-            return "The Hermes dashboard URL is invalid."
-        case .missingDashboardSessionToken:
-            return "The dashboard session token was not found in the dashboard HTML."
-        }
-    }
 }
 
 private enum HermesToolsetsYAMLUpdater {

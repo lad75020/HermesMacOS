@@ -447,7 +447,8 @@ private final class HermesGitCommandRunner: @unchecked Sendable {
     }
 
     private func run(repositoryPath: String, arguments: [String], allowFailure: Bool, remoteHostName: String) async throws -> HermesGitCommandResult {
-        try await Task.detached(priority: .userInitiated) {
+        try await HermesFilesystemAccessPolicy.requireAccess(to: repositoryPath, operation: "Run git in Hermes installation repository")
+        return try await Task.detached(priority: .userInitiated) {
             let expandedPath = NSString(string: repositoryPath).expandingTildeInPath
             let normalizedHost = HermesHostEndpoints.normalizedHost(remoteHostName)
             let isRemote = !HermesSSHHostCredentials.isLocalHost(normalizedHost)

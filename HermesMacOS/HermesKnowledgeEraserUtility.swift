@@ -65,6 +65,7 @@ private enum HermesKnowledgeEraserError: LocalizedError {
     }
 }
 
+@MainActor
 @Observable
 final class HermesKnowledgeEraserStore {
     var topic = ""
@@ -89,9 +90,12 @@ final class HermesKnowledgeEraserStore {
         }
         isBusy = true
         operationOutput = "Scanning local Hermes knowledge for \"\(requestedTopic)\"…"
-        Task.detached(priority: .userInitiated) { [registry, workspacePath] in
+        Task {
             do {
-                let result = try registry.scan(workspacePath: workspacePath, topic: requestedTopic)
+                try await HermesFilesystemAccessPolicy.requireAccess(to: workspacePath, operation: "Scan Hermes knowledge")
+                let result = try await Task.detached(priority: .userInitiated) { [registry, workspacePath] in
+                    try registry.scan(workspacePath: workspacePath, topic: requestedTopic)
+                }.value
                 await MainActor.run {
                     self.items = result.items
                     self.selectedItemIDs = Set(result.items.map(\.id))
@@ -120,9 +124,12 @@ final class HermesKnowledgeEraserStore {
         }
         isBusy = true
         operationOutput = "Archiving and erasing \(selectedIDs.count) selected item\(selectedIDs.count == 1 ? "" : "s")…"
-        Task.detached(priority: .userInitiated) { [registry, workspacePath] in
+        Task {
             do {
-                let result = try registry.erase(workspacePath: workspacePath, topic: requestedTopic, selectedItemIDs: selectedIDs)
+                try await HermesFilesystemAccessPolicy.requireAccess(to: workspacePath, operation: "Erase Hermes knowledge")
+                let result = try await Task.detached(priority: .userInitiated) { [registry, workspacePath] in
+                    try registry.erase(workspacePath: workspacePath, topic: requestedTopic, selectedItemIDs: selectedIDs)
+                }.value
                 await MainActor.run {
                     self.items = result.remainingItems
                     self.selectedItemIDs = []

@@ -45,11 +45,6 @@ final class HermesChatSession {
     private var responseTimingStart: Date?
     private var responseTimingTask: Task<Void, Never>?
 
-    init() {
-        lastKnownChatSessionID = HermesSettingsStore.loadLastChatSessionID()
-        lastKnownChatSessionTitle = HermesSettingsStore.loadLastChatSessionTitle()
-    }
-
     func submit(apiSettings: HermesAPISettings, draft: HermesChatDraft, attachment: HermesPromptAttachment? = nil, messageHistory: HermesPromptHistoryStore? = nil) {
         cancelActiveRequest()
         requestTask?.cancel()
@@ -819,7 +814,7 @@ final class HermesChatSession {
     }
 }
 
-struct HermesChatDraft: Codable, Equatable {
+struct HermesChatDraft: Codable, Equatable, Sendable {
     var profile = "default"
     var systemPrompt = ""
     var userPrompt = "Summarize the current project layout."

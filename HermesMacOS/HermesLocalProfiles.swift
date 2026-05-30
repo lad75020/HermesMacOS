@@ -81,7 +81,7 @@ final class HermesLocalProfilesStore {
     }
 
     func createProfile(_ draft: HermesLocalProfileDraft, hermesHome: String) {
-        perform(hermesHome: hermesHome) { homeURL in
+        perform(hermesHome: hermesHome) { [self] homeURL in
             let name = try normalizedProfileName(draft.name)
             guard name != "default" else { throw HermesLocalProfilesError.profileAlreadyExists(name) }
             let profileURL = profileURL(for: name, homeURL: homeURL)
@@ -94,7 +94,7 @@ final class HermesLocalProfilesStore {
     }
 
     func editProfile(originalName: String, draft: HermesLocalProfileDraft, hermesHome: String) {
-        perform(hermesHome: hermesHome) { homeURL in
+        perform(hermesHome: hermesHome) { [self] homeURL in
             let oldName = try normalizedProfileName(originalName)
             let newName = try normalizedProfileName(draft.name)
             if oldName == "default" && newName != "default" { throw HermesLocalProfilesError.cannotRenameDefault }
@@ -114,7 +114,7 @@ final class HermesLocalProfilesStore {
     }
 
     func useProfile(_ name: String, hermesHome: String) {
-        perform(hermesHome: hermesHome) { homeURL in
+        perform(hermesHome: hermesHome) { [self] homeURL in
             let normalized = try normalizedProfileName(name)
             let url = profileURL(for: normalized, homeURL: homeURL)
             guard fileManager.fileExists(atPath: url.path) else { throw HermesLocalProfilesError.profileNotFound(normalized) }
@@ -124,7 +124,7 @@ final class HermesLocalProfilesStore {
     }
 
     func deleteProfile(_ name: String, hermesHome: String) {
-        perform(hermesHome: hermesHome) { homeURL in
+        perform(hermesHome: hermesHome) { [self] homeURL in
             let normalized = try normalizedProfileName(name)
             guard normalized != "default" else { throw HermesLocalProfilesError.cannotDeleteDefault }
             let url = profileURL(for: normalized, homeURL: homeURL)
@@ -157,20 +157,23 @@ final class HermesLocalProfilesStore {
         )
     }
 
-    private func perform(hermesHome: String, action: (URL) throws -> String) {
+    private func perform(hermesHome: String, action: @escaping (URL) throws -> String) {
         isBusy = true
         errorMessage = nil
-        do {
-            let homeURL = try resolvedHermesHome(from: hermesHome)
-            let output = try action(homeURL)
-            lastOutput = output
-            refresh(hermesHome: homeURL.path)
-        } catch {
-            let message = error.localizedDescription
-            errorMessage = message
-            lastOutput = message
+        Task {
+            do {
+                let homeURL = try resolvedHermesHome(from: hermesHome)
+                try await HermesFilesystemAccessPolicy.requireAccess(to: homeURL.path, operation: "Modify local Hermes profile")
+                let output = try action(homeURL)
+                lastOutput = output
+                refresh(hermesHome: homeURL.path)
+            } catch {
+                let message = error.localizedDescription
+                errorMessage = message
+                lastOutput = message
+            }
+            isBusy = false
         }
-        isBusy = false
     }
 
     private func profileInfo(name: String, profileURL: URL, homeURL: URL, isDefault: Bool, isActive: Bool) -> HermesLocalProfileInfo {

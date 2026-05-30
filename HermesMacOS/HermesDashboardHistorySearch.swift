@@ -266,7 +266,6 @@ final class HermesDashboardHistorySearchSession {
 
     private var requestTask: Task<Void, Never>?
     private var activeSearchID: UUID?
-    private var cachedTokenByBaseURL: [String: String] = [:]
 
     var hasActiveSearch: Bool {
         isSearching || !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !results.isEmpty || !lastErrorMessage.isEmpty
@@ -338,15 +337,19 @@ final class HermesDashboardHistorySearchSession {
         status = "Searching dashboard history"
         lastErrorMessage = ""
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            status = "Fetching dashboard session token"
+            isDashboardHTTPActive = true
+            let token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            isDashboardHTTPActive = false
             let response: HermesDashboardConversationSearchResponse
             do {
                 response = try await fetchConversations(baseURL: baseURL, token: token, apiSettings: apiSettings, query: query, profileFilter: profileFilter, limit: limit)
             } catch HermesResponsesError.httpError(401) {
-                cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
                 status = "Refreshing dashboard session token"
-                let refreshedToken = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                isDashboardHTTPActive = true
+                let refreshedToken = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings, refresh: true)
+                isDashboardHTTPActive = false
                 response = try await fetchConversations(baseURL: baseURL, token: refreshedToken, apiSettings: apiSettings, query: query, profileFilter: profileFilter, limit: limit)
             }
             try Task.checkCancellation()
@@ -377,26 +380,6 @@ final class HermesDashboardHistorySearchSession {
     private func normalizedProfileName(_ value: String) -> String { let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines); return trimmed.isEmpty ? "default" : trimmed.lowercased() }
     private func displayProfileName(_ value: String) -> String { let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines); return trimmed.isEmpty || trimmed == "default" ? "Default" : trimmed }
 
-    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
-        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
-        let cacheKey = baseURL.absoluteString
-        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
-        status = "Fetching dashboard session token"
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        isDashboardHTTPActive = true
-        defer { isDashboardHTTPActive = false }
-        let (data, response) = try await session.data(from: baseURL)
-        try HermesNetworkSessionFactory.validate(response: response)
-        let html = String(decoding: data, as: UTF8.self)
-        let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#
-        let regex = try NSRegularExpression(pattern: pattern)
-        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-        guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else { throw HermesDashboardHistorySearchError.missingDashboardSessionToken }
-        let token = String(html[tokenRange])
-        cachedTokenByBaseURL[cacheKey] = token
-        return token
-    }
-
     private func fetchConversations(baseURL: URL, token: String, apiSettings: HermesAPISettings, query: String, profileFilter: String, limit: Int) async throws -> HermesDashboardConversationSearchResponse {
         status = "Fetching matching conversations"
         var components = URLComponents(url: baseURL.appendingPathComponent("api/sessions/search/conversations"), resolvingAgainstBaseURL: false)
@@ -417,23 +400,9 @@ final class HermesDashboardHistorySearchSession {
         return try JSONDecoder().decode(HermesDashboardConversationSearchResponse.self, from: data)
     }
 
-    private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
-        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
-        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
-        guard let url = normalizedBaseURL(from: fallback) else { throw HermesDashboardHistorySearchError.invalidDashboardURL }
-        return url
-    }
-
-    private func normalizedBaseURL(from value: String) -> URL? {
-        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return URL(string: trimmed)
-    }
 }
 
 enum HermesDashboardHistorySearchError: LocalizedError {
-    case invalidDashboardURL, missingDashboardSessionToken
-    var errorDescription: String? { switch self { case .invalidDashboardURL: "The Hermes dashboard URL is invalid."; case .missingDashboardSessionToken: "The dashboard session token was not found in the dashboard HTML." } }
+    case invalidDashboardURL
+    var errorDescription: String? { "The Hermes dashboard URL is invalid." }
 }

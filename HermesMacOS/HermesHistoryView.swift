@@ -520,7 +520,6 @@ final class HermesSessionsStore {
     private var requestTask: Task<Void, Never>?
     private var conversationTasks: [String: Task<Void, Never>] = [:]
     private var activeRequestID: UUID?
-    private var cachedTokenByBaseURL: [String: String] = [:]
 
     var pageCount: Int { max(1, Int(ceil(Double(total) / Double(pageSize)))) }
     var canGoPrevious: Bool { !isLoading && pageIndex > 0 }
@@ -579,14 +578,17 @@ final class HermesSessionsStore {
 
         conversationTasks[session.id] = Task {
             do {
-                let baseURL = try Self.resolvedDashboardBaseURL(from: dashboardURL, apiBaseURL: apiSettings.baseURL)
-                var token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardURL, apiBaseURL: apiSettings.baseURL)
+                isDashboardHTTPActive = true
+                var token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                isDashboardHTTPActive = false
                 let response: HermesSessionMessagesResponse
                 do {
                     response = try await Self.fetchSessionMessages(baseURL: baseURL, token: token, apiSettings: apiSettings, sessionID: session.id)
                 } catch HermesResponsesError.httpError(401) {
-                    cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
-                    token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                    isDashboardHTTPActive = true
+                    token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings, refresh: true)
+                    isDashboardHTTPActive = false
                     response = try await Self.fetchSessionMessages(baseURL: baseURL, token: token, apiSettings: apiSettings, sessionID: session.id)
                 }
                 try Task.checkCancellation()
@@ -598,11 +600,13 @@ final class HermesSessionsStore {
                 status = "Session details loaded"
                 onLoaded?(result)
             } catch is CancellationError {
+                isDashboardHTTPActive = false
                 if loadingConversationIDs.contains(session.id) {
                     loadingConversationIDs.remove(session.id)
                     conversationTasks[session.id] = nil
                 }
             } catch {
+                isDashboardHTTPActive = false
                 loadingConversationIDs.remove(session.id)
                 conversationTasks[session.id] = nil
                 conversationErrorBySessionID[session.id] = error.localizedDescription
@@ -622,14 +626,17 @@ final class HermesSessionsStore {
 
         requestTask = Task {
             do {
-                let baseURL = try Self.resolvedDashboardBaseURL(from: dashboardURL, apiBaseURL: apiSettings.baseURL)
-                var token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardURL, apiBaseURL: apiSettings.baseURL)
+                isDashboardHTTPActive = true
+                var token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                isDashboardHTTPActive = false
                 let firstResponse: HermesSessionsResponse
                 do {
                     firstResponse = try await Self.fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: 1, offset: 0)
                 } catch HermesResponsesError.httpError(401) {
-                    cachedTokenByBaseURL.removeValue(forKey: baseURL.absoluteString)
-                    token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+                    isDashboardHTTPActive = true
+                    token = try await HermesDashboardClient.shared.sessionToken(baseURL: baseURL, apiSettings: apiSettings, refresh: true)
+                    isDashboardHTTPActive = false
                     firstResponse = try await Self.fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: 1, offset: 0)
                 }
                 try Task.checkCancellation()
@@ -662,8 +669,10 @@ final class HermesSessionsStore {
                 sessions = nonCronPage.sessions
                 status = nonCronPage.total == 0 ? "No non-cron sessions found" : "Showing non-cron sessions \(requestedDisplayOrder.statusDescription)"
             } catch is CancellationError {
+                isDashboardHTTPActive = false
                 if activeRequestID == requestID { status = "Cancelled" }
             } catch {
+                isDashboardHTTPActive = false
                 if activeRequestID == requestID {
                     sessions = []
                     lastErrorMessage = error.localizedDescription
@@ -675,25 +684,6 @@ final class HermesSessionsStore {
                 activeRequestID = nil
             }
         }
-    }
-
-    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
-        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
-        let cacheKey = baseURL.absoluteString
-        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        isDashboardHTTPActive = true
-        defer { isDashboardHTTPActive = false }
-        let (data, response) = try await session.data(from: baseURL)
-        try HermesNetworkSessionFactory.validate(response: response)
-        let html = String(decoding: data, as: UTF8.self)
-        let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#
-        let regex = try NSRegularExpression(pattern: pattern)
-        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-        guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else { throw HermesDashboardHistorySearchError.missingDashboardSessionToken }
-        let token = String(html[tokenRange])
-        cachedTokenByBaseURL[cacheKey] = token
-        return token
     }
 
     nonisolated private static func discoverVisibleSessionTotal(
@@ -816,20 +806,6 @@ final class HermesSessionsStore {
         )
     }
 
-    nonisolated private static func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
-        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
-        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
-        guard let url = normalizedBaseURL(from: fallback) else { throw HermesDashboardHistorySearchError.invalidDashboardURL }
-        return url
-    }
-
-    nonisolated private static func normalizedBaseURL(from value: String) -> URL? {
-        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return URL(string: trimmed)
-    }
 }
 
 struct HermesSessionsView: View {

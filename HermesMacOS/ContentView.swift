@@ -51,7 +51,7 @@ final class HermesAskWorkspace: Identifiable {
     private var acknowledgedCompletionToken = ""
     private var acknowledgedFailureToken = ""
 
-    init(number: Int, draft: HermesRequestDraft = HermesSettingsStore.loadDraft()) {
+    init(number: Int, draft: HermesRequestDraft = HermesRequestDraft()) {
         self.number = number
         self.draft = draft
     }
@@ -383,16 +383,40 @@ private struct HermesReachabilityLED: View {
     }
 }
 
+private struct HermesContentPersistedStartupValues: Sendable {
+    var apiSettings: HermesAPISettings
+    var dashboardURL: String
+    var requestDraft: HermesRequestDraft
+    var chatDraft: HermesChatDraft
+    var lastResponseID: String
+    var lastResponseTitle: String
+    var lastChatSessionID: String
+    var lastChatSessionTitle: String
+
+    static func load() -> HermesContentPersistedStartupValues {
+        HermesContentPersistedStartupValues(
+            apiSettings: HermesSettingsStore.loadAPISettings(),
+            dashboardURL: UserDefaults.standard.string(forKey: hermesDashboardURLStorageKey) ?? defaultHermesDashboardURL,
+            requestDraft: HermesSettingsStore.loadDraft(),
+            chatDraft: HermesSettingsStore.loadChatDraft(),
+            lastResponseID: HermesSettingsStore.loadLastResponsesSessionID(),
+            lastResponseTitle: HermesSettingsStore.loadLastResponsesSessionTitle(),
+            lastChatSessionID: HermesSettingsStore.loadLastChatSessionID(),
+            lastChatSessionTitle: HermesSettingsStore.loadLastChatSessionTitle()
+        )
+    }
+}
+
 struct ContentView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
-    @State private var apiSettings = HermesSettingsStore.loadAPISettings()
+    @State private var apiSettings = HermesAPISettings(apiKey: "")
     @State private var dashboardURL = UserDefaults.standard.string(forKey: hermesDashboardURLStorageKey) ?? defaultHermesDashboardURL
     @State private var windowID = UUID()
     @State private var connectionCenter = HermesWindowConnectionCenter.shared
-    @State private var askWorkspaces = [HermesAskWorkspace(number: 1)]
+    @State private var askWorkspaces = [HermesAskWorkspace(number: 1, draft: HermesRequestDraft())]
     @State private var selectedAskWorkspaceID: HermesAskWorkspace.ID?
-    @State private var chatDraft = HermesSettingsStore.loadChatDraft()
+    @State private var chatDraft = HermesChatDraft()
     @State private var chatSession = HermesChatSession()
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
@@ -405,6 +429,7 @@ struct ContentView: View {
     @State private var selectedTab = HermesMacOSTab.ask
     @State private var acknowledgedChatCompletionToken = ""
     @State private var acknowledgedChatFailureToken = ""
+    @State private var didLoadPersistedStartupValues = false
 
     private var selectedAskWorkspace: HermesAskWorkspace {
         if let selectedAskWorkspaceID,
@@ -480,6 +505,12 @@ struct ContentView: View {
         }
         .onDisappear {
             connectionCenter.unregisterWindow(id: windowID)
+        }
+        .task {
+            await loadPersistedStartupValuesIfNeeded()
+        }
+        .task {
+            await promptHistory.loadPersistedEntriesIfNeeded()
         }
         .task {
             await clipboardHistory.runMonitoringLoop()
@@ -593,6 +624,25 @@ struct ContentView: View {
             get: { selectedAskWorkspaceID ?? askWorkspaces[0].id },
             set: { selectedAskWorkspaceID = $0 }
         )
+    }
+
+    private func loadPersistedStartupValuesIfNeeded() async {
+        guard !didLoadPersistedStartupValues else { return }
+        didLoadPersistedStartupValues = true
+        let values = await Task.detached(priority: .userInitiated) {
+            HermesContentPersistedStartupValues.load()
+        }.value
+        apiSettings = values.apiSettings
+        dashboardURL = values.dashboardURL
+        chatDraft = values.chatDraft
+        if let firstWorkspace = askWorkspaces.first {
+            firstWorkspace.draft = values.requestDraft
+            firstWorkspace.session.lastKnownResponseID = values.lastResponseID
+            firstWorkspace.session.lastKnownResponseTitle = values.lastResponseTitle
+        }
+        chatSession.lastKnownChatSessionID = values.lastChatSessionID
+        chatSession.lastKnownChatSessionTitle = values.lastChatSessionTitle
+        connectionCenter.updateWindow(id: windowID, apiSettings: values.apiSettings, dashboardURL: values.dashboardURL)
     }
 
     private func addAskWorkspace() {

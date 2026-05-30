@@ -164,6 +164,7 @@ struct HermesDashboardScheduleJob: Codable, Identifiable, Equatable {
     }
 }
 
+@MainActor
 @Observable
 final class HermesDashboardSchedulesStore {
     var jobs: [HermesDashboardScheduleJob] = []
@@ -173,7 +174,6 @@ final class HermesDashboardSchedulesStore {
     var lastOutputByJobID: [String: String] = [:]
 
     private var activeTask: Task<Void, Never>?
-    private var cachedTokenByBaseURL: [String: String] = [:]
 
     func refresh(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
         activeTask?.cancel()
@@ -213,9 +213,14 @@ final class HermesDashboardSchedulesStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            jobs = try await fetchJobs(baseURL: baseURL, token: token, apiSettings: apiSettings).sorted { lhs, rhs in
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            jobs = try await HermesDashboardClient.shared.getJSON(
+                [HermesDashboardScheduleJob].self,
+                baseURL: baseURL,
+                path: "api/cron/jobs",
+                queryItems: [URLQueryItem(name: "profile", value: "all")],
+                apiSettings: apiSettings
+            ).sorted { lhs, rhs in
                 lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
             }
         } catch {
@@ -230,17 +235,16 @@ final class HermesDashboardSchedulesStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
             let path = "api/cron/jobs/\(job.id)/\(enabled ? "resume" : "pause")"
-            var request = URLRequest(url: try apiURL(baseURL: baseURL, path: path, queryItems: [URLQueryItem(name: "profile", value: job.profileLabel)]))
-            request.httpMethod = "POST"
-            request.timeoutInterval = 30
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-            let session = HermesNetworkSessionFactory.session(for: apiSettings)
-            let (_, response) = try await session.data(for: request)
-            try HermesNetworkSessionFactory.validate(response: response)
+            _ = try await HermesDashboardClient.shared.sendJSON(
+                baseURL: baseURL,
+                path: path,
+                queryItems: [URLQueryItem(name: "profile", value: job.profileLabel)],
+                method: "POST",
+                apiSettings: apiSettings,
+                body: Optional<Int>.none
+            )
             lastActionMessage = enabled ? "Resumed \(job.displayName)." : "Paused \(job.displayName)."
             await loadJobs(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         } catch {
@@ -255,16 +259,15 @@ final class HermesDashboardSchedulesStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            var request = URLRequest(url: try apiURL(baseURL: baseURL, path: "api/cron/jobs/\(job.id)/trigger", queryItems: [URLQueryItem(name: "profile", value: job.profileLabel)]))
-            request.httpMethod = "POST"
-            request.timeoutInterval = 30
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-            let session = HermesNetworkSessionFactory.session(for: apiSettings)
-            let (_, response) = try await session.data(for: request)
-            try HermesNetworkSessionFactory.validate(response: response)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            _ = try await HermesDashboardClient.shared.sendJSON(
+                baseURL: baseURL,
+                path: "api/cron/jobs/\(job.id)/trigger",
+                queryItems: [URLQueryItem(name: "profile", value: job.profileLabel)],
+                method: "POST",
+                apiSettings: apiSettings,
+                body: Optional<Int>.none
+            )
             lastActionMessage = "Queued \(job.displayName) for the next scheduler tick."
             await loadJobs(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         } catch {
@@ -290,28 +293,25 @@ final class HermesDashboardSchedulesStore {
             guard !cleanPrompt.isEmpty || !cleanSkill.isEmpty else { throw HermesDashboardSchedulesError.validation("Enter content or a skill name.") }
             guard !cleanDelivery.isEmpty else { throw HermesDashboardSchedulesError.validation("Choose a delivery target.") }
 
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
             let createPayload = HermesDashboardScheduleCreateRequest(
                 prompt: cleanPrompt,
                 schedule: cleanSchedule,
                 name: cleanName,
                 deliver: cleanDelivery
             )
-            var request = URLRequest(url: try apiURL(baseURL: baseURL, path: "api/cron/jobs", queryItems: [URLQueryItem(name: "profile", value: "default")]))
-            request.httpMethod = "POST"
-            request.timeoutInterval = 30
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-            request.httpBody = try JSONEncoder().encode(createPayload)
-            let session = HermesNetworkSessionFactory.session(for: apiSettings)
-            let (data, response) = try await session.data(for: request)
-            try HermesNetworkSessionFactory.validate(response: response)
+            let data = try await HermesDashboardClient.shared.sendJSON(
+                baseURL: baseURL,
+                path: "api/cron/jobs",
+                queryItems: [URLQueryItem(name: "profile", value: "default")],
+                method: "POST",
+                apiSettings: apiSettings,
+                body: createPayload
+            )
             let created = try JSONDecoder().decode(HermesDashboardScheduleJob.self, from: data)
 
             if !cleanSkill.isEmpty || !cleanContext.isEmpty {
-                try await updateJobMetadata(created, skillName: cleanSkill, contextFrom: cleanContext, baseURL: baseURL, token: token, apiSettings: apiSettings)
+                try await updateJobMetadata(created, skillName: cleanSkill, contextFrom: cleanContext, baseURL: baseURL, apiSettings: apiSettings)
             }
             lastActionMessage = "Created \(cleanName)."
             await loadJobs(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
@@ -320,7 +320,7 @@ final class HermesDashboardSchedulesStore {
         }
     }
 
-    private func updateJobMetadata(_ job: HermesDashboardScheduleJob, skillName: String, contextFrom: [String], baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws {
+    private func updateJobMetadata(_ job: HermesDashboardScheduleJob, skillName: String, contextFrom: [String], baseURL: URL, apiSettings: HermesAPISettings) async throws {
         var updateValues: [String: AnyEncodable] = [:]
         if !skillName.isEmpty {
             updateValues["skill"] = AnyEncodable(skillName)
@@ -331,72 +331,14 @@ final class HermesDashboardSchedulesStore {
         }
         guard !updateValues.isEmpty else { return }
         let updates = HermesDashboardScheduleUpdateRequest(updates: updateValues)
-        var request = URLRequest(url: try apiURL(baseURL: baseURL, path: "api/cron/jobs/\(job.id)", queryItems: [URLQueryItem(name: "profile", value: job.profileLabel)]))
-        request.httpMethod = "PUT"
-        request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-        request.httpBody = try JSONEncoder().encode(updates)
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (_, response) = try await session.data(for: request)
-        try HermesNetworkSessionFactory.validate(response: response)
-    }
-
-    private func fetchJobs(baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws -> [HermesDashboardScheduleJob] {
-        var request = URLRequest(url: try apiURL(baseURL: baseURL, path: "api/cron/jobs", queryItems: [URLQueryItem(name: "profile", value: "all")]))
-        request.httpMethod = "GET"
-        request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(for: request)
-        try HermesNetworkSessionFactory.validate(response: response)
-        return try JSONDecoder().decode([HermesDashboardScheduleJob].self, from: data)
-    }
-
-    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
-        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
-        let cacheKey = baseURL.absoluteString
-        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(from: baseURL)
-        try HermesNetworkSessionFactory.validate(response: response)
-        let html = String(decoding: data, as: UTF8.self)
-        let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#
-        let regex = try NSRegularExpression(pattern: pattern)
-        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-        guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else {
-            throw HermesDashboardSchedulesError.missingDashboardSessionToken
-        }
-        let token = String(html[tokenRange])
-        cachedTokenByBaseURL[cacheKey] = token
-        return token
-    }
-
-    private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
-        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
-        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
-        guard let url = normalizedBaseURL(from: fallback) else { throw HermesDashboardSchedulesError.invalidDashboardURL }
-        return url
-    }
-
-    private func normalizedBaseURL(from value: String) -> URL? {
-        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return URL(string: trimmed)
-    }
-
-    private func apiURL(baseURL: URL, path: String, queryItems: [URLQueryItem] = []) throws -> URL {
-        var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false)
-        var basePath = components?.path ?? ""
-        while basePath.hasSuffix("/") { basePath.removeLast() }
-        components?.path = basePath + "/" + path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        components?.queryItems = queryItems.isEmpty ? nil : queryItems
-        guard let url = components?.url else { throw HermesDashboardSchedulesError.invalidDashboardURL }
-        return url
+        _ = try await HermesDashboardClient.shared.sendJSON(
+            baseURL: baseURL,
+            path: "api/cron/jobs/\(job.id)",
+            queryItems: [URLQueryItem(name: "profile", value: job.profileLabel)],
+            method: "PUT",
+            apiSettings: apiSettings,
+            body: updates
+        )
     }
 
     private static func latestOutput(for job: HermesDashboardScheduleJob, hermesHome: String) throws -> String {
@@ -478,16 +420,10 @@ private struct AnyEncodable: Encodable {
 }
 
 enum HermesDashboardSchedulesError: LocalizedError {
-    case invalidDashboardURL
-    case missingDashboardSessionToken
     case validation(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidDashboardURL:
-            return "The Hermes dashboard URL is invalid."
-        case .missingDashboardSessionToken:
-            return "The dashboard session token was not found in the dashboard HTML."
         case .validation(let message):
             return message
         }

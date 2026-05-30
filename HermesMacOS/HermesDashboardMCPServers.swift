@@ -106,6 +106,7 @@ struct HermesMCPServerProbeState: Equatable {
     }
 }
 
+@MainActor
 @Observable
 final class HermesDashboardMCPServersStore {
     var servers: [HermesDashboardMCPServer] = []
@@ -118,7 +119,6 @@ final class HermesDashboardMCPServersStore {
 
     private var activeTask: Task<Void, Never>?
     private var probeTask: Task<Void, Never>?
-    private var cachedTokenByBaseURL: [String: String] = [:]
     private let pythonExecutable = HermesRuntimePaths.defaultPythonExecutable
     private let hermesAgentRoot = HermesRuntimePaths.defaultHermesAgentRoot
 
@@ -202,9 +202,8 @@ final class HermesDashboardMCPServersStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            let rawConfig = try await fetchRawConfig(baseURL: baseURL, token: token, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            let rawConfig = try await HermesDashboardClient.shared.rawConfig(baseURL: baseURL, apiSettings: apiSettings)
             servers = HermesMCPServersYAML.parseServers(from: rawConfig.yaml).sorted { lhs, rhs in
                 lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
             }
@@ -222,9 +221,6 @@ final class HermesDashboardMCPServersStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            let rawConfig = try await fetchRawConfig(baseURL: baseURL, token: token, apiSettings: apiSettings)
             let server = HermesDashboardMCPServer(
                 name: draft.name,
                 command: draft.transportKind == .stdio ? draft.command : nil,
@@ -237,8 +233,10 @@ final class HermesDashboardMCPServersStore {
                 toolsInclude: nil,
                 toolsExclude: nil
             )
-            let updatedYAML = HermesMCPServersYAML.upsertingServer(server, in: rawConfig.yaml)
-            try await updateRawConfig(updatedYAML, baseURL: baseURL, token: token, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            try await HermesDashboardClient.shared.mutateRawConfig(baseURL: baseURL, apiSettings: apiSettings) { yaml in
+                HermesMCPServersYAML.upsertingServer(server, in: yaml)
+            }
             lastActionMessage = "Saved \(draft.name) to dashboard config. Test the connection, then reload MCP for active sessions."
             await loadServers(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         } catch {
@@ -253,11 +251,10 @@ final class HermesDashboardMCPServersStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            let rawConfig = try await fetchRawConfig(baseURL: baseURL, token: token, apiSettings: apiSettings)
-            let updatedYAML = HermesMCPServersYAML.upsertingServer(server, in: rawConfig.yaml)
-            try await updateRawConfig(updatedYAML, baseURL: baseURL, token: token, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            try await HermesDashboardClient.shared.mutateRawConfig(baseURL: baseURL, apiSettings: apiSettings) { yaml in
+                HermesMCPServersYAML.upsertingServer(server, in: yaml)
+            }
             lastActionMessage = successMessage
             await loadServers(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         } catch {
@@ -272,11 +269,10 @@ final class HermesDashboardMCPServersStore {
         defer { isLoading = false }
 
         do {
-            let baseURL = try resolvedDashboardBaseURL(from: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
-            let token = try await dashboardSessionToken(baseURL: baseURL, apiSettings: apiSettings)
-            let rawConfig = try await fetchRawConfig(baseURL: baseURL, token: token, apiSettings: apiSettings)
-            let updatedYAML = try HermesMCPServersYAML.removingServer(named: server.name, from: rawConfig.yaml)
-            try await updateRawConfig(updatedYAML, baseURL: baseURL, token: token, apiSettings: apiSettings)
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
+            try await HermesDashboardClient.shared.mutateRawConfig(baseURL: baseURL, apiSettings: apiSettings) { yaml in
+                try HermesMCPServersYAML.removingServer(named: server.name, from: yaml)
+            }
             lastActionMessage = "Deleted \(server.name). Reload MCP for active sessions to drop its tools."
             await loadServers(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         } catch {
@@ -320,66 +316,6 @@ final class HermesDashboardMCPServersStore {
             lastActionMessage = reloadFirst ? "Reload probe finished: \(available)/\(result.results.count) available, \(totalTools) tools discovered." : "Connection tests finished: \(available)/\(result.results.count) available, \(totalTools) tools discovered."
         }
         refreshRecentErrors(hermesHome: hermesHome)
-    }
-
-    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
-        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
-        let cacheKey = baseURL.absoluteString
-        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
-
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(from: baseURL)
-        try HermesNetworkSessionFactory.validate(response: response)
-        let html = String(decoding: data, as: UTF8.self)
-        let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#
-        let regex = try NSRegularExpression(pattern: pattern)
-        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-        guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else {
-            throw HermesDashboardMCPServersError.missingDashboardSessionToken
-        }
-        let token = String(html[tokenRange])
-        cachedTokenByBaseURL[cacheKey] = token
-        return token
-    }
-
-    private func fetchRawConfig(baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws -> HermesDashboardMCPRawConfigResponse {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/config/raw"))
-        request.httpMethod = "GET"
-        request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(for: request)
-        try HermesNetworkSessionFactory.validate(response: response)
-        return try JSONDecoder().decode(HermesDashboardMCPRawConfigResponse.self, from: data)
-    }
-
-    private func updateRawConfig(_ yaml: String, baseURL: URL, token: String, apiSettings: HermesAPISettings) async throws {
-        var request = URLRequest(url: baseURL.appendingPathComponent("api/config/raw"))
-        request.httpMethod = "PUT"
-        request.timeoutInterval = 30
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue(token, forHTTPHeaderField: "X-Hermes-Session-Token")
-        request.httpBody = try JSONEncoder().encode(HermesDashboardMCPRawConfigUpdate(yamlText: yaml))
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (_, response) = try await session.data(for: request)
-        try HermesNetworkSessionFactory.validate(response: response)
-    }
-
-    private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
-        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
-        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
-        guard let url = normalizedBaseURL(from: fallback) else { throw HermesDashboardMCPServersError.invalidDashboardURL }
-        return url
-    }
-
-    private func normalizedBaseURL(from value: String) -> URL? {
-        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return URL(string: trimmed)
     }
 
     private nonisolated static func executeMCPProbe(names: [String], hermesHome: String, pythonExecutable: String, workdir: String, reloadFirst: Bool) -> HermesMCPProbeBatchResult {
@@ -510,18 +446,6 @@ except BaseException as exc:
     }
 }
 
-private struct HermesDashboardMCPRawConfigResponse: Decodable {
-    let yaml: String
-}
-
-private struct HermesDashboardMCPRawConfigUpdate: Encodable {
-    let yamlText: String
-
-    enum CodingKeys: String, CodingKey {
-        case yamlText = "yaml_text"
-    }
-}
-
 private struct HermesMCPProbeBatchResult: Codable {
     var error: String?
     var results: [HermesMCPProbeItem]
@@ -536,16 +460,10 @@ private struct HermesMCPProbeItem: Codable {
 }
 
 enum HermesDashboardMCPServersError: LocalizedError {
-    case invalidDashboardURL
-    case missingDashboardSessionToken
     case serverNotFound(String)
 
     var errorDescription: String? {
         switch self {
-        case .invalidDashboardURL:
-            return "The Hermes dashboard URL is invalid."
-        case .missingDashboardSessionToken:
-            return "The dashboard session token was not found in the dashboard HTML."
         case .serverNotFound(let name):
             return "MCP server \"\(name)\" was not found in the dashboard config."
         }

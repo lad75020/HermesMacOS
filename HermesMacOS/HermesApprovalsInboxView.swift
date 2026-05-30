@@ -21,6 +21,21 @@ struct HermesApprovalItem: Identifiable, Decodable, Equatable {
     let surface: String?
     let scopeOptions: [String]
 
+    init(id: String, sessionKey: String, queuePosition: Int, kind: String, title: String, command: String, description: String, patternKey: String? = nil, patternKeys: [String] = [], createdAt: Double? = nil, surface: String? = nil, scopeOptions: [String] = []) {
+        self.id = id
+        self.sessionKey = sessionKey
+        self.queuePosition = queuePosition
+        self.kind = kind
+        self.title = title
+        self.command = command
+        self.description = description
+        self.patternKey = patternKey
+        self.patternKeys = patternKeys
+        self.createdAt = createdAt
+        self.surface = surface
+        self.scopeOptions = scopeOptions
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, kind, title, command, description, surface
         case sessionKey = "session_key"
@@ -34,6 +49,8 @@ struct HermesApprovalItem: Identifiable, Decodable, Equatable {
     var displayKind: String {
         switch kind {
         case "shell_command": "Shell command"
+        case "local_filesystem": "Local filesystem"
+        case "tls_certificate": "TLS certificate"
         default: kind.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
         }
     }
@@ -76,7 +93,6 @@ final class HermesApprovalsInboxStore {
     var resolvingIDs: Set<String> = []
     var lastUpdated: Date?
     var autoRefresh = true
-    private var cachedTokenByBaseURL: [String: String] = [:]
 
     var pendingCount: Int { approvals.count }
 
@@ -89,15 +105,16 @@ final class HermesApprovalsInboxStore {
 
         do {
             let response = try await fetchApprovals(apiSettings: apiSettings)
-            approvals = response.approvals.sorted { lhs, rhs in
+            approvals = (response.approvals + localApprovals()).sorted { lhs, rhs in
                 if lhs.sessionKey == rhs.sessionKey { return lhs.queuePosition < rhs.queuePosition }
                 return lhs.sessionKey.localizedStandardCompare(rhs.sessionKey) == .orderedAscending
             }
             lastUpdated = Date()
             status = approvals.isEmpty ? "No pending approvals" : "\(approvals.count) pending approval\(approvals.count == 1 ? "" : "s")"
         } catch {
+            approvals = localApprovals()
             lastErrorMessage = error.localizedDescription
-            status = "Approvals refresh failed"
+            status = approvals.isEmpty ? "Approvals refresh failed" : "\(approvals.count) local approval\(approvals.count == 1 ? "" : "s") pending"
         }
     }
 
@@ -109,7 +126,11 @@ final class HermesApprovalsInboxStore {
         defer { resolvingIDs.remove(approval.id) }
 
         do {
-            try await resolveApproval(apiSettings: apiSettings, approval: approval, choice: choice)
+            if approval.id.hasPrefix("local-") {
+                HermesLocalApprovalCenter.shared.resolve(id: approval.id, approved: choice != "deny")
+            } else {
+                try await resolveApproval(apiSettings: apiSettings, approval: approval, choice: choice)
+            }
             status = "Approval \(choice == "deny" ? "denied" : "approved")"
             await refresh(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         } catch {
@@ -126,23 +147,6 @@ final class HermesApprovalsInboxStore {
             guard autoRefresh else { continue }
             await refresh(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings)
         }
-    }
-
-    private func dashboardSessionToken(baseURL: URL, apiSettings: HermesAPISettings) async throws -> String {
-        try HermesEndpointSecurity.validateSensitiveURL(baseURL)
-        let cacheKey = baseURL.absoluteString
-        if let cached = cachedTokenByBaseURL[cacheKey], !cached.isEmpty { return cached }
-        let session = HermesNetworkSessionFactory.session(for: apiSettings)
-        let (data, response) = try await session.data(from: baseURL)
-        try HermesNetworkSessionFactory.validate(response: response)
-        let html = String(decoding: data, as: UTF8.self)
-        let pattern = #"window\.__HERMES_SESSION_TOKEN__=\"([^\"]+)\""#
-        let regex = try NSRegularExpression(pattern: pattern)
-        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-        guard let match = regex.firstMatch(in: html, range: nsRange), let tokenRange = Range(match.range(at: 1), in: html) else { throw HermesApprovalsInboxError.missingDashboardSessionToken }
-        let token = String(html[tokenRange])
-        cachedTokenByBaseURL[cacheKey] = token
-        return token
     }
 
     private func fetchApprovals(apiSettings: HermesAPISettings) async throws -> HermesApprovalsResponse {
@@ -187,31 +191,30 @@ final class HermesApprovalsInboxStore {
         }
     }
 
-    private func resolvedDashboardBaseURL(from dashboardBaseURL: String, apiBaseURL: String) throws -> URL {
-        let explicit = dashboardBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !explicit.isEmpty, let url = normalizedBaseURL(from: explicit) { return url }
-        var fallback = apiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        if fallback.hasSuffix("/v1") { fallback.removeLast(3) }
-        guard let url = normalizedBaseURL(from: fallback) else { throw HermesApprovalsInboxError.invalidDashboardURL }
-        return url
-    }
-
-    private func normalizedBaseURL(from value: String) -> URL? {
-        var trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        while trimmed.hasSuffix("/") { trimmed.removeLast() }
-        return URL(string: trimmed)
+    private func localApprovals() -> [HermesApprovalItem] {
+        HermesLocalApprovalCenter.shared.pending.enumerated().map { offset, request in
+            HermesApprovalItem(
+                id: request.id,
+                sessionKey: "local",
+                queuePosition: offset + 1,
+                kind: request.kind == .filesystem ? "local_filesystem" : "tls_certificate",
+                title: request.title,
+                command: request.command,
+                description: request.description,
+                patternKeys: request.fingerprint.map { [$0] } ?? [],
+                createdAt: request.createdAt.timeIntervalSince1970,
+                surface: "HermesMacOS",
+                scopeOptions: []
+            )
+        }
     }
 }
 
 enum HermesApprovalsInboxError: LocalizedError {
-    case invalidDashboardURL
-    case missingDashboardSessionToken
     case unexpectedResponseFormat
 
     var errorDescription: String? {
         switch self {
-        case .invalidDashboardURL: "The Hermes dashboard URL is invalid."
-        case .missingDashboardSessionToken: "The dashboard session token was not found in the dashboard HTML."
         case .unexpectedResponseFormat: "The Hermes approvals endpoint did not return JSON. Restart Hermes Agent so the approvals API is available."
         }
     }

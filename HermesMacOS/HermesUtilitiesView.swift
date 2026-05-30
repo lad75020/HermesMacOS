@@ -420,11 +420,21 @@ final class HermesClipboardHistoryStore {
     private let maxEntries = 10
     private let maxStoredBytes = 25 * 1024 * 1024
     private var lastObservedChangeCount = NSPasteboard.general.changeCount
+    private var didLoadPersistedEntries = false
     var entries: [HermesClipboardHistoryEntry] = []
 
-    init() { load() }
+    func loadPersistedEntriesIfNeeded() async {
+        guard !didLoadPersistedEntries else { return }
+        didLoadPersistedEntries = true
+        let loadedEntries = await Task.detached(priority: .utility) { [defaultsKey, maxEntries] () -> [HermesClipboardHistoryEntry] in
+            guard let decoded = HermesEncryptedRetentionStore.load([HermesClipboardHistoryEntry].self, forKey: defaultsKey) else { return [] }
+            return Array(decoded.map(\.redactedForRetention).prefix(maxEntries))
+        }.value
+        entries = loadedEntries
+    }
 
     func runMonitoringLoop() async {
+        await loadPersistedEntriesIfNeeded()
         while !Task.isCancelled {
             if UserDefaults.standard.bool(forKey: Self.monitoringEnabledKey) {
                 captureCurrentPasteboardIfNeeded()
@@ -469,11 +479,16 @@ final class HermesClipboardHistoryStore {
     }
 
     private func load() {
-        guard let data = UserDefaults.standard.data(forKey: defaultsKey), let decoded = try? JSONDecoder().decode([HermesClipboardHistoryEntry].self, from: data) else { entries = []; return }
-        entries = Array(decoded.prefix(maxEntries))
+        guard let decoded = UserDefaults.standard.data(forKey: defaultsKey),
+              let entries = try? JSONDecoder().decode([HermesClipboardHistoryEntry].self, from: decoded)
+        else { self.entries = []; return }
+        self.entries = Array(entries.map(\.redactedForRetention).prefix(maxEntries))
     }
 
-    private func persist() { if let data = try? JSONEncoder().encode(entries) { UserDefaults.standard.set(data, forKey: defaultsKey) } }
+    private func persist() {
+        _ = HermesEncryptedRetentionStore.save(entries.map(\.redactedForRetention), forKey: defaultsKey)
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
+    }
 
     private static func entry(from pasteboard: NSPasteboard, maxStoredBytes: Int) -> HermesClipboardHistoryEntry? {
         if let string = pasteboard.string(forType: .string), !string.isEmpty, let data = string.data(using: .utf8), data.count <= maxStoredBytes {
@@ -489,8 +504,8 @@ final class HermesClipboardHistoryStore {
     }
 }
 
-struct HermesClipboardHistoryEntry: Identifiable, Codable, Equatable {
-    enum Kind: String, Codable {
+struct HermesClipboardHistoryEntry: Identifiable, Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable {
         case text, image, file
         var displayName: String { self == .text ? "Text" : (self == .image ? "Image" : "File") }
         var localizedDisplayName: String { String(localized: String.LocalizationValue(displayName)) }
@@ -533,6 +548,11 @@ struct HermesClipboardHistoryEntry: Identifiable, Codable, Equatable {
         case .file: return fileURL?.path
         }
     }
+
+    var redactedForRetention: HermesClipboardHistoryEntry {
+        guard kind == .text, let textValue, let data = HermesSecretRedactor.redact(textValue).data(using: .utf8) else { return self }
+        return HermesClipboardHistoryEntry(kind: kind, typeIdentifier: typeIdentifier, payload: data, displayName: displayName)
+    }
 }
 
 @MainActor
@@ -542,11 +562,25 @@ final class HermesPromptHistoryStore {
     private let promptDefaultsKey = "hermes.macOS.utilities.promptHistory.entries"
     private let responseDefaultsKey = "hermes.macOS.utilities.responseHistory.entries"
     private let maxEntries = 10
+    private var didLoadPersistedEntries = false
     var entries: [HermesPromptHistoryEntry] = []
     var responseEntries: [HermesResponseHistoryEntry] = []
     init() {
         UserDefaults.standard.register(defaults: [Self.persistenceEnabledKey: true])
-        load()
+    }
+    func loadPersistedEntriesIfNeeded() async {
+        guard !didLoadPersistedEntries else { return }
+        didLoadPersistedEntries = true
+        let loaded = await Task.detached(priority: .utility) { [promptDefaultsKey, responseDefaultsKey, maxEntries] () -> ([HermesPromptHistoryEntry], [HermesResponseHistoryEntry]) in
+            let prompts = HermesEncryptedRetentionStore.load([HermesPromptHistoryEntry].self, forKey: promptDefaultsKey) ?? []
+            let responses = HermesEncryptedRetentionStore.load([HermesResponseHistoryEntry].self, forKey: responseDefaultsKey) ?? []
+            return (
+                Array(prompts.map(\.redactedForRetention).prefix(maxEntries)),
+                Array(responses.map(\.redactedForRetention).prefix(maxEntries))
+            )
+        }.value
+        entries = loaded.0
+        responseEntries = loaded.1
     }
     func record(_ prompt: String, source: HermesPromptHistoryEntry.Source = .askHermes) {
         guard UserDefaults.standard.bool(forKey: Self.persistenceEnabledKey) else { return }
@@ -573,15 +607,27 @@ final class HermesPromptHistoryStore {
     func clear() { entries.removeAll(); persistPrompts() }
     func clearResponses() { responseEntries.removeAll(); persistResponses() }
     private func load() {
-        if let data = UserDefaults.standard.data(forKey: promptDefaultsKey), let decoded = try? JSONDecoder().decode([HermesPromptHistoryEntry].self, from: data) { entries = Array(decoded.prefix(maxEntries)) }
-        if let data = UserDefaults.standard.data(forKey: responseDefaultsKey), let decoded = try? JSONDecoder().decode([HermesResponseHistoryEntry].self, from: data) { responseEntries = Array(decoded.prefix(maxEntries)) }
+        if let data = UserDefaults.standard.data(forKey: promptDefaultsKey),
+           let decoded = try? JSONDecoder().decode([HermesPromptHistoryEntry].self, from: data) {
+            entries = Array(decoded.map(\.redactedForRetention).prefix(maxEntries))
+        }
+        if let data = UserDefaults.standard.data(forKey: responseDefaultsKey),
+           let decoded = try? JSONDecoder().decode([HermesResponseHistoryEntry].self, from: data) {
+            responseEntries = Array(decoded.map(\.redactedForRetention).prefix(maxEntries))
+        }
     }
-    private func persistPrompts() { if let data = try? JSONEncoder().encode(entries) { UserDefaults.standard.set(data, forKey: promptDefaultsKey) } }
-    private func persistResponses() { if let data = try? JSONEncoder().encode(responseEntries) { UserDefaults.standard.set(data, forKey: responseDefaultsKey) } }
+    private func persistPrompts() {
+        _ = HermesEncryptedRetentionStore.save(entries.map(\.redactedForRetention), forKey: promptDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: promptDefaultsKey)
+    }
+    private func persistResponses() {
+        _ = HermesEncryptedRetentionStore.save(responseEntries.map(\.redactedForRetention), forKey: responseDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: responseDefaultsKey)
+    }
 }
 
-struct HermesPromptHistoryEntry: Identifiable, Codable, Equatable {
-    enum Source: String, Codable {
+struct HermesPromptHistoryEntry: Identifiable, Codable, Equatable, Sendable {
+    enum Source: String, Codable, Sendable {
         case askHermes
         case chatWithHermes
         var displayName: String {
@@ -606,12 +652,19 @@ struct HermesPromptHistoryEntry: Identifiable, Codable, Equatable {
         let normalized = text.replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ").split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? fallback : normalized
     }
+
+    var redactedForRetention: HermesPromptHistoryEntry {
+        HermesPromptHistoryEntry(prompt: HermesSecretRedactor.redact(prompt), source: source)
+    }
 }
 
-struct HermesResponseHistoryEntry: Identifiable, Codable, Equatable {
+struct HermesResponseHistoryEntry: Identifiable, Codable, Equatable, Sendable {
     let id: UUID; let response: String; let source: HermesPromptHistoryEntry.Source; let createdAt: Date; let fingerprint: String
     init(response: String, source: HermesPromptHistoryEntry.Source) { self.id = UUID(); self.response = response; self.source = source; self.createdAt = Date(); self.fingerprint = Self.makeFingerprint(response: response, source: source) }
     private static func makeFingerprint(response: String, source: HermesPromptHistoryEntry.Source) -> String { source.rawValue + ":response:" + SHA256.hash(data: Data((source.rawValue + ":response:" + response).utf8)).map { String(format: "%02x", $0) }.joined() }
     var title: String { HermesPromptHistoryEntry.normalizedTitle(from: response, fallback: String(localized: "Response")) }
     var subtitle: String { String(localized: "\(response.count) characters") }
+    var redactedForRetention: HermesResponseHistoryEntry {
+        HermesResponseHistoryEntry(response: HermesSecretRedactor.redact(response), source: source)
+    }
 }

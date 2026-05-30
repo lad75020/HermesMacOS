@@ -44,8 +44,16 @@ final class HermesLocalConfigurationRuntime: ObservableObject {
         guard cleanArguments.isEmpty == false else { return }
         runningSections.insert(section)
         outputs[section] = "$ hermes \(cleanArguments.joined(separator: " "))\nRunning…"
-        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
-            let result = Self.execute(executable: hermesExecutable, arguments: cleanArguments, hermesHome: hermesHome, remoteHostName: remoteHostName)
+        Task {
+            do { try await HermesFilesystemAccessPolicy.requireAccess(to: hermesHome, operation: "Run local Hermes configuration command") }
+            catch {
+                self.outputs[section] = error.localizedDescription
+                self.runningSections.remove(section)
+                return
+            }
+            let result = await Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
+                Self.execute(executable: hermesExecutable, arguments: cleanArguments, hermesHome: hermesHome, remoteHostName: remoteHostName)
+            }.value
             await MainActor.run {
                 self.outputs[section] = result
                 self.runningSections.remove(section)
@@ -56,10 +64,18 @@ final class HermesLocalConfigurationRuntime: ObservableObject {
     func runChained(_ section: HermesLocalConfigurationSection, _ commands: [[String]]) {
         runningSections.insert(section)
         outputs[section] = "Running \(commands.count) local Hermes commands…"
-        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
-            let combined = commands.map { command in
-                Self.execute(executable: hermesExecutable, arguments: command.map { $0.trimmedForHermes }.filter { !$0.isEmpty }, hermesHome: hermesHome, remoteHostName: remoteHostName)
-            }.joined(separator: "\n\n")
+        Task {
+            do { try await HermesFilesystemAccessPolicy.requireAccess(to: hermesHome, operation: "Run local Hermes configuration commands") }
+            catch {
+                self.outputs[section] = error.localizedDescription
+                self.runningSections.remove(section)
+                return
+            }
+            let combined = await Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
+                commands.map { command in
+                    Self.execute(executable: hermesExecutable, arguments: command.map { $0.trimmedForHermes }.filter { !$0.isEmpty }, hermesHome: hermesHome, remoteHostName: remoteHostName)
+                }.joined(separator: "\n\n")
+            }.value
             await MainActor.run {
                 self.outputs[section] = combined
                 self.runningSections.remove(section)
@@ -72,8 +88,16 @@ final class HermesLocalConfigurationRuntime: ObservableObject {
         guard !trimmedSource.isEmpty else { return }
         runningSections.insert(.skills)
         outputs[.skills] = "$ hermes skills install \(trimmedSource)\nRunning…"
-        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
-            let result = Self.execute(executable: hermesExecutable, arguments: ["skills", "install", trimmedSource], hermesHome: hermesHome, remoteHostName: remoteHostName)
+        Task {
+            do { try await HermesFilesystemAccessPolicy.requireAccess(to: hermesHome, operation: "Install Hermes skill") }
+            catch {
+                self.outputs[.skills] = error.localizedDescription
+                self.runningSections.remove(.skills)
+                return
+            }
+            let result = await Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
+                Self.execute(executable: hermesExecutable, arguments: ["skills", "install", trimmedSource], hermesHome: hermesHome, remoteHostName: remoteHostName)
+            }.value
             await MainActor.run {
                 self.outputs[.skills] = result
                 self.runningSections.remove(.skills)
@@ -90,8 +114,16 @@ final class HermesLocalConfigurationRuntime: ObservableObject {
         let arguments = ["mcp", "add", cleanName, "--command", cleanCommand] + (cleanArgs.isEmpty ? [] : ["--args"] + cleanArgs)
         runningSections.insert(.mcpServers)
         outputs[.mcpServers] = "$ hermes \(arguments.joined(separator: " "))\nRunning…"
-        Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
-            let result = Self.execute(executable: hermesExecutable, arguments: arguments, hermesHome: hermesHome, remoteHostName: remoteHostName)
+        Task {
+            do { try await HermesFilesystemAccessPolicy.requireAccess(to: hermesHome, operation: "Add local MCP server") }
+            catch {
+                self.outputs[.mcpServers] = error.localizedDescription
+                self.runningSections.remove(.mcpServers)
+                return
+            }
+            let result = await Task.detached(priority: .userInitiated) { [hermesExecutable, hermesHome, remoteHostName] in
+                Self.execute(executable: hermesExecutable, arguments: arguments, hermesHome: hermesHome, remoteHostName: remoteHostName)
+            }.value
             await MainActor.run {
                 self.outputs[.mcpServers] = result
                 self.runningSections.remove(.mcpServers)

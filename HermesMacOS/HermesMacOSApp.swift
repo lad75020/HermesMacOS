@@ -65,6 +65,7 @@ struct HermesMacOSApp: App {
 
     init() {
         HermesWebsiteFontRegistrar.registerBundledFonts()
+        HermesSSHKeychain.cleanupTemporaryIdentityFiles()
     }
 
     var body: some Scene {

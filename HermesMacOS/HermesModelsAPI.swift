@@ -44,7 +44,7 @@ enum HermesHostEndpoints {
     }
 }
 
-struct HermesAPISettings: Codable, Equatable {
+struct HermesAPISettings: Codable, Equatable, Sendable {
     var baseURL = HermesHostEndpoints.httpURLString(host: defaultHermesMacHost, port: defaultHermesAPIPort, path: "/v1")
     var apiKey = ""
     var allowSelfSignedCertificates = false
@@ -103,7 +103,7 @@ struct HermesAPISettings: Codable, Equatable {
     }
 }
 
-struct HermesSavedEndpoint: Codable, Equatable, Identifiable {
+struct HermesSavedEndpoint: Codable, Equatable, Identifiable, Sendable {
     let id: String
     var apiURL: String
     var dashboardURL: String
@@ -166,7 +166,7 @@ struct HermesSavedEndpoint: Codable, Equatable, Identifiable {
     }
 }
 
-struct HermesSSHHostCredentials: Codable, Equatable {
+struct HermesSSHHostCredentials: Codable, Equatable, Sendable {
     var host: String
     var username: String
     var keyDisplayName: String
@@ -218,10 +218,35 @@ enum HermesSSHKeychain {
         }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("HermesMacOSSSH", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        chmod(folder.path, S_IRWXU)
+        cleanupTemporaryIdentityFiles(in: folder)
         let url = folder.appendingPathComponent("key-\(UUID().uuidString)")
-        try data.write(to: url, options: .atomic)
-        chmod(url.path, S_IRUSR | S_IWUSR)
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Could not create temporary SSH identity file."])
+        }
+        let written = data.withUnsafeBytes { buffer in
+            write(fd, buffer.baseAddress, buffer.count)
+        }
+        close(fd)
+        guard written == data.count else {
+            try? FileManager.default.removeItem(at: url)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Could not write temporary SSH identity file."])
+        }
         return url
+    }
+
+    static func cleanupTemporaryIdentityFiles() {
+        cleanupTemporaryIdentityFiles(in: FileManager.default.temporaryDirectory.appendingPathComponent("HermesMacOSSSH", isDirectory: true))
+    }
+
+    private static func cleanupTemporaryIdentityFiles(in folder: URL) {
+        guard let contents = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey]) else { return }
+        let staleCutoff = Date().addingTimeInterval(-3600)
+        for url in contents where url.lastPathComponent.hasPrefix("key-") {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modified < staleCutoff { try? FileManager.default.removeItem(at: url) }
+        }
     }
 
     private static func accountName(forHost host: String) -> String {
@@ -334,7 +359,7 @@ enum HermesRequestCancellation {
     }
 }
 
-enum HermesReasoningLevel: String, Codable, CaseIterable, Identifiable {
+enum HermesReasoningLevel: String, Codable, CaseIterable, Identifiable, Sendable {
     case off
     case low
     case medium
@@ -354,7 +379,7 @@ enum HermesReasoningLevel: String, Codable, CaseIterable, Identifiable {
     var requestEffort: String? { self == .off ? nil : rawValue }
 }
 
-struct HermesRequestDraft: Codable, Equatable {
+struct HermesRequestDraft: Codable, Equatable, Sendable {
     var profile = "default"
     var userPrompt = "Summarize the current project layout and recommend the next integration step."
     var stream = true
@@ -404,18 +429,35 @@ enum HermesSettingsStore {
         HermesAPIKeychain.saveAPIKey(value.apiKey)
         save(value, forKey: apiSettingsKey)
     }
-    static func loadDraft() -> HermesRequestDraft { load(HermesRequestDraft.self, forKey: requestDraftKey) ?? HermesRequestDraft() }
-    static func saveDraft(_ value: HermesRequestDraft) { save(value, forKey: requestDraftKey) }
-    static func loadChatDraft() -> HermesChatDraft { load(HermesChatDraft.self, forKey: chatDraftKey) ?? HermesChatDraft() }
-    static func saveChatDraft(_ value: HermesChatDraft) { save(value, forKey: chatDraftKey) }
-    static func loadLastResponsesSessionID() -> String { UserDefaults.standard.string(forKey: lastResponseIDKey) ?? "" }
-    static func saveLastResponsesSessionID(_ value: String) { UserDefaults.standard.set(value, forKey: lastResponseIDKey) }
-    static func loadLastResponsesSessionTitle() -> String { UserDefaults.standard.string(forKey: lastResponseTitleKey) ?? "" }
-    static func saveLastResponsesSessionTitle(_ value: String) { UserDefaults.standard.set(value, forKey: lastResponseTitleKey) }
-    static func loadLastChatSessionID() -> String { UserDefaults.standard.string(forKey: lastChatSessionIDKey) ?? "" }
-    static func saveLastChatSessionID(_ value: String) { UserDefaults.standard.set(value, forKey: lastChatSessionIDKey) }
-    static func loadLastChatSessionTitle() -> String { UserDefaults.standard.string(forKey: lastChatSessionTitleKey) ?? "" }
-    static func saveLastChatSessionTitle(_ value: String) { UserDefaults.standard.set(value, forKey: lastChatSessionTitleKey) }
+    static func loadDraft() -> HermesRequestDraft {
+        let draft = load(HermesRequestDraft.self, forKey: requestDraftKey) ?? HermesRequestDraft()
+        saveDraft(draft)
+        return draft
+    }
+    static func saveDraft(_ value: HermesRequestDraft) {
+        var redacted = value
+        redacted.userPrompt = HermesSecretRedactor.redact(value.userPrompt)
+        saveSecure(redacted, forKey: requestDraftKey)
+    }
+    static func loadChatDraft() -> HermesChatDraft {
+        let draft = load(HermesChatDraft.self, forKey: chatDraftKey) ?? HermesChatDraft()
+        saveChatDraft(draft)
+        return draft
+    }
+    static func saveChatDraft(_ value: HermesChatDraft) {
+        var redacted = value
+        redacted.systemPrompt = HermesSecretRedactor.redact(value.systemPrompt)
+        redacted.userPrompt = HermesSecretRedactor.redact(value.userPrompt)
+        saveSecure(redacted, forKey: chatDraftKey)
+    }
+    static func loadLastResponsesSessionID() -> String { HermesEncryptedRetentionStore.loadString(forKey: lastResponseIDKey) }
+    static func saveLastResponsesSessionID(_ value: String) { HermesEncryptedRetentionStore.saveString(value, forKey: lastResponseIDKey) }
+    static func loadLastResponsesSessionTitle() -> String { HermesEncryptedRetentionStore.loadString(forKey: lastResponseTitleKey) }
+    static func saveLastResponsesSessionTitle(_ value: String) { HermesEncryptedRetentionStore.saveString(value, forKey: lastResponseTitleKey) }
+    static func loadLastChatSessionID() -> String { HermesEncryptedRetentionStore.loadString(forKey: lastChatSessionIDKey) }
+    static func saveLastChatSessionID(_ value: String) { HermesEncryptedRetentionStore.saveString(value, forKey: lastChatSessionIDKey) }
+    static func loadLastChatSessionTitle() -> String { HermesEncryptedRetentionStore.loadString(forKey: lastChatSessionTitleKey) }
+    static func saveLastChatSessionTitle(_ value: String) { HermesEncryptedRetentionStore.saveString(value, forKey: lastChatSessionTitleKey) }
     static func loadSavedEndpoints() -> [HermesSavedEndpoint] { load([HermesSavedEndpoint].self, forKey: savedEndpointsKey) ?? [] }
     static func saveSavedEndpoints(_ value: [HermesSavedEndpoint]) { save(value, forKey: savedEndpointsKey) }
     static func loadSelectedEndpointID() -> String { UserDefaults.standard.string(forKey: selectedEndpointIDKey) ?? "" }
@@ -437,12 +479,21 @@ enum HermesSettingsStore {
     }
 
     private static func load<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
+        if key == requestDraftKey || key == chatDraftKey {
+            return HermesEncryptedRetentionStore.load(type, forKey: key)
+        }
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(type, from: data)
     }
 
     private static func save<T: Encodable>(_ value: T, forKey key: String) {
         if let data = try? JSONEncoder().encode(value) { UserDefaults.standard.set(data, forKey: key) }
+    }
+
+    private static func saveSecure<T: Encodable>(_ value: T, forKey key: String) {
+        if HermesEncryptedRetentionStore.save(value, forKey: key) {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 }
 
@@ -569,6 +620,12 @@ struct HermesPromptAttachment: Equatable {
     static func load(from url: URL) throws -> HermesPromptAttachment {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+        if !HermesFilesystemAccessPolicy.isAllowed(url.path) {
+            Task { @MainActor in
+                _ = await HermesLocalApprovalCenter.shared.requestFilesystemAccess(path: url.path, operation: "Import attachment")
+            }
+            throw HermesSecurityError.localApprovalDenied(url.path)
+        }
         let values = try url.resourceValues(forKeys: [.contentTypeKey, .nameKey, .fileSizeKey])
         let name = values.name ?? url.lastPathComponent
         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
@@ -734,11 +791,6 @@ final class HermesResponsesSession {
     private var activeCancellationAPISettings: HermesAPISettings?
     private var responseTimingStart: Date?
     private var responseTimingTask: Task<Void, Never>?
-
-    init() {
-        lastKnownResponseID = HermesSettingsStore.loadLastResponsesSessionID()
-        lastKnownResponseTitle = HermesSettingsStore.loadLastResponsesSessionTitle()
-    }
 
     var displaySessionTitle: String {
         let title = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)

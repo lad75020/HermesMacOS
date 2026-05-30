@@ -6,6 +6,27 @@
 import AppKit
 import SwiftUI
 
+private struct HermesSettingsPersistedValues: Sendable {
+    var apiSettings: HermesAPISettings
+    var draft: HermesRequestDraft
+    var chatDraft: HermesChatDraft
+    var savedEndpoints: [HermesSavedEndpoint]
+    var selectedEndpointID: String
+    var sshCredentials: HermesSSHHostCredentials
+
+    static func load() -> HermesSettingsPersistedValues {
+        let apiSettings = HermesSettingsStore.loadAPISettings()
+        return HermesSettingsPersistedValues(
+            apiSettings: apiSettings,
+            draft: HermesSettingsStore.loadDraft(),
+            chatDraft: HermesSettingsStore.loadChatDraft(),
+            savedEndpoints: HermesSettingsStore.loadSavedEndpoints(),
+            selectedEndpointID: HermesSettingsStore.loadSelectedEndpointID(),
+            sshCredentials: HermesSettingsStore.loadSSHCredentials(forHost: apiSettings.hostName)
+        )
+    }
+}
+
 struct SettingsView: View {
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
     @AppStorage("hermes.appLanguage") private var appLanguage: HermesAppLanguageSelection = .automatic
@@ -14,16 +35,18 @@ struct SettingsView: View {
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
     @AppStorage(hermesSpeechToTextEngineStorageKey) private var speechToTextEngine: HermesSpeechToTextEngine = .appleLocal
-    @State private var apiSettings = HermesSettingsStore.loadAPISettings()
-    @State private var draft = HermesSettingsStore.loadDraft()
-    @State private var chatDraft = HermesSettingsStore.loadChatDraft()
-    @State private var savedEndpoints = HermesSettingsStore.loadSavedEndpoints()
-    @State private var selectedEndpointID = HermesSettingsStore.loadSelectedEndpointID()
-    @State private var sshCredentials = HermesSettingsStore.loadSSHCredentials(forHost: HermesSettingsStore.loadAPISettings().hostName)
+    @State private var apiSettings = HermesAPISettings(apiKey: "")
+    @State private var draft = HermesRequestDraft()
+    @State private var chatDraft = HermesChatDraft()
+    @State private var savedEndpoints: [HermesSavedEndpoint] = []
+    @State private var selectedEndpointID = ""
+    @State private var sshCredentials = HermesSSHHostCredentials(host: defaultHermesMacHost, username: "", keyDisplayName: "")
     @State private var sshKeyStatusMessage = ""
     @State private var selectedWindowID = ""
     @State private var isApplyingSavedEndpoint = false
+    @State private var didLoadPersistedValues = false
     @State private var connectionCenter = HermesWindowConnectionCenter.shared
+    @State private var allowedFolders = HermesFilesystemAccessPolicy.allowedFolders()
     @AppStorage(hermesDashboardURLStorageKey) private var dashboardURL = defaultHermesDashboardURL
 
     var body: some View {
@@ -173,6 +196,46 @@ struct SettingsView: View {
                         dashboardURL = defaultHermesDashboardURL
                         announceConnectionEndpointChange()
                     }
+                    Button("Reset TLS pin for current host") {
+                        HermesPinnedCertificateTrust.resetPin(host: currentAPIHost)
+                    }
+                    Text("Self-signed dashboard/API certificates are trusted only after an explicit Approvals Inbox confirmation. Public CA certificates continue to use the macOS trust store.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+
+                Section("Filesystem access") {
+                    Text("The app sandbox stays disabled so Hermes can manage local agents and repositories. Paths outside this allowlist request approval in Approvals Inbox before local access continues.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                    ForEach(allowedFolders, id: \.self) { folder in
+                        HStack {
+                            Text(folder)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                            Spacer()
+                            Button(role: .destructive) {
+                                allowedFolders.removeAll { $0 == folder }
+                                HermesFilesystemAccessPolicy.saveAllowedFolders(allowedFolders)
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    HStack {
+                        Button {
+                            chooseAllowedFolder()
+                        } label: {
+                            Label("Add Folder", systemImage: "folder.badge.plus")
+                        }
+                        Button("Restore Defaults") {
+                            allowedFolders = []
+                            HermesFilesystemAccessPolicy.saveAllowedFolders(allowedFolders)
+                            allowedFolders = HermesFilesystemAccessPolicy.allowedFolders()
+                        }
+                    }
                 }
 
                 Section("Ask Hermes defaults") {
@@ -205,6 +268,9 @@ struct SettingsView: View {
         .onAppear {
             ensureSelectedWindowTarget()
         }
+        .task {
+            await loadPersistedValuesIfNeeded()
+        }
         .onChange(of: activeWindowIDs) { _, _ in
             ensureSelectedWindowTarget()
         }
@@ -229,6 +295,7 @@ struct SettingsView: View {
         }
         .onChange(of: selectedEndpointID) { _, newValue in
             HermesSettingsStore.saveSelectedEndpointID(newValue)
+            guard !isApplyingSavedEndpoint else { return }
             applySelectedEndpoint(id: newValue)
         }
         .onChange(of: draft) { _, value in HermesSettingsStore.saveDraft(value) }
@@ -256,6 +323,20 @@ struct SettingsView: View {
         connectionCenter.windowConnections.map { $0.id.uuidString }
     }
 
+    private func chooseAllowedFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Allow"
+        if panel.runModal() == .OK, let url = panel.url {
+            let path = HermesFilesystemAccessPolicy.standardizedPath(url.path)
+            if !allowedFolders.contains(path) { allowedFolders.append(path) }
+            allowedFolders.sort()
+            HermesFilesystemAccessPolicy.saveAllowedFolders(allowedFolders)
+        }
+    }
+
     private var selectedWindowUUID: UUID? {
         UUID(uuidString: selectedWindowID)
     }
@@ -280,6 +361,31 @@ struct SettingsView: View {
         if let firstWindow = connectionCenter.windowConnections.first {
             selectedWindowID = firstWindow.id.uuidString
             loadConnection(firstWindow)
+        }
+    }
+
+    private func loadPersistedValuesIfNeeded() async {
+        guard !didLoadPersistedValues else { return }
+        didLoadPersistedValues = true
+        let values = await Task.detached(priority: .userInitiated) {
+            HermesSettingsPersistedValues.load()
+        }.value
+        isApplyingSavedEndpoint = true
+        savedEndpoints = values.savedEndpoints
+        selectedEndpointID = values.selectedEndpointID
+        draft = values.draft
+        chatDraft = values.chatDraft
+        if let connection = selectedWindowConnection {
+            apiSettings = connection.apiSettings
+            dashboardURL = connection.dashboardURL
+            sshCredentials = HermesSettingsStore.loadSSHCredentials(forHost: connection.apiSettings.hostName)
+        } else {
+            apiSettings = values.apiSettings
+            sshCredentials = values.sshCredentials
+        }
+        DispatchQueue.main.async {
+            isApplyingSavedEndpoint = false
+            syncSelectedEndpointWithCurrentURLs()
         }
     }
 
