@@ -592,10 +592,12 @@ struct ContentView: View {
                 searchSession: historySearchSession,
                 isResponsesStreaming: askWorkspaces.contains(where: { $0.session.isSending }),
                 isChatStreaming: chatSession.isSending,
+                isTUIGatewayBusy: selectedTUIWorkspace.store.isStreaming || selectedTUIWorkspace.store.isConnecting || selectedTUIWorkspace.store.isResumingSession,
                 connectedHostName: connectedHostName,
                 connectedWindowID: windowID,
                 onResumeResponses: resumeConversationInResponses,
-                onResumeChat: resumeConversationInChat
+                onResumeChat: resumeConversationInChat,
+                onResumeTUI: resumeConversationInTUIGateway
             )
         case .sessions:
             HermesSessionsView(
@@ -754,6 +756,15 @@ struct ContentView: View {
         guard !chatSession.isSending else { return }
         chatSession.resumeConversation(from: result)
         selectedTab = .chat
+    }
+
+    private func resumeConversationInTUIGateway(_ result: HermesDashboardConversationResult) {
+        let sessionID = [result.sessionID, result.session.id]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? ""
+        guard !sessionID.isEmpty else { return }
+        selectedTUIWorkspace.store.resumeStoredSession(sessionID, title: result.sessionFriendlyName, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        selectedTab = .tuiGateway
     }
 
     private func resumeSessionInTUIGateway(_ session: HermesAgentSessionSummary) {

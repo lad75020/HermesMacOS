@@ -12,10 +12,12 @@ struct HermesHistoryView: View {
     @Bindable var searchSession: HermesDashboardHistorySearchSession
     let isResponsesStreaming: Bool
     let isChatStreaming: Bool
+    let isTUIGatewayBusy: Bool
     let connectedHostName: String
     let connectedWindowID: UUID
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
     let onResumeChat: (HermesDashboardConversationResult) -> Void
+    let onResumeTUI: (HermesDashboardConversationResult) -> Void
 
     @State private var expandedConversationIDs: Set<String> = []
     @State private var apiProfiles: [HermesAPIProfile] = []
@@ -157,8 +159,10 @@ struct HermesHistoryView: View {
                         isExpanded: bindingForConversation(result.id),
                         isResumeResponsesDisabled: isResponsesStreaming,
                         isResumeChatDisabled: isChatStreaming,
+                        isResumeTUIDisabled: isTUIGatewayBusy,
                         onResumeResponses: onResumeResponses,
-                        onResumeChat: onResumeChat
+                        onResumeChat: onResumeChat,
+                        onResumeTUI: onResumeTUI
                     )
                 }
             }
@@ -220,8 +224,10 @@ private struct HermesDashboardConversationDisclosure: View {
     @Binding var isExpanded: Bool
     let isResumeResponsesDisabled: Bool
     let isResumeChatDisabled: Bool
+    let isResumeTUIDisabled: Bool
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
     let onResumeChat: (HermesDashboardConversationResult) -> Void
+    let onResumeTUI: (HermesDashboardConversationResult) -> Void
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
@@ -269,6 +275,13 @@ private struct HermesDashboardConversationDisclosure: View {
                         Label("Chat with Hermes", systemImage: "text.bubble")
                     }
                     .disabled(isResumeChatDisabled)
+
+                    Button {
+                        onResumeTUI(result)
+                    } label: {
+                        Label("Resume to TUI Gateway", systemImage: "terminal.fill")
+                    }
+                    .disabled(isResumeTUIDisabled)
                 } label: {
                     Label("Resume", systemImage: "arrow.uturn.forward")
                 }
