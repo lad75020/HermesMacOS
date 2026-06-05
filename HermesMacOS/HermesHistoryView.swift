@@ -813,9 +813,11 @@ struct HermesSessionsView: View {
     let dashboardURL: String
     @Bindable var store: HermesSessionsStore
     let isResponsesStreaming: Bool
+    let isTUIGatewayBusy: Bool
     let connectedHostName: String
     let connectedWindowID: UUID
     let onResumeResponses: (HermesDashboardConversationResult) -> Void
+    let onResumeTUI: (HermesAgentSessionSummary) -> Void
 
     @State private var expandedSessionIDs: Set<String> = []
     var body: some View {
@@ -950,7 +952,9 @@ struct HermesSessionsView: View {
                         conversationError: store.conversationErrorBySessionID[session.id],
                         isExpanded: bindingForSessionDetails(session.id),
                         isResumeDisabled: isResponsesStreaming,
+                        isResumeTUIDisabled: isTUIGatewayBusy,
                         onResume: { resumeSessionInAskHermes(session) },
+                        onResumeTUI: { onResumeTUI(session) },
                         onToggleDetails: { toggleDetails(for: session) }
                     )
                 }
@@ -992,7 +996,9 @@ private struct HermesSessionSummaryRow: View {
     let conversationError: String?
     @Binding var isExpanded: Bool
     let isResumeDisabled: Bool
+    let isResumeTUIDisabled: Bool
     let onResume: () -> Void
+    let onResumeTUI: () -> Void
     let onToggleDetails: () -> Void
 
     var body: some View {
@@ -1056,6 +1062,16 @@ private struct HermesSessionSummaryRow: View {
                 .controlSize(.small)
                 .disabled(isResumeDisabled || isConversationLoading)
                 .help(isResumeDisabled ? "Ask Hermes is streaming a response" : "Load this session and resume it in Ask Hermes")
+
+                Button {
+                    onResumeTUI()
+                } label: {
+                    Label("Resume to TUI Gateway", systemImage: "terminal.fill")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isResumeTUIDisabled)
+                .help(isResumeTUIDisabled ? "TUI Gateway is busy" : "Resume this stored session in the TUI Gateway tab")
 
                 Button {
                     onToggleDetails()

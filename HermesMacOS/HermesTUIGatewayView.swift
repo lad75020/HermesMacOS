@@ -101,6 +101,49 @@ struct HermesTUILiveSession: Identifiable, Equatable {
 
 @MainActor
 @Observable
+final class HermesTUIWorkspace: Identifiable {
+    let id = UUID()
+    let number: Int
+    let store = HermesTUIGatewayStore()
+    var promptText = ""
+    var requestResponses: [UUID: String] = [:]
+    var selectedAttachment: HermesPromptAttachment?
+    var selectedAttachmentPath = ""
+    private var acknowledgedCompletionToken = ""
+    private var acknowledgedFailureToken = ""
+
+    init(number: Int) {
+        self.number = number
+    }
+
+    var attention: HermesTopTabAttention? {
+        if store.isStreaming || store.isConnecting || store.isResumingSession { return .streaming }
+        if let token = failureToken, token != acknowledgedFailureToken { return .failed }
+        if let token = completionToken, token != acknowledgedCompletionToken { return .completed }
+        return nil
+    }
+
+    func acknowledgeCurrentStatus() {
+        if let token = completionToken { acknowledgedCompletionToken = token }
+        if let token = failureToken { acknowledgedFailureToken = token }
+    }
+
+    private var completionToken: String? {
+        guard store.connectionStatus == "Completed", !store.messages.isEmpty else { return nil }
+        let sessionPart = store.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "tui" : store.sessionID
+        return "completed-\(sessionPart)-\(store.messages.count)-\(store.eventCount)"
+    }
+
+    private var failureToken: String? {
+        let error = store.lastErrorMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !error.isEmpty { return error }
+        guard store.connectionStatus == "Error" || store.connectionStatus == "Connection failed" || store.connectionStatus == "Prompt failed" || store.connectionStatus == "Resume failed" else { return nil }
+        return "failed-\(store.messages.count)-\(store.eventCount)-\(store.connectionStatus)"
+    }
+}
+
+@MainActor
+@Observable
 final class HermesTUIGatewayStore {
     var messages: [HermesTUIGatewayMessage] = []
     var activeSessions: [HermesTUILiveSession] = []
@@ -113,6 +156,7 @@ final class HermesTUIGatewayStore {
     var isConnecting = false
     var isConnected = false
     var isStreaming = false
+    var isResumingSession = false
     var isRefreshingSessions = false
 
     private var webSocketTask: URLSessionWebSocketTask?
@@ -120,6 +164,10 @@ final class HermesTUIGatewayStore {
     private var requestCounter = 0
     private var pendingResponses: [String: CheckedContinuation<JSONValue, Error>] = [:]
     private var activeAssistantMessageID: UUID?
+    private var activeStreamMessageID: UUID?
+    private var activeStreamContentType: String?
+    private var currentTurnReceivedMessageDelta = false
+    private var currentTurnMessageDeltaSegmentCount = 0
 
     var canSendPrompt: Bool {
         isConnected && !isStreaming && !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -127,7 +175,7 @@ final class HermesTUIGatewayStore {
 
     func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
         guard !isConnecting else { return }
-        Task { await connectAndCreateSession(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
+        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true) }
     }
 
     func disconnect() {
@@ -138,6 +186,7 @@ final class HermesTUIGatewayStore {
         isConnected = false
         isConnecting = false
         isStreaming = false
+        isResumingSession = false
         connectionStatus = "Disconnected"
         failPending(HermesTUIGatewayError.notConnected)
     }
@@ -146,10 +195,11 @@ final class HermesTUIGatewayStore {
         Task { await createGatewaySession() }
     }
 
-    func submitPrompt(_ prompt: String) {
+    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "") {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-        Task { await submit(text) }
+        let path = attachmentPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty || attachment != nil || !path.isEmpty else { return }
+        Task { await submit(text, attachment: attachment, attachmentPath: path) }
     }
 
     func interruptSession() {
@@ -189,6 +239,12 @@ final class HermesTUIGatewayStore {
 
     func activateSession(_ liveSession: HermesTUILiveSession) {
         Task { await activate(sessionID: liveSession.id) }
+    }
+
+    func resumeStoredSession(_ storedSessionID: String, title: String = "", dashboardBaseURL: String, apiSettings: HermesAPISettings) {
+        let target = storedSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else { return }
+        Task { await resumeStoredSession(target, title: title, dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
     }
 
     func respondToApproval(messageID: UUID, choice: String, applyToAll: Bool = false) {
@@ -237,7 +293,8 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func connectAndCreateSession(dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
+    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool) async {
+        guard !isConnecting else { return }
         isConnecting = true
         lastErrorMessage = ""
         connectionStatus = "Connecting"
@@ -253,7 +310,7 @@ final class HermesTUIGatewayStore {
             connectionStatus = "Connected"
             receiveTask?.cancel()
             receiveTask = Task { await receiveLoop(task) }
-            if sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 await createGatewaySession()
             }
             await refreshActiveSessions()
@@ -265,6 +322,39 @@ final class HermesTUIGatewayStore {
         }
     }
 
+    private func resumeStoredSession(_ target: String, title: String, dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
+        guard !isStreaming else {
+            lastErrorMessage = "Wait for the active TUI Gateway turn to finish before resuming another session."
+            return
+        }
+        if !isConnected {
+            await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: false)
+        }
+        guard isConnected else { return }
+
+        isResumingSession = true
+        lastErrorMessage = ""
+        connectionStatus = "Resuming session"
+        defer { isResumingSession = false }
+
+        do {
+            let result = try await request("session.resume", params: ["session_id": .string(target)], timeoutSeconds: 180)
+            let object = result.objectValue
+            sessionID = object["session_id"]?.stringValue ?? sessionID
+            storedSessionID = object["resumed"]?.stringValue ?? object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? target
+            let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            sessionTitle = displayTitle.isEmpty ? "TUI session \(shortSessionID(storedSessionID.isEmpty ? sessionID : storedSessionID))" : displayTitle
+            resetStreamGrouping(resetTurn: false)
+            isStreaming = object["running"]?.boolValue ?? false
+            restoreMessages(from: object["messages"]?.arrayValue ?? [])
+            connectionStatus = isStreaming ? "Streaming" : "Session resumed"
+            await refreshActiveSessions()
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            connectionStatus = "Resume failed"
+        }
+    }
+
     private func createGatewaySession() async {
         do {
             let result = try await request("session.create", params: [:], timeoutSeconds: 120)
@@ -273,7 +363,7 @@ final class HermesTUIGatewayStore {
             storedSessionID = object["stored_session_id"]?.stringValue ?? ""
             sessionTitle = "TUI session \(shortSessionID(sessionID))"
             messages.removeAll()
-            activeAssistantMessageID = nil
+            resetStreamGrouping()
             isStreaming = false
             connectionStatus = sessionID.isEmpty ? "Session create failed" : "Session ready"
             appendEvent(title: "Session ready", content: "Created live TUI session \(shortSessionID(sessionID)).", eventType: "session.create")
@@ -284,19 +374,30 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func submit(_ text: String) async {
+    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "") async {
         guard canSendPrompt else {
             lastErrorMessage = HermesTUIGatewayError.missingSession.localizedDescription
             return
         }
-        messages.append(HermesTUIGatewayMessage(role: .user, title: "You", content: text))
-        let assistant = HermesTUIGatewayMessage(role: .assistant, title: "Hermes", content: "")
-        activeAssistantMessageID = assistant.id
-        messages.append(assistant)
+        let prepared: (text: String, activity: String?)
+        do {
+            prepared = try await promptPayload(text: text, attachment: attachment, attachmentPath: attachmentPath)
+        } catch {
+            lastErrorMessage = error.localizedDescription
+            connectionStatus = "Attachment failed"
+            return
+        }
+        let finalText = prepared.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !finalText.isEmpty else { return }
+        if let activity = prepared.activity, !activity.isEmpty {
+            appendEvent(title: "Attachment", content: activity, eventType: "input.attachment")
+        }
+        resetStreamGrouping()
+        messages.append(HermesTUIGatewayMessage(role: .user, title: "You", content: finalText))
         isStreaming = true
         connectionStatus = "Sending prompt"
         do {
-            _ = try await request("prompt.submit", params: ["session_id": .string(sessionID), "text": .string(text)], timeoutSeconds: 60)
+            _ = try await request("prompt.submit", params: ["session_id": .string(sessionID), "text": .string(finalText)], timeoutSeconds: 60)
             connectionStatus = "Streaming"
         } catch {
             isStreaming = false
@@ -306,6 +407,56 @@ final class HermesTUIGatewayStore {
         }
     }
 
+    private func promptPayload(text: String, attachment: HermesPromptAttachment?, attachmentPath: String) async throws -> (text: String, activity: String?) {
+        guard let attachment else { return (text, nil) }
+        if attachment.isImage {
+            return try await promptPayloadWithNativeImage(text: text, attachment: attachment, attachmentPath: attachmentPath)
+        }
+
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = attachmentPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pathLine = path.isEmpty ? "" : "\nLocal path: \(path)"
+        let block: String
+        if attachment.isUTF8Text {
+            block = attachment.textAttachmentBlock + pathLine
+        } else {
+            block = "\nAttached file: \(attachment.filename) (\(attachment.mimeType), \(attachment.formattedByteCount))\(pathLine)\nUse the local path with file-aware tools if you need to inspect this document."
+        }
+        let finalText = [trimmedText, block.trimmingCharacters(in: .whitespacesAndNewlines)]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+        return (finalText, "Attached file: \(attachment.filename) (\(attachment.formattedByteCount))")
+    }
+
+    private func promptPayloadWithNativeImage(text: String, attachment: HermesPromptAttachment, attachmentPath: String) async throws -> (text: String, activity: String?) {
+        let path = attachmentPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else {
+            let fallback = [text.trimmingCharacters(in: .whitespacesAndNewlines), "Attached image: \(attachment.filename)\n\(attachment.base64DataURL)"]
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n\n")
+            return (fallback, "Attached image inline: \(attachment.filename) (\(attachment.formattedByteCount))")
+        }
+        let dropText = [Self.quotedAttachmentPath(path), text.trimmingCharacters(in: .whitespacesAndNewlines)]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        let result = try await request("input.detect_drop", params: ["session_id": .string(sessionID), "text": .string(dropText)], timeoutSeconds: 30)
+        let object = result.objectValue
+        guard object["matched"]?.boolValue == true else {
+            throw HermesTUIGatewayError.requestFailed("Could not attach image at \(path).")
+        }
+        let finalText = object["text"]?.stringValue ?? text
+        let name = object["name"]?.stringValue ?? attachment.filename
+        let tokenEstimate = object["token_estimate"]?.stringValue.map { " • ~\($0) image tokens" } ?? ""
+        return (finalText, "Attached image: \(name) (\(attachment.formattedByteCount))\(tokenEstimate)")
+    }
+
+    private nonisolated static func quotedAttachmentPath(_ path: String) -> String {
+        let escaped = path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+
     private func activate(sessionID target: String) async {
         do {
             let result = try await request("session.activate", params: ["session_id": .string(target)], timeoutSeconds: 60)
@@ -313,7 +464,7 @@ final class HermesTUIGatewayStore {
             sessionID = object["session_id"]?.stringValue ?? target
             storedSessionID = object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? storedSessionID
             sessionTitle = activeSessions.first(where: { $0.id == target })?.title ?? "TUI session \(shortSessionID(target))"
-            activeAssistantMessageID = nil
+            resetStreamGrouping(resetTurn: false)
             isStreaming = object["running"]?.boolValue ?? false
             connectionStatus = isStreaming ? "Streaming" : "Session active"
             restoreMessages(from: object["messages"]?.arrayValue ?? [])
@@ -399,7 +550,7 @@ final class HermesTUIGatewayStore {
         case "message.start":
             isStreaming = true
             connectionStatus = "Hermes is responding"
-            ensureAssistantMessage()
+            resetStreamGrouping()
         case "message.delta":
             let delta = payload["text"]?.stringValue ?? ""
             if !delta.isEmpty { appendAssistantDelta(delta) }
@@ -407,9 +558,22 @@ final class HermesTUIGatewayStore {
         case "message.complete":
             let final = payload["text"]?.stringValue ?? ""
             let status = payload["status"]?.stringValue ?? "complete"
-            if !final.isEmpty { updateAssistantMessage(text: final) }
+            if !final.isEmpty { completeAssistantMessage(text: final) }
             isStreaming = false
+            resetStreamGrouping(resetTurn: true)
             connectionStatus = status == "complete" ? "Completed" : status.capitalized
+        case "reasoning.delta", "thinking.delta":
+            let text = payload["text"]?.stringValue ?? ""
+            if !text.isEmpty {
+                appendStreamContent(
+                    type: event.type,
+                    title: event.type == "thinking.delta" ? "Thinking" : "Reasoning",
+                    content: text,
+                    role: .event,
+                    eventType: event.type
+                )
+            }
+            connectionStatus = shortStatus(event.type == "thinking.delta" ? "Thinking" : "Reasoning")
         case "tool.start":
             connectionStatus = shortStatus("Running \(payload["name"]?.stringValue ?? "tool")")
             appendEvent(title: "Tool started", content: toolSummary(payload: payload), eventType: event.type)
@@ -439,10 +603,17 @@ final class HermesTUIGatewayStore {
             appendEvent(title: "Background task complete", content: payload["text"]?.stringValue ?? eventSummary(payload: payload), eventType: event.type)
         case "error":
             isStreaming = false
+            resetStreamGrouping(resetTurn: true)
             let message = payload["message"]?.stringValue ?? eventSummary(payload: payload)
             lastErrorMessage = message
             connectionStatus = "Error"
             appendEvent(title: "Gateway error", content: message, eventType: event.type)
+        case let deltaType where deltaType.hasSuffix(".delta"):
+            let text = payload["text"]?.stringValue ?? eventSummary(payload: payload)
+            if !text.isEmpty {
+                appendStreamContent(type: deltaType, title: streamTitle(for: deltaType), content: text, role: .event, eventType: deltaType)
+            }
+            connectionStatus = shortStatus(deltaType)
         default:
             connectionStatus = shortStatus(event.type)
             appendEvent(title: event.type, content: eventSummary(payload: payload), eventType: event.type)
@@ -524,30 +695,68 @@ final class HermesTUIGatewayStore {
     }
 
     private func appendAssistantDelta(_ delta: String) {
-        ensureAssistantMessage()
-        guard let activeAssistantMessageID, let index = messages.firstIndex(where: { $0.id == activeAssistantMessageID }) else { return }
-        messages[index].content += delta
+        currentTurnReceivedMessageDelta = true
+        let result = appendStreamContent(type: "message.delta", title: "Hermes", content: delta, role: .assistant)
+        if result.created {
+            currentTurnMessageDeltaSegmentCount += 1
+        }
+        activeAssistantMessageID = result.id
     }
 
     private func updateAssistantMessage(text: String) {
-        ensureAssistantMessage()
-        guard let activeAssistantMessageID, let index = messages.firstIndex(where: { $0.id == activeAssistantMessageID }) else { return }
+        let result = appendStreamContent(type: "message.delta", title: "Hermes", content: text, role: .assistant)
+        activeAssistantMessageID = result.id
+    }
+
+    private func completeAssistantMessage(text: String) {
+        if !currentTurnReceivedMessageDelta {
+            updateAssistantMessage(text: text)
+            return
+        }
+        guard currentTurnMessageDeltaSegmentCount <= 1,
+              let activeAssistantMessageID,
+              let index = messages.firstIndex(where: { $0.id == activeAssistantMessageID })
+        else { return }
         messages[index].content = text
     }
 
-    private func ensureAssistantMessage() {
-        if let activeAssistantMessageID, messages.contains(where: { $0.id == activeAssistantMessageID }) { return }
-        let assistant = HermesTUIGatewayMessage(role: .assistant, title: "Hermes", content: "")
-        activeAssistantMessageID = assistant.id
-        messages.append(assistant)
+    @discardableResult
+    private func appendStreamContent(type: String, title: String, content: String, role: HermesTUIGatewayMessage.Role, eventType: String? = nil) -> (id: UUID?, created: Bool) {
+        guard !content.isEmpty else { return (nil, false) }
+        if activeStreamContentType == type,
+           let activeStreamMessageID,
+           let index = messages.firstIndex(where: { $0.id == activeStreamMessageID }) {
+            messages[index].content += content
+            return (messages[index].id, false)
+        }
+        let message = HermesTUIGatewayMessage(role: role, title: title, content: content, eventType: eventType)
+        activeStreamContentType = type
+        activeStreamMessageID = message.id
+        if role == .assistant {
+            activeAssistantMessageID = message.id
+        }
+        messages.append(message)
+        return (message.id, true)
+    }
+
+    private func resetStreamGrouping(resetTurn: Bool = true) {
+        activeAssistantMessageID = nil
+        activeStreamMessageID = nil
+        activeStreamContentType = nil
+        if resetTurn {
+            currentTurnReceivedMessageDelta = false
+            currentTurnMessageDeltaSegmentCount = 0
+        }
     }
 
     private func appendEvent(title: String, content: String, eventType: String) {
+        resetStreamGrouping(resetTurn: false)
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         messages.append(HermesTUIGatewayMessage(role: .event, title: title, content: trimmed.isEmpty ? eventType : trimmed, eventType: eventType))
     }
 
     private func appendRequest(kind: HermesTUIGatewayMessage.RequestKind, title: String, payload: [String: JSONValue]) {
+        resetStreamGrouping(resetTurn: false)
         let requestID = payload["request_id"]?.stringValue
         let content = requestText(kind: kind, payload: payload)
         messages.append(HermesTUIGatewayMessage(role: .request, title: title, content: content, eventType: "\(kind.rawValue).request", requestKind: kind, requestID: requestID))
@@ -569,6 +778,7 @@ final class HermesTUIGatewayStore {
             return HermesTUIGatewayMessage(role: role == "user" ? .user : .assistant, title: role == "user" ? "You" : "Hermes", content: text)
         }
         messages = restored
+        resetStreamGrouping()
     }
 
     private func failPending(_ error: Error) {
@@ -615,6 +825,14 @@ final class HermesTUIGatewayStore {
         return JSONValue.object(payload).compactDescription
     }
 
+    private func streamTitle(for eventType: String) -> String {
+        eventType
+            .replacingOccurrences(of: ".delta", with: "")
+            .split(separator: ".")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+
     private func shortStatus(_ value: String) -> String {
         let normalized = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         guard normalized.count > 40 else { return normalized }
@@ -627,15 +845,174 @@ final class HermesTUIGatewayStore {
     }
 }
 
+struct HermesTUIGatewayWorkspacesView: View {
+    let apiSettings: HermesAPISettings
+    let dashboardURL: String
+    let workspaces: [HermesTUIWorkspace]
+    @Binding var selectedWorkspaceID: HermesTUIWorkspace.ID
+    let connectedHostName: String
+    let connectedWindowID: UUID
+    let onSelectWorkspace: (HermesTUIWorkspace) -> Void
+    let onAddWorkspace: () -> Void
+    let onDeleteWorkspace: (HermesTUIWorkspace) -> Void
+
+    private var selectedWorkspace: HermesTUIWorkspace {
+        workspaces.first(where: { $0.id == selectedWorkspaceID }) ?? workspaces[0]
+    }
+
+    var body: some View {
+        HermesTUIGatewayWorkspaceHost(
+            apiSettings: apiSettings,
+            dashboardURL: dashboardURL,
+            workspace: selectedWorkspace,
+            connectedHostName: connectedHostName,
+            connectedWindowID: connectedWindowID,
+            workspaceControls: workspaceControls
+        )
+        .id(selectedWorkspace.id)
+    }
+
+    private var workspaceControls: AnyView {
+        AnyView(
+            HStack(spacing: 6) {
+                Button(action: onAddWorkspace) {
+                    HermesComposerCircleButtonLabel(systemImage: "plus", foreground: Color.hermesActionBlue, size: 24)
+                }
+                .buttonStyle(.plain)
+                .help("Open a new TUI Gateway workspace")
+                .accessibilityLabel("Open a new TUI Gateway workspace")
+
+                ForEach(workspaces) { workspace in
+                    Button {
+                        onSelectWorkspace(workspace)
+                    } label: {
+                        HermesTUIWorkspaceButtonLabel(
+                            number: workspace.number,
+                            isSelected: workspace.id == selectedWorkspaceID,
+                            attention: workspace.attention
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .controlSize(.small)
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            onDeleteWorkspace(workspace)
+                        } label: {
+                            Label("Delete Workspace", systemImage: "trash")
+                        }
+                        .disabled(workspace.store.isStreaming || workspace.store.isConnecting || workspace.store.isResumingSession)
+                    }
+                    .help("Switch to TUI Gateway workspace \(workspace.number)")
+                    .accessibilityLabel("TUI Gateway workspace \(workspace.number)")
+                }
+            }
+        )
+    }
+}
+
+private struct HermesTUIGatewayWorkspaceHost: View {
+    let apiSettings: HermesAPISettings
+    let dashboardURL: String
+    @Bindable var workspace: HermesTUIWorkspace
+    let connectedHostName: String
+    let connectedWindowID: UUID
+    let workspaceControls: AnyView
+
+    var body: some View {
+        HermesTUIGatewayView(
+            apiSettings: apiSettings,
+            dashboardURL: dashboardURL,
+            store: workspace.store,
+            promptText: $workspace.promptText,
+            requestResponses: $workspace.requestResponses,
+            selectedAttachment: $workspace.selectedAttachment,
+            selectedAttachmentPath: $workspace.selectedAttachmentPath,
+            connectedHostName: connectedHostName,
+            connectedWindowID: connectedWindowID,
+            workspaceControls: workspaceControls
+        )
+    }
+}
+
+private struct HermesTUIWorkspaceButtonLabel: View {
+    let number: Int
+    let isSelected: Bool
+    let attention: HermesTopTabAttention?
+    @State private var isBlinking = false
+
+    private var backgroundColor: Color {
+        switch attention {
+        case .streaming:
+            return .hermesOrange
+        case .completed:
+            return .green
+        case .failed:
+            return .hermesDestructive
+        case nil:
+            return isSelected ? .hermesActionBlue : .hermesSurface
+        }
+    }
+
+    private var foregroundColor: Color {
+        (attention != nil || isSelected) ? .white : .primary
+    }
+
+    private var blinkOpacity: Double {
+        attention == .streaming && isBlinking ? 0.45 : 1.0
+    }
+
+    var body: some View {
+        Text("\(number)")
+            .font(.caption.weight(.bold))
+            .monospacedDigit()
+            .foregroundStyle(foregroundColor)
+            .frame(width: 24, height: 24)
+            .background(backgroundColor.opacity(blinkOpacity), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(Color.white.opacity(0.14), lineWidth: 1))
+            .task(id: attention) {
+                await runBlinkLoop(for: attention)
+            }
+    }
+
+    @MainActor
+    private func runBlinkLoop(for attention: HermesTopTabAttention?) async {
+        guard attention == .streaming else {
+            isBlinking = false
+            return
+        }
+
+        isBlinking = false
+        while !Task.isCancelled {
+            withAnimation(.easeInOut(duration: 0.45)) {
+                isBlinking = true
+            }
+            do { try await Task.sleep(nanoseconds: 450_000_000) } catch { break }
+            if Task.isCancelled { break }
+            withAnimation(.easeInOut(duration: 0.45)) {
+                isBlinking = false
+            }
+            do { try await Task.sleep(nanoseconds: 450_000_000) } catch { break }
+        }
+        isBlinking = false
+    }
+}
+
 struct HermesTUIGatewayView: View {
     let apiSettings: HermesAPISettings
     let dashboardURL: String
     @Bindable var store: HermesTUIGatewayStore
+    @Binding var promptText: String
+    @Binding var requestResponses: [UUID: String]
+    @Binding var selectedAttachment: HermesPromptAttachment?
+    @Binding var selectedAttachmentPath: String
     let connectedHostName: String
     let connectedWindowID: UUID
+    let workspaceControls: AnyView
 
-    @State private var promptText = ""
-    @State private var requestResponses: [UUID: String] = [:]
+    @State private var isImportingAttachment = false
+    @State private var dashboardSkills = HermesDashboardSkillsStore()
+    @State private var localPathSuggestions = HermesLocalPathSuggestionsStore()
+    @State private var selectedSkillIndex = 0
     @AppStorage("hermes.macOS.tuiGatewayBubbleFontSize") private var bubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
 
@@ -647,7 +1024,11 @@ struct HermesTUIGatewayView: View {
             composer
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
+        .onChange(of: promptText) { _, _ in handlePromptSkillQueryChange() }
         .onDisappear { }
+        .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
+            handleAttachmentImport(result)
+        }
     }
 
     private var header: some View {
@@ -655,9 +1036,10 @@ struct HermesTUIGatewayView: View {
             HStack(spacing: 12) {
                 Label("TUI Gateway", systemImage: "terminal.fill")
                     .hermesWebsiteTitleFont(size: 22, weight: .bold)
+                workspaceControls
                 Spacer()
                 HermesConnectedHostLabel(hostName: connectedHostName, windowID: connectedWindowID)
-                if store.isConnecting || store.isStreaming || store.isRefreshingSessions {
+                if store.isConnecting || store.isStreaming || store.isResumingSession || store.isRefreshingSessions {
                     ProgressView().controlSize(.small)
                 }
             }
@@ -678,7 +1060,7 @@ struct HermesTUIGatewayView: View {
 
                 Button("New session") { store.createSession() }
                     .buttonStyle(.bordered)
-                    .disabled(!store.isConnected || store.isStreaming)
+                    .disabled(!store.isConnected || store.isStreaming || store.isResumingSession)
 
                 Button("Interrupt") { store.interruptSession() }
                     .buttonStyle(.bordered)
@@ -772,42 +1154,196 @@ struct HermesTUIGatewayView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let selectedAttachment {
+                HermesAttachmentChip(attachment: selectedAttachment) {
+                    self.selectedAttachment = nil
+                    selectedAttachmentPath = ""
+                }
+                .disabled(store.isStreaming)
+            }
+
             HStack(alignment: .bottom, spacing: 12) {
-                TextEditor(text: $promptText)
-                    .font(.system(size: promptFontSize))
-                    .scrollContentBackground(.hidden)
-                    .frame(minHeight: 78, maxHeight: 150)
-                    .padding(8)
-                    .hermesGlassInput(tint: Color.hermesSurfaceInput.opacity(store.isStreaming ? 0.42 : 0.70))
-                    .disabled(!store.isConnected || store.isStreaming)
-                    .overlay(alignment: .topLeading) {
-                        if promptText.isEmpty {
-                            Text(store.isConnected ? "Send a prompt through the TUI Gateway…" : "Connect to the TUI Gateway first…")
-                                .font(.system(size: promptFontSize))
-                                .foregroundStyle(Color.hermesSecondaryText)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 16)
-                                .allowsHitTesting(false)
-                        }
+                VStack(alignment: .leading, spacing: 8) {
+                    if shouldShowSkillPicker {
+                        HermesSkillSlashPicker(
+                            skills: filteredSkillSuggestions,
+                            selectedIndex: selectedSkillIndex,
+                            isLoading: dashboardSkills.isLoading,
+                            errorMessage: dashboardSkills.lastErrorMessage,
+                            onSelect: selectSkillSuggestion
+                        )
+                    } else if shouldShowPathPicker, let activePathToken {
+                        HermesPathSlashPicker(
+                            pathToken: activePathToken,
+                            paths: localPathSuggestions.suggestions,
+                            selectedIndex: selectedSkillIndex,
+                            errorMessage: localPathSuggestions.lastErrorMessage,
+                            onSelect: selectPathSuggestion
+                        )
                     }
 
-                Button { submitPrompt() } label: {
-                    HermesComposerSendButtonLabel()
+                    TextEditor(text: $promptText)
+                        .font(.system(size: promptFontSize))
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 78, maxHeight: 150)
+                        .padding(8)
+                        .hermesGlassInput(tint: Color.hermesSurfaceInput.opacity(store.isStreaming ? 0.42 : 0.70))
+                        .disabled(!store.isConnected || store.isStreaming)
+                        .onKeyPress(.upArrow) {
+                            guard shouldShowCompletionPicker else { return .ignored }
+                            moveSkillSelection(delta: -1)
+                            return .handled
+                        }
+                        .onKeyPress(.downArrow) {
+                            guard shouldShowCompletionPicker else { return .ignored }
+                            moveSkillSelection(delta: 1)
+                            return .handled
+                        }
+                        .onKeyPress(.return) {
+                            guard shouldShowCompletionPicker else { return .ignored }
+                            if shouldShowSkillPicker, let skill = selectedSkillSuggestion {
+                                selectSkillSuggestion(skill)
+                                return .handled
+                            }
+                            if shouldShowPathPicker, let path = selectedPathSuggestion {
+                                selectPathSuggestion(path)
+                                return .handled
+                            }
+                            return .ignored
+                        }
+                        .onKeyPress(.tab) {
+                            guard shouldShowPathPicker,
+                                  let path = selectedPathSuggestion,
+                                  path.isDirectory
+                            else { return .ignored }
+                            selectPathSuggestion(path)
+                            return .handled
+                        }
+                        .overlay(alignment: .topLeading) {
+                            if promptText.isEmpty {
+                                Text(store.isConnected ? "Send a prompt through the TUI Gateway…" : "Connect to the TUI Gateway first…")
+                                    .font(.system(size: promptFontSize))
+                                    .foregroundStyle(Color.hermesSecondaryText)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 16)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                 }
-                .buttonStyle(.plain)
-                .disabled(!store.canSendPrompt || promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .keyboardShortcut(.return, modifiers: [.command])
-                .help("Send through TUI Gateway (⌘↩)")
+
+                VStack(spacing: 8) {
+                    Button { isImportingAttachment = true } label: {
+                        HermesComposerCircleButtonLabel(systemImage: selectedAttachment == nil ? "paperclip" : "paperclip.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!store.isConnected || store.isStreaming)
+                    .help(selectedAttachment == nil ? "Attach file" : "Change attached file")
+
+                    Button { submitPrompt() } label: {
+                        HermesComposerSendButtonLabel()
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!store.canSendPrompt || (promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedAttachment == nil))
+                    .keyboardShortcut(.return, modifiers: [.command])
+                    .help("Send through TUI Gateway (⌘↩)")
+                }
             }
         }
         .padding(16)
         .hermesGlassPanel(cornerRadius: 0)
     }
 
+    private var activeSlashToken: String? { promptText.hermesActiveSlashCompletionToken }
+    private var activeSkillQuery: String? { promptText.hermesActiveSlashSkillQuery }
+
+    private var filteredSkillSuggestions: [HermesDashboardSkill] {
+        guard let query = activeSkillQuery else { return [] }
+        if query.isEmpty { return dashboardSkills.skills }
+        return dashboardSkills.skills.filter { $0.name.range(of: query, options: [.caseInsensitive, .anchored]) != nil }
+    }
+
+    private var activePathToken: String? {
+        guard let token = activeSlashToken else { return nil }
+        let pathText = token.dropFirst()
+        guard !pathText.isEmpty, !dashboardSkills.isLoading, filteredSkillSuggestions.isEmpty else { return nil }
+        return token
+    }
+
+    private var shouldShowSkillPicker: Bool {
+        activeSkillQuery != nil && (dashboardSkills.isLoading || (!dashboardSkills.lastErrorMessage.isEmpty && activePathToken == nil) || !filteredSkillSuggestions.isEmpty)
+    }
+
+    private var shouldShowPathPicker: Bool { activePathToken != nil }
+
+    private var shouldShowCompletionPicker: Bool { shouldShowSkillPicker || shouldShowPathPicker }
+
+    private var selectedSkillSuggestion: HermesDashboardSkill? {
+        let suggestions = filteredSkillSuggestions
+        guard suggestions.indices.contains(selectedSkillIndex) else { return suggestions.first }
+        return suggestions[selectedSkillIndex]
+    }
+
+    private var selectedPathSuggestion: HermesLocalPathSuggestion? {
+        let suggestions = localPathSuggestions.suggestions
+        guard suggestions.indices.contains(selectedSkillIndex) else { return suggestions.first }
+        return suggestions[selectedSkillIndex]
+    }
+
+    private func handlePromptSkillQueryChange() {
+        guard activeSlashToken != nil else {
+            localPathSuggestions.clear()
+            selectedSkillIndex = 0
+            return
+        }
+        dashboardSkills.refreshIfNeeded(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        if let activePathToken {
+            localPathSuggestions.refresh(pathToken: activePathToken)
+        } else {
+            localPathSuggestions.clear()
+        }
+        let count = shouldShowSkillPicker ? filteredSkillSuggestions.count : localPathSuggestions.suggestions.count
+        if count == 0 || selectedSkillIndex >= count { selectedSkillIndex = 0 }
+    }
+
+    private func moveSkillSelection(delta: Int) {
+        let count = shouldShowSkillPicker ? filteredSkillSuggestions.count : localPathSuggestions.suggestions.count
+        guard count > 0 else { return }
+        selectedSkillIndex = (selectedSkillIndex + delta + count) % count
+    }
+
+    private func selectSkillSuggestion(_ skill: HermesDashboardSkill) {
+        promptText = promptText.replacingActiveSlashSkillQuery(with: skill.name)
+        localPathSuggestions.clear()
+        selectedSkillIndex = 0
+    }
+
+    private func selectPathSuggestion(_ path: HermesLocalPathSuggestion) {
+        promptText = promptText.replacingActiveSlashCompletionToken(with: path.insertedPath)
+        selectedSkillIndex = 0
+    }
+
     private func submitPrompt() {
         let text = promptText
-        store.submitPrompt(text)
+        store.submitPrompt(text, attachment: selectedAttachment, attachmentPath: selectedAttachmentPath)
         promptText = ""
+        selectedAttachment = nil
+        selectedAttachmentPath = ""
+    }
+
+    private func handleAttachmentImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            do {
+                selectedAttachment = try HermesPromptAttachment.load(from: url)
+                selectedAttachmentPath = url.path
+                store.lastErrorMessage = ""
+            } catch {
+                store.lastErrorMessage = error.localizedDescription
+            }
+        case .failure(let error):
+            store.lastErrorMessage = error.localizedDescription
+        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
