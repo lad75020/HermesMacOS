@@ -189,6 +189,10 @@ enum HermesAPIKeychain {
             cache.store(legacyKey)
             return legacyKey
         }
+        if let envKey = loadAPIKeyFromHermesEnvironment() {
+            saveAPIKey(envKey)
+            return envKey
+        }
         cache.store("")
         return ""
     }
@@ -223,6 +227,66 @@ enum HermesAPIKeychain {
         if status == errSecSuccess || status == errSecDuplicateItem {
             SecItemDelete(baseQuery(dataProtection: false) as CFDictionary)
         }
+    }
+
+    private static func loadAPIKeyFromHermesEnvironment() -> String? {
+        let candidateHomes = [
+            ProcessInfo.processInfo.environment["HERMES_HOME"],
+            HermesRuntimePaths.defaultHermesHome,
+            NSString(string: "~/.hermes").expandingTildeInPath,
+            "/Volumes/WDBlack4TB/.hermes"
+        ]
+
+        var seen = Set<String>()
+        for candidate in candidateHomes.compactMap({ $0 }) {
+            let home = NSString(string: candidate.trimmingCharacters(in: .whitespacesAndNewlines)).expandingTildeInPath
+            guard !home.isEmpty, seen.insert(home).inserted else { continue }
+            let envURL = URL(fileURLWithPath: home).appendingPathComponent(".env")
+            guard let content = try? String(contentsOf: envURL, encoding: .utf8),
+                  let key = parseEnvironmentValue(named: "API_SERVER_KEY", from: content),
+                  !key.isEmpty
+            else { continue }
+            return key
+        }
+        return nil
+    }
+
+    private static func parseEnvironmentValue(named name: String, from content: String) -> String? {
+        for rawLine in content.split(whereSeparator: \.isNewline) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty, !line.hasPrefix("#"), let separator = line.firstIndex(of: "=") else { continue }
+            let key = line[..<separator].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard key == name else { continue }
+            var value = line[line.index(after: separator)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if let comment = unquotedCommentIndex(in: value) {
+                value = value[..<comment].trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if value.count >= 2, let first = value.first, let last = value.last,
+               (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+                value = String(value.dropFirst().dropLast())
+            }
+            return value
+        }
+        return nil
+    }
+
+    private static func unquotedCommentIndex(in value: String) -> String.Index? {
+        var quote: Character?
+        var previous: Character?
+        for index in value.indices {
+            let character = value[index]
+            if character == "\"" || character == "'" {
+                if quote == character, previous != "\\" {
+                    quote = nil
+                } else if quote == nil {
+                    quote = character
+                }
+            } else if character == "#", quote == nil {
+                return index
+            }
+            previous = character
+        }
+        return nil
     }
 
     private static func baseQuery(dataProtection: Bool = true) -> [String: Any] {
