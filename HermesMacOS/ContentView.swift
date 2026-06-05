@@ -121,12 +121,14 @@ struct HermesSideTabSwitcher: View {
     @Binding var selectedTab: HermesMacOSTab
     let askAttention: HermesAskWorkspaceAttention?
     let chatAttention: HermesTopTabAttention?
+    let tuiGatewayAttention: HermesTopTabAttention?
     let historyAttention: HermesTopTabAttention?
     let approvalsAttention: HermesTopTabAttention?
     let onSelectTab: (HermesMacOSTab) -> Void
     @State private var reachabilityMonitor = HermesReachabilityMonitor()
     @State private var isAskBlinking = false
     @State private var isChatBlinking = false
+    @State private var isTUIGatewayBlinking = false
     @State private var isHistoryBlinking = false
     @State private var isApprovalsBlinking = false
 
@@ -180,6 +182,9 @@ struct HermesSideTabSwitcher: View {
         .task(id: chatAttention) {
             await runChatBlinkLoop(for: chatAttention)
         }
+        .task(id: tuiGatewayAttention) {
+            await runTUIGatewayBlinkLoop(for: tuiGatewayAttention)
+        }
         .task(id: historyAttention) {
             await runHistoryBlinkLoop(for: historyAttention)
         }
@@ -191,6 +196,7 @@ struct HermesSideTabSwitcher: View {
     private func foregroundColor(for tab: HermesMacOSTab) -> Color {
         if tab == .ask, activeAskAttention != nil { return .white }
         if tab == .chat, chatAttention != nil { return .white }
+        if tab == .tuiGateway, tuiGatewayAttention != nil { return .white }
         if tab == .history, historyAttention != nil { return .white }
         if tab == .approvals, approvalsAttention != nil { return .white }
         return selectedTab == tab ? .white : .primary
@@ -211,6 +217,18 @@ struct HermesSideTabSwitcher: View {
         }
         if tab == .chat {
             switch chatAttention {
+            case .completed:
+                return .green
+            case .streaming:
+                return .hermesOrange
+            case .failed:
+                return .hermesDestructive
+            case nil:
+                break
+            }
+        }
+        if tab == .tuiGateway {
+            switch tuiGatewayAttention {
             case .completed:
                 return .green
             case .streaming:
@@ -251,6 +269,7 @@ struct HermesSideTabSwitcher: View {
     private func backgroundOpacity(for tab: HermesMacOSTab) -> Double {
         if tab == .ask && activeAskAttention == .streaming && isAskBlinking { return 0.45 }
         if tab == .chat && chatAttention == .streaming && isChatBlinking { return 0.45 }
+        if tab == .tuiGateway && tuiGatewayAttention == .streaming && isTUIGatewayBlinking { return 0.45 }
         if tab == .history && historyAttention == .streaming && isHistoryBlinking { return 0.45 }
         if tab == .approvals && approvalsAttention == .streaming && isApprovalsBlinking { return 0.45 }
         return 1.0
@@ -271,6 +290,18 @@ struct HermesSideTabSwitcher: View {
         }
         if tab == .chat {
             switch chatAttention {
+            case .completed:
+                return .green.opacity(0.24)
+            case .streaming:
+                return .hermesOrange.opacity(0.24)
+            case .failed:
+                return .hermesDestructive.opacity(0.24)
+            case nil:
+                break
+            }
+        }
+        if tab == .tuiGateway {
+            switch tuiGatewayAttention {
             case .completed:
                 return .green.opacity(0.24)
             case .streaming:
@@ -316,6 +347,11 @@ struct HermesSideTabSwitcher: View {
     @MainActor
     private func runChatBlinkLoop(for attention: HermesTopTabAttention?) async {
         await runBlinkLoop(isStreaming: attention == .streaming) { isChatBlinking = $0 }
+    }
+
+    @MainActor
+    private func runTUIGatewayBlinkLoop(for attention: HermesTopTabAttention?) async {
+        await runBlinkLoop(isStreaming: attention == .streaming) { isTUIGatewayBlinking = $0 }
     }
 
     @MainActor
@@ -456,6 +492,13 @@ struct ContentView: View {
         return nil
     }
 
+    private var tuiGatewayTabAttention: HermesTopTabAttention? {
+        if tuiWorkspaces.contains(where: { $0.attention == .failed }) { return .failed }
+        if tuiWorkspaces.contains(where: { $0.attention == .streaming }) { return .streaming }
+        if tuiWorkspaces.contains(where: { $0.attention == .completed }) { return .completed }
+        return nil
+    }
+
     private var historyTabAttention: HermesTopTabAttention? {
         historySearchSession.tabAttention
     }
@@ -499,6 +542,7 @@ struct ContentView: View {
                 selectedTab: $selectedTab,
                 askAttention: askTabAttention,
                 chatAttention: chatTabAttention,
+                tuiGatewayAttention: tuiGatewayTabAttention,
                 historyAttention: historyTabAttention,
                 approvalsAttention: approvalsTabAttention,
                 onSelectTab: handleTopTabSelection
