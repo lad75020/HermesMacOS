@@ -24,6 +24,8 @@ The app fetches the dashboard HTML and extracts `window.__HERMES_SESSION_TOKEN__
 
 Dashboard API paths observed:
 - `api/config/raw`: raw YAML config GET/PUT.
+- `api/auth/ws-ticket`: optional one-time ticket for TUI Gateway WebSocket authentication.
+- `api/ws`: TUI Gateway WebSocket JSON-RPC transport after `http` to `ws` or `https` to `wss` scheme conversion.
 - `api/sessions/search/conversations`: dashboard conversation search.
 - `api/sessions`: paged session list.
 - `api/sessions/{session_id}/messages`: per-session messages.
@@ -56,6 +58,11 @@ Two speech-to-text paths are implemented:
 - Apple local speech recognition using AVFoundation/Speech framework permissions.
 - Whisper WebSocket transcription through `wss://whisper.dubertrand.fr`.
 
+## TUI Gateway JSON-RPC
+`HermesTUIGatewayStore` uses the dashboard `api/ws` WebSocket route to send JSON-RPC methods and receive gateway events. The app sends `session.create`, `prompt.submit`, `input.detect_drop`, `session.interrupt`, `session.close`, `session.active_list`, `session.activate`, `session.resume`, and request-response methods for approvals, clarifications, sudo, and secrets.
+
+Events with `method: event` update the native transcript. The app handles `message.*`, `reasoning.delta`, `thinking.delta`, `tool.*`, `approval.request`, `clarify.request`, `sudo.request`, `secret.request`, `status.update`, `background.complete`, `error`, and unknown event types. Consecutive delta chunks are grouped by event type so assistant text, reasoning, and tool output remain separate bubbles.
+
 ## macOS platform services
 - Keychain: API keys, SSH keys, certificate pins, AES retention key.
 - LocalAuthentication: startup unlock for app secrets.
@@ -76,6 +83,7 @@ Two speech-to-text paths are implemented:
 ## Evidence
 - `HermesMacOS/HermesModelsAPI.swift`: Hermes API endpoint builders, headers, request bodies, attachment handling.
 - `HermesMacOS/HermesChatCompletionsAPI.swift`: Chat Completions request and streaming logic.
+- `HermesMacOS/HermesTUIGatewayView.swift`: dashboard WebSocket setup, TUI JSON-RPC methods, event routing, multi-workspace state, native TUI attachments, and transcript rendering.
 - `HermesMacOS/HermesSecurityUtilities.swift`: dashboard token extraction, raw config API, endpoint security, Keychain, process runner.
 - `HermesMacOS/HermesDashboardHistorySearch.swift`, `HermesHistoryView.swift`: session search/list/messages paths.
 - `HermesMacOS/HermesDashboardSkills.swift`, `HermesDashboardToolsets.swift`, `HermesDashboardSchedules.swift`, `HermesDashboardPluginsStore.swift`: dashboard API integrations.

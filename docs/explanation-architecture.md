@@ -18,6 +18,7 @@ SwiftUI app shell
         +-- Prompt sessions
         |     HermesResponsesSession -> /v1/responses
         |     HermesChatSession      -> /v1/chat/completions
+        |     HermesTUIGatewayStore  -> dashboard api/ws JSON-RPC
         |
         +-- Dashboard stores
         |     HermesDashboardClient -> dashboard HTML token -> api/* JSON
@@ -29,13 +30,15 @@ SwiftUI app shell
               Keychain, encrypted retention, TLS pinning, local approvals
 ```
 
-The shell owns shared state: selected tab, endpoint settings, dashboard URL, window identity, and per-feature stores. Each feature view receives the pieces it needs instead of reaching into global singletons for everything.
+The shell owns shared state: selected tab, endpoint settings, dashboard URL, window identity, and per-feature stores. Each feature view receives the pieces it needs instead of reaching into global singletons for everything. TUI Gateway follows the same pattern as Ask workspaces: `ContentView` owns the workspace array, while each `HermesTUIWorkspace` owns one `HermesTUIGatewayStore` plus workspace-local draft, request-response, and attachment state.
 
 ## Why stores and sessions are observable
 Prompt clients and dashboard panels produce long-lived status: streaming text, event counts, active request IDs, selected board/task, pending approvals, loading state, and error messages. Observable store/session classes let async work update the UI without manually threading callbacks through every view.
 
 ## Why dashboard APIs are accessed through HTML token extraction
 The dashboard already owns management data and protected routes. HermesMacOS reuses that session model by extracting the token from the dashboard bootstrap HTML. This avoids duplicating dashboard auth in the app, but it creates coupling to the dashboard's `window.__HERMES_SESSION_TOKEN__` shape.
+
+TUI Gateway extends that dashboard-auth model to WebSockets. It extracts the same dashboard session token, asks the dashboard for a WebSocket ticket when available, and then opens `api/ws`. The app keeps the live JSON-RPC state in an observable store so streamed events can update SwiftUI status cards, transcript bubbles, and request controls immediately.
 
 ## Why local runtime mutation remains native
 Local profiles, model config, MCP server YAML, SSH keys, clipboard history, and repository updates all touch macOS-specific resources. Implementing them natively gives the app direct access to Keychain, file panels, LocalAuthentication, and controlled process execution.

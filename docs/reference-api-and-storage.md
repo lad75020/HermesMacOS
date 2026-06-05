@@ -37,6 +37,36 @@ Dashboard base URL comes from Settings or fallback normalization from the API ba
 | Trigger cron job | `api/cron/jobs/{id}/trigger` | `HermesDashboardSchedulesStore` |
 | Plugins hub | `api/dashboard/plugins/hub` | `HermesDashboardPluginsStore` |
 
+## TUI Gateway WebSocket
+The TUI Gateway tab uses the Dashboard base URL, not the `/v1` API base URL, for its WebSocket transport. `HermesTUIGatewayStore` resolves the dashboard URL, extracts a dashboard session token through `HermesDashboardClient`, requests a WebSocket ticket from `POST api/auth/ws-ticket` when possible, then opens `api/ws` with `URLSessionWebSocketTask`.
+
+Scheme handling:
+- Dashboard `http` becomes WebSocket `ws`.
+- Dashboard `https` becomes WebSocket `wss`.
+- Unsupported dashboard URL schemes fail with `invalidWebSocketURL`.
+
+Authentication query handling:
+- Preferred: query parameter named `ticket` with the value returned by `api/auth/ws-ticket`.
+- Fallback: query parameter named `token` with the dashboard session token.
+
+The WebSocket payloads use JSON-RPC 2.0. Outgoing requests include `jsonrpc`, generated `id`, `method`, and `params`. Incoming messages with a matching `id` resolve pending requests. Incoming notifications with `method: event` carry `type`, optional `session_id`, and `payload` and are rendered into the TUI transcript.
+
+Primary JSON-RPC methods used by HermesMacOS:
+- `session.create`
+- `prompt.submit`
+- `input.detect_drop`
+- `session.interrupt`
+- `session.close`
+- `session.active_list`
+- `session.activate`
+- `session.resume`
+- `approval.respond`
+- `clarify.respond`
+- `sudo.respond`
+- `secret.respond`
+
+See [TUI Gateway WebSocket reference](reference-tui-gateway-websocket.md) for the full method and event tables.
+
 ## Local files and paths
 Observed local Hermes paths:
 - Hermes root `config.yaml`.
@@ -74,7 +104,7 @@ User-facing non-secret settings use UserDefaults or AppStorage. Observed keys in
 Encrypted local retention stores data under keys prefixed by `hermes.macOS.encrypted.` and migrates legacy plaintext values on load.
 
 ## Attachments
-`HermesPromptAttachment` supports image, UTF-8 text/source/config files, PDFs, and Office documents. Images are encoded as data URLs. Text attachments are inlined with truncation. Binary documents are represented by metadata and instruction text rather than full inline bytes.
+`HermesPromptAttachment` supports image, UTF-8 text/source/config files, PDFs, and Office documents. Ask and Chat encode images as data URLs, inline text files with truncation, and describe binary documents with metadata. TUI Gateway reuses the same attachment model but prepares payloads for the WebSocket protocol: native image attachments call `input.detect_drop` with the local path, text attachments are inlined, and binary documents include filename, MIME type, byte count, and local path instructions.
 
 ## Network security behavior
 - Sensitive non-loopback HTTP is rejected.

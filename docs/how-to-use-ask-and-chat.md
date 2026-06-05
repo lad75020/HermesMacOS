@@ -1,6 +1,6 @@
 # How to use Ask Hermes and Chat with Hermes
 
-This guide covers the two prompt clients in HermesMacOS: Ask Hermes for `/v1/responses` and Chat with Hermes for `/v1/chat/completions`.
+This guide covers the two HTTP prompt clients in HermesMacOS: Ask Hermes for `/v1/responses` and Chat with Hermes for `/v1/chat/completions`. For the native WebSocket-based TUI client, see [How to use the TUI Gateway tab](how-to-use-tui-gateway.md).
 
 ## Prerequisites
 - API base URL is configured and reachable.
@@ -61,6 +61,9 @@ Use the workspace controls to create independent Ask sessions. Each workspace ha
 
 ## Cancellation
 Both Ask and Chat create a Hermes request ID for active work. Pressing Cancel stops the local task and asks the API gateway to cancel `/v1/requests/{request_id}/cancel`.
+
+## Related TUI Gateway flow
+TUI Gateway does not send prompts through `/v1/responses` or `/v1/chat/completions`. It opens the dashboard `api/ws` WebSocket and sends JSON-RPC methods such as `session.create`, `prompt.submit`, `input.detect_drop`, and `session.resume`. Use it when you want the native HermesMacOS UI around the same live protocol used by the terminal TUI.
 
 ## Verification
 - Ask Hermes should show event count, token usage when returned, and final status.

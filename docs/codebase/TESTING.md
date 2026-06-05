@@ -17,6 +17,7 @@ If DerivedData is locked by Xcode, README documents using an isolated DerivedDat
 After a successful build, these areas need manual or integration smoke checks because they depend on live Hermes services or macOS permissions:
 - Ask Hermes: configure API base URL, fetch profiles, submit streaming and non-streaming requests, cancel an active request, resume a previous session.
 - Chat with Hermes: submit streaming and non-streaming chat prompts, system prompt, attachments, and cancellation.
+- TUI Gateway: connect to dashboard `api/ws`, create a session, submit a prompt, attach an image/text/document, verify `input.attachment` and streamed transcript bubbles, answer any request bubbles, create/switch/delete numbered workspaces, interrupt/close sessions, and resume a stored History or Sessions row into the selected TUI workspace.
 - Dashboard-backed tabs: verify the dashboard URL serves HTML with `window.__HERMES_SESSION_TOKEN__`, then exercise history, sessions, skills, schedules, plugins, toolsets, MCP servers, and raw config operations.
 - Approvals Inbox: trigger a local approval, approve/deny, and confirm auto-refresh updates the tab state.
 - Kanban: connect to a dashboard/plugin that exposes the expected Kanban API and live update stream.

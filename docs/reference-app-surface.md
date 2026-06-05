@@ -20,10 +20,27 @@ Files: `HermesChatView.swift`, `HermesChatCompletionsAPI.swift`.
 
 Purpose: send chat prompts to `/v1/chat/completions` with streaming/non-streaming modes, optional system prompt, attachments, cancellation, and history resume.
 
+### TUI Gateway
+Files: `HermesTUIGatewayView.swift`, `ContentView.swift`, `HermesHistoryView.swift`.
+
+Purpose: run Hermes through the dashboard `api/ws` WebSocket JSON-RPC protocol from a native SwiftUI tab. This mirrors the live TUI execution path while keeping the transcript, composer, attachments, session controls, and request prompts inside HermesMacOS.
+
+Key capabilities:
+- Connects to the dashboard WebSocket route with a one-time WebSocket ticket when available, falling back to the dashboard session token query parameter.
+- Creates, activates, interrupts, closes, lists, and resumes TUI sessions with JSON-RPC methods such as `session.create`, `session.active_list`, `session.activate`, and `session.resume`.
+- Multiple TUI workspaces, each with its own `HermesTUIGatewayStore`, live WebSocket/session state, prompt draft, request-response drafts, selected attachment, local attachment path, and attention state.
+- Ask-style `+` and numbered workspace buttons beside the TUI Gateway title. Numbered buttons show streaming, completed, failed, and selected state.
+- File upload through the composer paperclip using `HermesPromptAttachment`. Images use native TUI image attachment via `input.detect_drop`; UTF-8 text is inlined; binary documents include metadata and local path instructions.
+- Streamed transcript bubbles for assistant text, reasoning, thinking, tool progress, status updates, background completions, and generic gateway events.
+- Interactive request bubbles for approvals, clarifications, sudo password requests, and secret requests.
+- Resume to TUI Gateway actions from History and Sessions restore stored dashboard sessions through `session.resume` into the selected TUI workspace.
+
+See [TUI Gateway WebSocket reference](reference-tui-gateway-websocket.md) for protocol details.
+
 ### History
 Files: `HermesHistoryView.swift`, `HermesDashboardHistorySearch.swift`.
 
-Purpose: search dashboard conversations, browse sessions, inspect messages, filter by profile, and resume compatible sessions into Ask or Chat.
+Purpose: search dashboard conversations, browse sessions, inspect messages, filter by profile, and resume compatible sessions into Ask, Chat, or TUI Gateway.
 
 ### Sessions
 File: `HermesHistoryView.swift`.
