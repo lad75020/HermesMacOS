@@ -12,6 +12,7 @@
 		0FD78FCA7D9BEBCEF1A82EB6 /* RulesExpanded-Regular.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 952B0A6ABF1E202BF580B269 /* RulesExpanded-Regular.woff2 */; };
 		2776471A84D2345DB28B851A /* HermesSpeechToText.swift in Sources */ = {isa = PBXBuildFile; fileRef = C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */; };
 		32686F25A2C1B0B0D2FA6A05 /* HermesApprovalsInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF725DF544EB45BE8AC28558 /* HermesApprovalsInboxView.swift */; };
+		3F5F3B55BBE446B7A3DD1421 /* HermesTUIGatewayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A27FC268B4B4C2A9A864111 /* HermesTUIGatewayView.swift */; };
 		483D761E91F51DD21D2548E4 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EACF0689F8F9A1772463C81 /* SplashView.swift */; };
 		4D73F0062FC686E600A0C5B1 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D73F0052FC686E600A0C5B1 /* SettingsView.swift */; };
 		512A9F172FCF1B3100A7E101 /* HermesReachabilityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 512A9F162FCF1B3100A7E101 /* HermesReachabilityMonitor.swift */; };
@@ -71,6 +72,7 @@
 		3B6DA44781589EEE8E783934 /* RulesExpanded-Bold.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "RulesExpanded-Bold.woff2"; sourceTree = "<group>"; };
 		43E8823EB1ED5D1894AC19DA /* HermesConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationView.swift; sourceTree = "<group>"; };
 		4501AB7BBEE0E95DA1F88BD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4A27FC268B4B4C2A9A864111 /* HermesTUIGatewayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesTUIGatewayView.swift; sourceTree = "<group>"; };
 		4D73F0052FC686E600A0C5B1 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		512A9F162FCF1B3100A7E101 /* HermesReachabilityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesReachabilityMonitor.swift; sourceTree = "<group>"; };
 		5D7BC54E98D84B76AA8B217C /* HermesSecurityUtilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesSecurityUtilities.swift; sourceTree = "<group>"; };
@@ -159,6 +161,7 @@
 				AC30A9107E0067942908A526 /* HermesAskWorkspacesView.swift */,
 				03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */,
 				E23D78F8C8391F85BE1F3FFF /* HermesChatView.swift */,
+				4A27FC268B4B4C2A9A864111 /* HermesTUIGatewayView.swift */,
 				43E8823EB1ED5D1894AC19DA /* HermesConfigurationView.swift */,
 				8D33B2720F6D63DCEDA2F29A /* HermesDashboardWebView.swift */,
 				62113EAB4619B25D9DB1B639 /* HermesConfigurationSkillsSection.swift */,
@@ -290,6 +293,7 @@
 				6CF2BF183476837D25A0F25D /* HermesAskWorkspacesView.swift in Sources */,
 				E6744ACE824DD627E37B9020 /* HermesChatCompletionsAPI.swift in Sources */,
 				AB364C25AEB7E281976FF7DA /* HermesChatView.swift in Sources */,
+				3F5F3B55BBE446B7A3DD1421 /* HermesTUIGatewayView.swift in Sources */,
 				D65D293D4E89089922501618 /* HermesConfigurationView.swift in Sources */,
 				A77665ED6CD384D1BB7ADA2B /* HermesDashboardWebView.swift in Sources */,
 				B12085FA4173877654A196ED /* HermesConfigurationSkillsSection.swift in Sources */,

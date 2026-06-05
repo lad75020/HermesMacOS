@@ -424,6 +424,7 @@ struct ContentView: View {
     @State private var sessionsStore = HermesSessionsStore()
     @State private var approvalsInboxStore = HermesApprovalsInboxStore()
     @State private var kanbanStore = HermesKanbanStore()
+    @State private var tuiGatewayStore = HermesTUIGatewayStore()
     @State private var installationSession = HermesInstallationSession()
     @State private var configurationWebViewStore = HermesDashboardWebViewStore()
     @State private var selectedTab = HermesMacOSTab.ask
@@ -559,6 +560,14 @@ struct ContentView: View {
                 chatSession: chatSession,
                 promptHistoryStore: promptHistory,
                 dashboardURL: dashboardURL,
+                connectedHostName: connectedHostName,
+                connectedWindowID: windowID
+            )
+        case .tuiGateway:
+            HermesTUIGatewayView(
+                apiSettings: apiSettings,
+                dashboardURL: dashboardURL,
+                store: tuiGatewayStore,
                 connectedHostName: connectedHostName,
                 connectedWindowID: windowID
             )
@@ -716,6 +725,7 @@ struct ContentView: View {
 enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case ask
     case chat
+    case tuiGateway
     case history
     case sessions
     case approvals
@@ -730,6 +740,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .ask: "Ask Hermes"
         case .chat: "Chat with Hermes"
+        case .tuiGateway: "TUI Gateway"
         case .history: "History"
         case .sessions: "Sessions"
         case .approvals: "Approvals Inbox"
@@ -744,6 +755,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .ask: "dot.radiowaves.left.and.right"
         case .chat: "text.bubble"
+        case .tuiGateway: "terminal.fill"
         case .history: "clock.arrow.circlepath"
         case .sessions: "rectangle.stack"
         case .approvals: "tray.full"
