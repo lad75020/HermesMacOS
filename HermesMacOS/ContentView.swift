@@ -723,6 +723,9 @@ struct ContentView: View {
             firstWorkspace.session.lastKnownResponseID = values.lastResponseID
             firstWorkspace.session.lastKnownResponseTitle = values.lastResponseTitle
         }
+        if let firstTUIWorkspace = tuiWorkspaces.first {
+            firstTUIWorkspace.selectedProfile = values.requestDraft.profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "default" : values.requestDraft.profile
+        }
         chatSession.lastKnownChatSessionID = values.lastChatSessionID
         chatSession.lastKnownChatSessionTitle = values.lastChatSessionTitle
         connectionCenter.updateWindow(id: windowID, apiSettings: values.apiSettings, dashboardURL: values.dashboardURL)
@@ -759,7 +762,7 @@ struct ContentView: View {
 
     private func addTUIWorkspace() {
         let nextNumber = (tuiWorkspaces.map(\.number).max() ?? 0) + 1
-        let workspace = HermesTUIWorkspace(number: nextNumber)
+        let workspace = HermesTUIWorkspace(number: nextNumber, selectedProfile: selectedTUIWorkspace.selectedProfile)
         tuiWorkspaces.append(workspace)
         selectedTUIWorkspaceID = workspace.id
     }
@@ -780,7 +783,7 @@ struct ContentView: View {
         tuiWorkspaces.remove(at: deletedIndex)
 
         if tuiWorkspaces.isEmpty {
-            let replacement = HermesTUIWorkspace(number: 1)
+            let replacement = HermesTUIWorkspace(number: 1, selectedProfile: workspace.selectedProfile)
             tuiWorkspaces = [replacement]
             selectedTUIWorkspaceID = replacement.id
         } else if wasSelected {
@@ -807,13 +810,24 @@ struct ContentView: View {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .first { !$0.isEmpty } ?? ""
         guard !sessionID.isEmpty else { return }
-        selectedTUIWorkspace.store.resumeStoredSession(sessionID, title: result.sessionFriendlyName, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        let workspace = selectedTUIWorkspace
+        let profile = normalizedProfile(result.session.profile ?? workspace.selectedProfile)
+        workspace.selectedProfile = profile
+        workspace.store.resumeStoredSession(sessionID, title: result.sessionFriendlyName, profile: profile, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         selectedTab = .tuiGateway
     }
 
     private func resumeSessionInTUIGateway(_ session: HermesAgentSessionSummary) {
-        selectedTUIWorkspace.store.resumeStoredSession(session.id, title: session.displayTitle, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        let workspace = selectedTUIWorkspace
+        let profile = normalizedProfile(session.profile ?? workspace.selectedProfile)
+        workspace.selectedProfile = profile
+        workspace.store.resumeStoredSession(session.id, title: session.displayTitle, profile: profile, dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
         selectedTab = .tuiGateway
+    }
+
+    private func normalizedProfile(_ profile: String) -> String {
+        let trimmed = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "default" : trimmed
     }
 
     private func handleTopTabSelection(_ tab: HermesMacOSTab) {

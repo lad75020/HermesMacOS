@@ -105,6 +105,7 @@ final class HermesTUIWorkspace: Identifiable {
     let id = UUID()
     let number: Int
     let store = HermesTUIGatewayStore()
+    var selectedProfile: String
     var promptText = ""
     var requestResponses: [UUID: String] = [:]
     var selectedAttachment: HermesPromptAttachment?
@@ -112,8 +113,10 @@ final class HermesTUIWorkspace: Identifiable {
     private var acknowledgedCompletionToken = ""
     private var acknowledgedFailureToken = ""
 
-    init(number: Int) {
+    init(number: Int, selectedProfile: String = "default") {
         self.number = number
+        let trimmedProfile = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.selectedProfile = trimmedProfile.isEmpty ? "default" : trimmedProfile
     }
 
     var attention: HermesTopTabAttention? {
@@ -150,6 +153,7 @@ final class HermesTUIGatewayStore {
     var sessionID = ""
     var storedSessionID = ""
     var sessionTitle = "New TUI session"
+    var activeProfile = ""
     var connectionStatus = "Idle"
     var eventCount = 0
     var lastErrorMessage = ""
@@ -173,9 +177,15 @@ final class HermesTUIGatewayStore {
         isConnected && !isStreaming && !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings) {
+    private func normalizedProfile(_ profile: String) -> String {
+        let trimmed = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "default" : trimmed
+    }
+
+    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, profile: String) {
         guard !isConnecting else { return }
-        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true) }
+        let selectedProfile = normalizedProfile(profile)
+        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, selectedProfile: selectedProfile) }
     }
 
     func disconnect() {
@@ -191,8 +201,9 @@ final class HermesTUIGatewayStore {
         failPending(HermesTUIGatewayError.notConnected)
     }
 
-    func createSession() {
-        Task { await createGatewaySession() }
+    func createSession(profile: String) {
+        let selectedProfile = normalizedProfile(profile)
+        Task { await createGatewaySession(profile: selectedProfile) }
     }
 
     func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "") {
@@ -224,6 +235,7 @@ final class HermesTUIGatewayStore {
                 appendEvent(title: "Session closed", content: shortSessionID(sessionID), eventType: "session.close")
                 sessionID = ""
                 storedSessionID = ""
+                activeProfile = ""
                 sessionTitle = "New TUI session"
                 isStreaming = false
                 await refreshActiveSessions()
@@ -241,10 +253,11 @@ final class HermesTUIGatewayStore {
         Task { await activate(sessionID: liveSession.id) }
     }
 
-    func resumeStoredSession(_ storedSessionID: String, title: String = "", dashboardBaseURL: String, apiSettings: HermesAPISettings) {
+    func resumeStoredSession(_ storedSessionID: String, title: String = "", profile: String, dashboardBaseURL: String, apiSettings: HermesAPISettings) {
         let target = storedSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else { return }
-        Task { await resumeStoredSession(target, title: title, dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
+        let selectedProfile = normalizedProfile(profile)
+        Task { await resumeStoredSession(target, title: title, profile: selectedProfile, dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
     }
 
     func respondToApproval(messageID: UUID, choice: String, applyToAll: Bool = false) {
@@ -293,7 +306,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool) async {
+    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, selectedProfile: String) async {
         guard !isConnecting else { return }
         isConnecting = true
         lastErrorMessage = ""
@@ -311,7 +324,7 @@ final class HermesTUIGatewayStore {
             receiveTask?.cancel()
             receiveTask = Task { await receiveLoop(task) }
             if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                await createGatewaySession()
+                await createGatewaySession(profile: selectedProfile)
             }
             await refreshActiveSessions()
         } catch {
@@ -322,13 +335,14 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func resumeStoredSession(_ target: String, title: String, dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
+    private func resumeStoredSession(_ target: String, title: String, profile: String, dashboardBaseURL: String, apiSettings: HermesAPISettings) async {
         guard !isStreaming else {
             lastErrorMessage = "Wait for the active TUI Gateway turn to finish before resuming another session."
             return
         }
+        let selectedProfile = normalizedProfile(profile)
         if !isConnected {
-            await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: false)
+            await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: false, selectedProfile: selectedProfile)
         }
         guard isConnected else { return }
 
@@ -338,10 +352,18 @@ final class HermesTUIGatewayStore {
         defer { isResumingSession = false }
 
         do {
-            let result = try await request("session.resume", params: ["session_id": .string(target)], timeoutSeconds: 180)
+            let result = try await request(
+                "session.resume",
+                params: [
+                    "session_id": .string(target),
+                    "profile": .string(selectedProfile)
+                ],
+                timeoutSeconds: 180
+            )
             let object = result.objectValue
             sessionID = object["session_id"]?.stringValue ?? sessionID
             storedSessionID = object["resumed"]?.stringValue ?? object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? target
+            activeProfile = selectedProfile
             let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
             sessionTitle = displayTitle.isEmpty ? "TUI session \(shortSessionID(storedSessionID.isEmpty ? sessionID : storedSessionID))" : displayTitle
             resetStreamGrouping(resetTurn: false)
@@ -355,12 +377,14 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func createGatewaySession() async {
+    private func createGatewaySession(profile: String) async {
         do {
-            let result = try await request("session.create", params: [:], timeoutSeconds: 120)
+            let selectedProfile = normalizedProfile(profile)
+            let result = try await request("session.create", params: ["profile": .string(selectedProfile)], timeoutSeconds: 120)
             let object = result.objectValue
             sessionID = object["session_id"]?.stringValue ?? ""
             storedSessionID = object["stored_session_id"]?.stringValue ?? ""
+            activeProfile = selectedProfile
             sessionTitle = "TUI session \(shortSessionID(sessionID))"
             messages.removeAll()
             resetStreamGrouping()
@@ -927,6 +951,7 @@ private struct HermesTUIGatewayWorkspaceHost: View {
             requestResponses: $workspace.requestResponses,
             selectedAttachment: $workspace.selectedAttachment,
             selectedAttachmentPath: $workspace.selectedAttachmentPath,
+            selectedProfile: $workspace.selectedProfile,
             connectedHostName: connectedHostName,
             connectedWindowID: connectedWindowID,
             workspaceControls: workspaceControls
@@ -1005,11 +1030,14 @@ struct HermesTUIGatewayView: View {
     @Binding var requestResponses: [UUID: String]
     @Binding var selectedAttachment: HermesPromptAttachment?
     @Binding var selectedAttachmentPath: String
+    @Binding var selectedProfile: String
     let connectedHostName: String
     let connectedWindowID: UUID
     let workspaceControls: AnyView
 
     @State private var isImportingAttachment = false
+    @State private var apiProfiles: [HermesAPIProfile] = []
+    @State private var profileRefreshError = ""
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var localPathSuggestions = HermesLocalPathSuggestionsStore()
     @State private var selectedSkillIndex = 0
@@ -1024,6 +1052,10 @@ struct HermesTUIGatewayView: View {
             composer
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
+        .task(id: apiSettings.baseURL) {
+            await refreshAPIProfiles()
+        }
+        .onChange(of: apiSettings) { _, _ in Task { await refreshAPIProfiles() } }
         .onChange(of: promptText) { _, _ in handlePromptSkillQueryChange() }
         .onDisappear { }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
@@ -1045,20 +1077,34 @@ struct HermesTUIGatewayView: View {
             }
 
             HStack(alignment: .top, spacing: 12) {
+                HermesProfileSelector(
+                    selectedProfile: $selectedProfile,
+                    apiProfiles: apiProfiles,
+                    lockedProfile: store.activeProfile,
+                    isDisabled: store.isConnecting || store.isStreaming || store.isResumingSession
+                ) { newProfile in
+                    handleProfileSelection(newProfile)
+                }
                 HermesStatusCard(title: "Session", value: store.sessionTitle, tint: .hermesActionBlue, minimumWidth: 210, maximumWidth: .infinity)
                 HermesStatusCard(title: "Status", value: store.connectionStatus, tint: .hermesOrange, minimumWidth: 210, maximumWidth: 300)
                 HermesStatusCard(title: "Events", value: "\(store.eventCount)", tint: .hermesPurple, minimumWidth: 100, maximumWidth: 120)
             }
 
+            if !profileRefreshError.isEmpty {
+                Label(profileRefreshError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesDestructive)
+            }
+
             HStack(spacing: 10) {
                 Button(store.isConnected ? "Reconnect" : "Connect") {
                     store.disconnect()
-                    store.connect(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+                    store.connect(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profile: selectedProfile)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(store.isConnecting)
 
-                Button("New session") { store.createSession() }
+                Button("New session") { store.createSession(profile: selectedProfile) }
                     .buttonStyle(.bordered)
                     .disabled(!store.isConnected || store.isStreaming || store.isResumingSession)
 
@@ -1276,6 +1322,42 @@ struct HermesTUIGatewayView: View {
     private var shouldShowPathPicker: Bool { activePathToken != nil }
 
     private var shouldShowCompletionPicker: Bool { shouldShowSkillPicker || shouldShowPathPicker }
+
+    private func handleProfileSelection(_ newProfile: String) {
+        selectedProfile = normalizedProfile(newProfile)
+        let active = normalizedProfile(store.activeProfile)
+        guard store.isConnected,
+              !store.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !store.isConnecting,
+              !store.isStreaming,
+              !store.isResumingSession,
+              active != selectedProfile
+        else { return }
+        store.createSession(profile: selectedProfile)
+    }
+
+    private func refreshAPIProfiles() async {
+        do {
+            let profiles = try await HermesAPIProfilesClient.fetchProfiles(apiSettings: apiSettings)
+            apiProfiles = profiles
+            profileRefreshError = ""
+            syncSelectedProfileWithAPIProfiles(profiles)
+        } catch {
+            apiProfiles = []
+            profileRefreshError = String(localized: "Profiles unavailable: \(error.localizedDescription)")
+        }
+    }
+
+    private func syncSelectedProfileWithAPIProfiles(_ profiles: [HermesAPIProfile]) {
+        let current = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+        if current.isEmpty { selectedProfile = profiles.first?.id ?? "default" }
+        else if !profiles.isEmpty && !profiles.contains(where: { $0.id == current }) { selectedProfile = profiles.first?.id ?? "default" }
+    }
+
+    private func normalizedProfile(_ profile: String) -> String {
+        let trimmed = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "default" : trimmed
+    }
 
     private var selectedSkillSuggestion: HermesDashboardSkill? {
         let suggestions = filteredSkillSuggestions
