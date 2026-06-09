@@ -633,16 +633,127 @@ private struct HermesAPIProfilesEnvelope: Decodable { let data: [HermesAPIProfil
 enum HermesAPIProfilesClient {
     static func fetchProfiles(apiSettings: HermesAPISettings) async throws -> [HermesAPIProfile] {
         guard let url = HermesAPISettings.profilesURL(from: apiSettings.baseURL) else { throw HermesResponsesError.invalidURL }
+        do {
+            return try await fetchProfiles(apiSettings: apiSettings, url: url, apiKey: apiSettings.apiKey)
+        } catch HermesResponsesError.httpError(401) where HermesEndpointSecurity.isLoopbackHost(url.host) {
+            if let refreshedAPIKey = HermesAPIKeychain.refreshAPIKeyFromHermesEnvironmentIfAvailable(),
+               refreshedAPIKey != apiSettings.apiKey {
+                do {
+                    return try await fetchProfiles(apiSettings: apiSettings, url: url, apiKey: refreshedAPIKey)
+                } catch {
+                    if let fallback = localProfileFallback(for: url) { return fallback }
+                    throw error
+                }
+            }
+            if let fallback = localProfileFallback(for: url) { return fallback }
+            throw HermesResponsesError.httpError(401)
+        } catch {
+            if let fallback = localProfileFallback(for: url) { return fallback }
+            throw error
+        }
+    }
+
+    private static func fetchProfiles(apiSettings: HermesAPISettings, url: URL, apiKey: String) async throws -> [HermesAPIProfile] {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if !apiSettings.apiKey.isEmpty {
+        if !apiKey.isEmpty {
             try HermesEndpointSecurity.validateSensitiveURL(url)
-            request.setValue("Bearer \(apiSettings.apiKey)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         let (data, response) = try await HermesNetworkSessionFactory.session(for: apiSettings).data(for: request)
         try HermesNetworkSessionFactory.validate(response: response)
         return try JSONDecoder().decode(HermesAPIProfilesEnvelope.self, from: data).data.filter { !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    private static func localProfileFallback(for url: URL) -> [HermesAPIProfile]? {
+        guard HermesEndpointSecurity.isLoopbackHost(url.host) else { return nil }
+        let fileManager = FileManager.default
+        let homeURL = URL(fileURLWithPath: HermesRuntimePaths.defaultHermesHome, isDirectory: true).standardizedFileURL
+        guard fileManager.fileExists(atPath: homeURL.path) else { return nil }
+
+        var profiles = [profile(from: homeURL, id: "default", isDefault: true)]
+        let profilesURL = homeURL.appendingPathComponent("profiles", isDirectory: true)
+        if let entries = try? fileManager.contentsOfDirectory(at: profilesURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            var seen = Set(["default"])
+            for entry in entries.sorted(by: { $0.lastPathComponent.localizedCaseInsensitiveCompare($1.lastPathComponent) == .orderedAscending }) {
+                guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+                let id = normalizedProfileID(entry.lastPathComponent)
+                guard !id.isEmpty, seen.insert(id).inserted else { continue }
+                profiles.append(profile(from: entry, id: id, isDefault: false))
+            }
+        }
+        return profiles.isEmpty ? nil : profiles
+    }
+
+    private static func profile(from profileURL: URL, id: String, isDefault: Bool) -> HermesAPIProfile {
+        let configURL = profileURL.appendingPathComponent("config.yaml")
+        let content = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        let model = readYAMLScalar(content: content, section: "model", key: "default") ?? readTopLevelYAMLScalar(content: content, key: "default")
+        let provider = readYAMLScalar(content: content, section: "model", key: "provider") ?? readTopLevelYAMLScalar(content: content, key: "provider")
+        return HermesAPIProfile(
+            id: id,
+            name: id,
+            isDefault: isDefault,
+            model: nonEmpty(model),
+            provider: nonEmpty(provider)
+        )
+    }
+
+    private static func normalizedProfileID(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.caseInsensitiveCompare("default") == .orderedSame { return "default" }
+        let lowered = trimmed.lowercased()
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz0123456789_-")
+        guard lowered.rangeOfCharacter(from: allowed.inverted) == nil else { return "" }
+        return lowered
+    }
+
+    private static func nonEmpty(_ value: String?) -> String? {
+        let trimmed = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func readYAMLScalar(content: String, section: String, key: String) -> String? {
+        let lines = content.components(separatedBy: "\n")
+        var inSection = false
+        for raw in lines {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            if !raw.hasPrefix(" ") && !raw.hasPrefix("\t") {
+                inSection = trimmed == "\(section):"
+                continue
+            }
+            guard inSection else { continue }
+            let prefix = "\(key):"
+            guard trimmed.hasPrefix(prefix) else { continue }
+            return cleanYAMLScalar(String(trimmed.dropFirst(prefix.count)))
+        }
+        return nil
+    }
+
+    private static func readTopLevelYAMLScalar(content: String, key: String) -> String? {
+        let prefix = "\(key):"
+        for raw in content.components(separatedBy: "\n") {
+            guard !raw.hasPrefix(" "), !raw.hasPrefix("\t") else { continue }
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed.hasPrefix(prefix) else { continue }
+            return cleanYAMLScalar(String(trimmed.dropFirst(prefix.count)))
+        }
+        return nil
+    }
+
+    private static func cleanYAMLScalar(_ rawValue: String) -> String? {
+        var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.isEmpty { return nil }
+        if let commentIndex = value.firstIndex(of: "#") {
+            value = String(value[..<commentIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if value.count >= 2, let first = value.first, let last = value.last,
+           (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+            value = String(value.dropFirst().dropLast())
+        }
+        return value.isEmpty ? nil : value
     }
 }
 

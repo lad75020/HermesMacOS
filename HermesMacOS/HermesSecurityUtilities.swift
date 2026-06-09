@@ -208,6 +208,12 @@ enum HermesAPIKeychain {
         SecItemAdd(query as CFDictionary, nil)
     }
 
+    static func refreshAPIKeyFromHermesEnvironmentIfAvailable() -> String? {
+        guard let envKey = loadAPIKeyFromHermesEnvironment() else { return nil }
+        saveAPIKey(envKey)
+        return envKey
+    }
+
     private static func loadAPIKey(dataProtection: Bool) -> String? {
         var query = baseQuery(dataProtection: dataProtection)
         query[kSecReturnData as String] = true
