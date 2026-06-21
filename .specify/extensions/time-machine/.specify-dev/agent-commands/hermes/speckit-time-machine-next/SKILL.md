@@ -38,7 +38,24 @@ Accepted flags:
 > When `--include-skipped` is passed, `skipped` features are included in the run.
 > When `--redo <id>` is passed, only that single feature is processed regardless of status.
 
+### Operator policy pitfall: repeated gates and branch topology
+
+Before processing many queued features, ask once whether the user wants to apply a
+single policy for the repeated satisfaction/push gates (for example, "assume
+satisfied=yes and push=yes for every feature unless a blocker appears"). This
+avoids interrupting at the same gate for every feature while still preserving the
+human decision when the policy changes.
+
+Also be explicit about branch topology. If this loop continues by checking out a
+new feature branch from the currently checked-out feature branch, later branches
+may become stacked/cumulative PRs. If the user expects independent PRs, return to
+the chosen base branch before creating each `feature/time-machine-<id>` branch
+and decide how to persist the shared queue state. If the user expects a sequential
+Time Machine chain, stacked branches are acceptable but report that shape.
+
 ---
+
+For HermesMacOS or any repo where the Spec Kit scaffold/queue is newly introduced on a feature branch, also consult `references/hermesmacos-time-machine-run-notes.md` before continuing from one feature branch to the next.
 
 ### 1. Load and validate the queue
 
@@ -94,6 +111,8 @@ git checkout -b feature/time-machine-<feature-id>
 - If the branch already exists (resuming), run `git checkout feature/time-machine-<feature-id>` instead.
 - Update `features-queue.yml` → `branch: "feature/time-machine-<feature-id>"`.
 - If git is not initialised, warn the user and continue without branching.
+
+**Branch-base pitfall when processing multiple features in one run:** after a feature is committed/pushed, do not blindly create the next feature branch from the just-finished feature branch unless stacked branches are intentional. Before starting the next feature, inspect the current branch and base branch state. If the Spec Kit scaffold/queue already exists on the base branch, return to the base branch and create the next feature branch there. If the queue/scaffold exists only on the current feature branch, either keep the stack explicitly and report that the next branch is based on the previous feature, or stop after wrap-up so the user can merge the scaffold branch first. Always make the branch ancestry explicit in the final summary.
 
 ---
 

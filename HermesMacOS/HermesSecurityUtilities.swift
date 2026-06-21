@@ -686,14 +686,18 @@ struct HermesLocalApprovalRequest: Identifiable, Equatable {
 final class HermesLocalApprovalCenter {
     static let shared = HermesLocalApprovalCenter()
     private(set) var pending: [HermesLocalApprovalRequest] = []
-    private var continuations: [String: CheckedContinuation<Bool, Never>] = [:]
+    private var continuations: [String: [CheckedContinuation<Bool, Never>]] = [:]
 
     private init() {}
 
     func requestFilesystemAccess(path: String, operation: String) async -> Bool {
         let normalized = HermesFilesystemAccessPolicy.standardizedPath(path)
         let id = "local-fs-\(SHA256.hash(data: Data((operation + normalized).utf8)).map { String(format: "%02x", $0) }.joined())"
-        if continuations[id] != nil { return await withCheckedContinuation { continuations[id] = $0 } }
+        if continuations[id] != nil || pending.contains(where: { $0.id == id }) {
+            return await withCheckedContinuation { continuation in
+                continuations[id, default: []].append(continuation)
+            }
+        }
         let request = HermesLocalApprovalRequest(
             id: id,
             kind: .filesystem,
@@ -707,7 +711,7 @@ final class HermesLocalApprovalCenter {
         pending.removeAll { $0.id == id }
         pending.insert(request, at: 0)
         return await withCheckedContinuation { continuation in
-            continuations[id] = continuation
+            continuations[id] = [continuation]
         }
     }
 
@@ -735,7 +739,10 @@ final class HermesLocalApprovalCenter {
         if request.kind == .certificatePin, approved, let host = request.host, let fingerprint = request.fingerprint {
             HermesPinnedCertificateTrust.approvePin(host: host, fingerprint: fingerprint)
         }
-        continuations.removeValue(forKey: id)?.resume(returning: approved)
+        let waiters = continuations.removeValue(forKey: id) ?? []
+        for continuation in waiters {
+            continuation.resume(returning: approved)
+        }
     }
 }
 

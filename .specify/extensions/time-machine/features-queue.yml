@@ -28,12 +28,12 @@ features:
   - HermesMacOS/HermesModelsAPI.swift
   - HermesMacOS/SettingsView.swift
   - HermesMacOS/HermesApprovalsInboxView.swift
-  status: pending
+  status: done
   current_phase: null
-  branch: null
-  pushed: null
-  started_at: null
-  completed_at: null
+  branch: feature/time-machine-security-and-local-access
+  pushed: false
+  started_at: '2026-06-21T02:24:56Z'
+  completed_at: '2026-06-21T02:40:37Z'
 - id: ask-hermes
   name: Ask Hermes
   description: Lets users send prompts to the Responses API with streaming, reasoning controls, attachments, cancellation, continuation, and multiple workspaces.

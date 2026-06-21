@@ -505,6 +505,14 @@ struct SettingsView: View {
         let didAccess = url.startAccessingSecurityScopedResource()
         defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
         do {
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            let fileSize = values.fileSize ?? 0
+            guard fileSize > 0 else {
+                throw NSError(domain: "HermesMacOS.SSH", code: 2, userInfo: [NSLocalizedDescriptionKey: "The selected SSH private key is empty."])
+            }
+            guard fileSize <= 1_048_576 else {
+                throw NSError(domain: "HermesMacOS.SSH", code: 3, userInfo: [NSLocalizedDescriptionKey: "The selected SSH private key is larger than the 1 MB safety limit."])
+            }
             let data = try Data(contentsOf: url)
             try HermesSSHKeychain.savePrivateKey(data, displayName: url.lastPathComponent, forHost: currentAPIHost)
             sshCredentials.host = currentAPIHost
