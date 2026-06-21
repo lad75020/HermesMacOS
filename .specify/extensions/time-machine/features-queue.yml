@@ -16,7 +16,7 @@ features:
   status: done
   current_phase: null
   branch: feature/time-machine-app-shell-and-settings
-  pushed: false
+  pushed: true
   started_at: '2026-06-21T02:09:47Z'
   completed_at: '2026-06-21T02:23:57Z'
 - id: security-and-local-access
