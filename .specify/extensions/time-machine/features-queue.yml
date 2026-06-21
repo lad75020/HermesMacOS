@@ -1,0 +1,194 @@
+analyzed_at: '2026-06-21T02:05:57Z'
+project_root: /Volumes/WDBlack4TB/Code/HermesMacOS
+total_features: 12
+completed: 0
+features:
+- id: app-shell-and-settings
+  name: App Shell and Settings
+  description: Provides the native macOS app entry point, tab navigation, reachability indicators, saved endpoints, and user preferences that frame every Hermes workflow.
+  files:
+  - project.yml
+  - HermesMacOS/HermesMacOSApp.swift
+  - HermesMacOS/ContentView.swift
+  - HermesMacOS/SettingsView.swift
+  - HermesMacOS/HermesReachabilityMonitor.swift
+  - HermesMacOS/HermesMacOS.entitlements
+  status: done
+  current_phase: null
+  branch: feature/time-machine-app-shell-and-settings
+  pushed: false
+  started_at: '2026-06-21T02:09:47Z'
+  completed_at: '2026-06-21T02:23:57Z'
+- id: security-and-local-access
+  name: Security and Local Access
+  description: Protects API keys, SSH keys, retained local data, TLS trust decisions, and local filesystem/process access for sensitive Hermes operations.
+  files:
+  - SECURITY.md
+  - HermesMacOS/HermesSecurityUtilities.swift
+  - HermesMacOS/HermesModelsAPI.swift
+  - HermesMacOS/SettingsView.swift
+  - HermesMacOS/HermesApprovalsInboxView.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: ask-hermes
+  name: Ask Hermes
+  description: Lets users send prompts to the Responses API with streaming, reasoning controls, attachments, cancellation, continuation, and multiple workspaces.
+  files:
+  - HermesMacOS/HermesViews.swift
+  - HermesMacOS/HermesModelsAPI.swift
+  - HermesMacOS/HermesAskWorkspacesView.swift
+  - HermesMacOS/ContentView.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: chat-completions
+  name: Chat with Hermes
+  description: Lets users run chat-completions conversations with optional system prompts, profile selection, attachments, streaming, cancellation, and session resume.
+  files:
+  - HermesMacOS/HermesChatView.swift
+  - HermesMacOS/HermesChatCompletionsAPI.swift
+  - HermesMacOS/HermesModelsAPI.swift
+  - HermesMacOS/ContentView.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: tui-gateway
+  name: TUI Gateway
+  description: Runs Hermes TUI sessions through the dashboard WebSocket with native transcripts, workspaces, attachments, approvals, clarifications, and session controls.
+  files:
+  - HermesMacOS/HermesTUIGatewayView.swift
+  - HermesMacOS/ContentView.swift
+  - HermesMacOS/HermesHistoryView.swift
+  - docs/reference-tui-gateway-websocket.md
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: history-and-sessions
+  name: History and Sessions
+  description: Lets users search dashboard conversations, browse paged sessions, inspect messages, filter by profile, and resume sessions into supported clients.
+  files:
+  - HermesMacOS/HermesHistoryView.swift
+  - HermesMacOS/HermesDashboardHistorySearch.swift
+  - HermesMacOS/HermesModelsAPI.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: approvals-inbox
+  name: Approvals Inbox
+  description: Shows pending Hermes approval requests and lets users resolve local access and certificate trust decisions from a native inbox.
+  files:
+  - HermesMacOS/HermesApprovalsInboxView.swift
+  - HermesMacOS/HermesModelsAPI.swift
+  - HermesMacOS/HermesSecurityUtilities.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: kanban-boards
+  name: Kanban Boards
+  description: Lets users manage Hermes Kanban boards, tasks, comments, task actions, dispatch, logs, profiles, and live updates.
+  files:
+  - HermesMacOS/HermesKanbanView.swift
+  - HermesMacOS/HermesSecurityUtilities.swift
+  - HermesMacOS/ContentView.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: dashboard-webview
+  name: Dashboard WebView
+  description: Embeds Hermes Dashboard pages in a themed native WebKit surface so users can access dashboard UI inside the macOS app.
+  files:
+  - HermesMacOS/HermesDashboardWebView.swift
+  - HermesMacOS/ContentView.swift
+  - HermesMacOS/HermesSecurityUtilities.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: runtime-configuration
+  name: Runtime Configuration
+  description: Lets users inspect and manage Hermes profiles, runtime models, MCP servers, skills, schedules, plugins, toolsets, and raw local configuration.
+  files:
+  - HermesMacOS/HermesConfigurationView.swift
+  - HermesMacOS/HermesConfigurationProfilesSection.swift
+  - HermesMacOS/HermesConfigurationRuntimeModelsSection.swift
+  - HermesMacOS/HermesConfigurationRuntimeModelSlotEditorCard.swift
+  - HermesMacOS/HermesConfigurationMCPServersSection.swift
+  - HermesMacOS/HermesConfigurationSkillsSection.swift
+  - HermesMacOS/HermesConfigurationSchedulesSection.swift
+  - HermesMacOS/HermesConfigurationPluginsSection.swift
+  - HermesMacOS/HermesConfigurationToolsetsSection.swift
+  - HermesMacOS/HermesDashboardSkills.swift
+  - HermesMacOS/HermesDashboardToolsets.swift
+  - HermesMacOS/HermesDashboardSchedules.swift
+  - HermesMacOS/HermesDashboardMCPServers.swift
+  - HermesMacOS/HermesDashboardPluginsStore.swift
+  - HermesMacOS/HermesLocalProfiles.swift
+  - HermesMacOS/HermesLocalRuntimeModels.swift
+  - HermesMacOS/HermesLocalConfigurationRuntime.swift
+  - HermesMacOS/HermesMCPServersYAML.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: local-utilities
+  name: Local Utilities
+  description: Provides clipboard, prompt, response, raw stream debugging, speech-to-text, knowledge erasure, and Hermes repository update utilities.
+  files:
+  - HermesMacOS/HermesUtilitiesView.swift
+  - HermesMacOS/HermesSpeechToText.swift
+  - HermesMacOS/HermesKnowledgeEraserUtility.swift
+  - HermesMacOS/HermesInstallationView.swift
+  - HermesMacOS/HermesSecurityUtilities.swift
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null
+- id: branding-and-localization
+  name: Branding and Localization
+  description: Delivers the branded startup experience, typography, app icon, bundled resources, and localized app metadata.
+  files:
+  - HermesMacOS/SplashView.swift
+  - HermesMacOS/HermesTypography.swift
+  - HermesMacOS/Assets.xcassets
+  - HermesMacOS/Fonts
+  - HermesMacOS/Resources/HermesSplash.mp4
+  - HermesMacOS/Localizable.xcstrings
+  - HermesMacOS/en.lproj
+  - HermesMacOS/fr.lproj
+  - HermesMacOS/es.lproj
+  - HermesMacOS/de.lproj
+  - HermesMacOS/zh-Hans.lproj
+  status: pending
+  current_phase: null
+  branch: null
+  pushed: null
+  started_at: null
+  completed_at: null

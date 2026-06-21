@@ -124,6 +124,8 @@ struct HermesSideTabSwitcher: View {
     let tuiGatewayAttention: HermesTopTabAttention?
     let historyAttention: HermesTopTabAttention?
     let approvalsAttention: HermesTopTabAttention?
+    let apiSettings: HermesAPISettings
+    let dashboardURL: String
     let onSelectTab: (HermesMacOSTab) -> Void
     @State private var reachabilityMonitor = HermesReachabilityMonitor()
     @State private var isAskBlinking = false
@@ -170,11 +172,11 @@ struct HermesSideTabSwitcher: View {
         .frame(width: 66)
         .frame(maxHeight: .infinity)
         .hermesGlassPanel(tint: Color.hermesSurface.opacity(0.56), cornerRadius: 0)
-        .task {
-            await reachabilityMonitor.runAgentAPILoop()
+        .task(id: apiSettings.baseURL) {
+            await reachabilityMonitor.runAgentAPILoop(apiBaseURL: apiSettings.baseURL)
         }
-        .task {
-            await reachabilityMonitor.runDashboardLoop()
+        .task(id: dashboardURL) {
+            await reachabilityMonitor.runDashboardLoop(dashboardBaseURL: dashboardURL)
         }
         .task(id: activeAskAttention) {
             await runAskBlinkLoop(for: activeAskAttention)
@@ -545,6 +547,8 @@ struct ContentView: View {
                 tuiGatewayAttention: tuiGatewayTabAttention,
                 historyAttention: historyTabAttention,
                 approvalsAttention: approvalsTabAttention,
+                apiSettings: apiSettings,
+                dashboardURL: dashboardURL,
                 onSelectTab: handleTopTabSelection
             )
             activeTabContent
