@@ -134,9 +134,8 @@ final class HermesTUIWorkspace: Identifiable {
     }
 
     private var completionToken: String? {
-        guard store.connectionStatus == "Completed", !store.messages.isEmpty else { return nil }
-        let sessionPart = store.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "tui" : store.sessionID
-        return "completed-\(sessionPart)-\(store.messages.count)-\(store.eventCount)"
+        let token = store.latestCompletionToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        return token.isEmpty ? nil : token
     }
 
     private var failureToken: String? {
@@ -159,6 +158,7 @@ final class HermesTUIGatewayStore {
     var connectionStatus = "Idle"
     var eventCount = 0
     var lastErrorMessage = ""
+    var latestCompletionToken = ""
     var isConnecting = false
     var isConnected = false
     var isStreaming = false
@@ -195,6 +195,7 @@ final class HermesTUIGatewayStore {
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
+        latestCompletionToken = ""
         isConnected = false
         isConnecting = false
         isStreaming = false
@@ -240,6 +241,7 @@ final class HermesTUIGatewayStore {
                 storedSessionID = ""
                 activeProfile = ""
                 sessionTitle = "New TUI session"
+                latestCompletionToken = ""
                 isStreaming = false
                 await refreshActiveSessions()
             } catch {
@@ -369,6 +371,7 @@ final class HermesTUIGatewayStore {
             sessionID = object["session_id"]?.stringValue ?? sessionID
             storedSessionID = object["resumed"]?.stringValue ?? object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? target
             activeProfile = selectedProfile
+            latestCompletionToken = ""
             let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
             sessionTitle = displayTitle.isEmpty ? "TUI session \(shortSessionID(storedSessionID.isEmpty ? sessionID : storedSessionID))" : displayTitle
             resetStreamGrouping(resetTurn: false)
@@ -394,6 +397,7 @@ final class HermesTUIGatewayStore {
             activeProfile = selectedProfile
             sessionTitle = "TUI session \(shortSessionID(sessionID))"
             messages.removeAll()
+            latestCompletionToken = ""
             resetStreamGrouping()
             isStreaming = false
             connectionStatus = sessionID.isEmpty ? "Session create failed" : "Session ready"
@@ -424,6 +428,7 @@ final class HermesTUIGatewayStore {
             appendEvent(title: "Attachment", content: activity, eventType: "input.attachment")
         }
         resetStreamGrouping()
+        latestCompletionToken = ""
         messages.append(HermesTUIGatewayMessage(role: .user, title: "You", content: finalText))
         isStreaming = true
         connectionStatus = "Sending prompt"
@@ -582,6 +587,7 @@ final class HermesTUIGatewayStore {
             connectionStatus = "Session info updated"
         case "message.start":
             isStreaming = true
+            latestCompletionToken = ""
             connectionStatus = "Hermes is responding"
             resetStreamGrouping()
         case "message.delta":
@@ -594,7 +600,13 @@ final class HermesTUIGatewayStore {
             if !final.isEmpty { completeAssistantMessage(text: final) }
             isStreaming = false
             resetStreamGrouping(resetTurn: true)
-            connectionStatus = status == "complete" ? "Completed" : status.capitalized
+            if Self.isCompleteStatus(status) {
+                latestCompletionToken = completionToken(for: event, status: status)
+                connectionStatus = "Completed"
+            } else {
+                latestCompletionToken = ""
+                connectionStatus = status.capitalized
+            }
         case "reasoning.delta", "thinking.delta":
             let text = payload["text"]?.stringValue ?? ""
             if !text.isEmpty {
@@ -651,6 +663,17 @@ final class HermesTUIGatewayStore {
             connectionStatus = shortStatus(event.type)
             appendEvent(title: event.type, content: eventSummary(payload: payload), eventType: event.type)
         }
+    }
+
+    private func completionToken(for event: HermesTUIGatewayEvent, status: String) -> String {
+        let sessionPart = (event.sessionID ?? sessionID).trimmingCharacters(in: .whitespacesAndNewlines)
+        let stableSessionPart = sessionPart.isEmpty ? "tui" : sessionPart
+        return "completed-\(stableSessionPart)-\(messages.count)-\(eventCount)-\(status.lowercased())"
+    }
+
+    private static func isCompleteStatus(_ status: String) -> Bool {
+        let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized == "complete" || normalized == "completed"
     }
 
     private func request(_ method: String, params: [String: JSONValue], timeoutSeconds: UInt64) async throws -> JSONValue {
