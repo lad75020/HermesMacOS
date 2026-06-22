@@ -106,6 +106,7 @@ final class HermesTUIWorkspace: Identifiable {
     let number: Int
     let store = HermesTUIGatewayStore()
     var selectedProfile: String
+    var fastModeEnabled: Bool
     var promptText = ""
     var requestResponses: [UUID: String] = [:]
     var selectedAttachment: HermesPromptAttachment?
@@ -113,10 +114,11 @@ final class HermesTUIWorkspace: Identifiable {
     private var acknowledgedCompletionToken = ""
     private var acknowledgedFailureToken = ""
 
-    init(number: Int, selectedProfile: String = "default") {
+    init(number: Int, selectedProfile: String = "default", fastModeEnabled: Bool = false) {
         self.number = number
         let trimmedProfile = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
         self.selectedProfile = trimmedProfile.isEmpty ? "default" : trimmedProfile
+        self.fastModeEnabled = fastModeEnabled
     }
 
     var attention: HermesTopTabAttention? {
@@ -182,10 +184,10 @@ final class HermesTUIGatewayStore {
         return trimmed.isEmpty ? "default" : trimmed
     }
 
-    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, profile: String) {
-        guard !isConnecting else { return }
+    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, profile: String, fast: Bool) {
+        guard !isConnecting, !isStreaming else { return }
         let selectedProfile = normalizedProfile(profile)
-        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, selectedProfile: selectedProfile) }
+        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, selectedProfile: selectedProfile, fast: fast) }
     }
 
     func disconnect() {
@@ -201,16 +203,17 @@ final class HermesTUIGatewayStore {
         failPending(HermesTUIGatewayError.notConnected)
     }
 
-    func createSession(profile: String) {
+    func createSession(profile: String, fast: Bool) {
+        guard !isStreaming else { return }
         let selectedProfile = normalizedProfile(profile)
-        Task { await createGatewaySession(profile: selectedProfile) }
+        Task { await createGatewaySession(profile: selectedProfile, fast: fast) }
     }
 
-    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "") {
+    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", fast: Bool = false) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let path = attachmentPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || attachment != nil || !path.isEmpty else { return }
-        Task { await submit(text, attachment: attachment, attachmentPath: path) }
+        Task { await submit(text, attachment: attachment, attachmentPath: path, fast: fast) }
     }
 
     func interruptSession() {
@@ -228,7 +231,7 @@ final class HermesTUIGatewayStore {
     }
 
     func closeSession() {
-        guard !sessionID.isEmpty else { return }
+        guard !isStreaming, !sessionID.isEmpty else { return }
         Task {
             do {
                 _ = try await request("session.close", params: ["session_id": .string(sessionID)], timeoutSeconds: 20)
@@ -246,10 +249,12 @@ final class HermesTUIGatewayStore {
     }
 
     func refreshSessions() {
+        guard !isStreaming else { return }
         Task { await refreshActiveSessions() }
     }
 
     func activateSession(_ liveSession: HermesTUILiveSession) {
+        guard !isStreaming else { return }
         Task { await activate(sessionID: liveSession.id) }
     }
 
@@ -306,7 +311,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, selectedProfile: String) async {
+    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, selectedProfile: String, fast: Bool) async {
         guard !isConnecting else { return }
         isConnecting = true
         lastErrorMessage = ""
@@ -324,7 +329,7 @@ final class HermesTUIGatewayStore {
             receiveTask?.cancel()
             receiveTask = Task { await receiveLoop(task) }
             if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                await createGatewaySession(profile: selectedProfile)
+                await createGatewaySession(profile: selectedProfile, fast: fast)
             }
             await refreshActiveSessions()
         } catch {
@@ -342,7 +347,7 @@ final class HermesTUIGatewayStore {
         }
         let selectedProfile = normalizedProfile(profile)
         if !isConnected {
-            await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: false, selectedProfile: selectedProfile)
+            await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: false, selectedProfile: selectedProfile, fast: false)
         }
         guard isConnected else { return }
 
@@ -377,10 +382,12 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func createGatewaySession(profile: String) async {
+    private func createGatewaySession(profile: String, fast: Bool) async {
         do {
             let selectedProfile = normalizedProfile(profile)
-            let result = try await request("session.create", params: ["profile": .string(selectedProfile)], timeoutSeconds: 120)
+            var params: [String: JSONValue] = ["profile": .string(selectedProfile)]
+            if fast { params["fast"] = .bool(true) }
+            let result = try await request("session.create", params: params, timeoutSeconds: 120)
             let object = result.objectValue
             sessionID = object["session_id"]?.stringValue ?? ""
             storedSessionID = object["stored_session_id"]?.stringValue ?? ""
@@ -398,7 +405,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "") async {
+    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", fast: Bool = false) async {
         guard canSendPrompt else {
             lastErrorMessage = HermesTUIGatewayError.missingSession.localizedDescription
             return
@@ -421,7 +428,9 @@ final class HermesTUIGatewayStore {
         isStreaming = true
         connectionStatus = "Sending prompt"
         do {
-            _ = try await request("prompt.submit", params: ["session_id": .string(sessionID), "text": .string(finalText)], timeoutSeconds: 60)
+            var params: [String: JSONValue] = ["session_id": .string(sessionID), "text": .string(finalText)]
+            if fast { params["fast"] = .bool(true) }
+            _ = try await request("prompt.submit", params: params, timeoutSeconds: 60)
             connectionStatus = "Streaming"
         } catch {
             isStreaming = false
@@ -952,6 +961,7 @@ private struct HermesTUIGatewayWorkspaceHost: View {
             selectedAttachment: $workspace.selectedAttachment,
             selectedAttachmentPath: $workspace.selectedAttachmentPath,
             selectedProfile: $workspace.selectedProfile,
+            fastModeEnabled: $workspace.fastModeEnabled,
             connectedHostName: connectedHostName,
             connectedWindowID: connectedWindowID,
             workspaceControls: workspaceControls
@@ -1031,6 +1041,7 @@ struct HermesTUIGatewayView: View {
     @Binding var selectedAttachment: HermesPromptAttachment?
     @Binding var selectedAttachmentPath: String
     @Binding var selectedProfile: String
+    @Binding var fastModeEnabled: Bool
     let connectedHostName: String
     let connectedWindowID: UUID
     let workspaceControls: AnyView
@@ -1056,6 +1067,8 @@ struct HermesTUIGatewayView: View {
             await refreshAPIProfiles()
         }
         .onChange(of: apiSettings) { _, _ in Task { await refreshAPIProfiles() } }
+        .onChange(of: apiProfiles) { _, _ in clampFastModeIfNeeded() }
+        .onChange(of: selectedProfile) { _, _ in clampFastModeIfNeeded() }
         .onChange(of: promptText) { _, _ in handlePromptSkillQueryChange() }
         .onDisappear { }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
@@ -1085,6 +1098,13 @@ struct HermesTUIGatewayView: View {
                 ) { newProfile in
                     handleProfileSelection(newProfile)
                 }
+                HermesTUIFastTogglePill(
+                    isOn: $fastModeEnabled,
+                    isSupported: selectedProfileSupportsFastMode,
+                    isDisabled: store.isConnecting || store.isStreaming || store.isResumingSession
+                ) { isEnabled in
+                    handleFastModeSelection(isEnabled)
+                }
                 HermesStatusCard(title: "Session", value: store.sessionTitle, tint: .hermesActionBlue, minimumWidth: 210, maximumWidth: .infinity)
                 HermesStatusCard(title: "Status", value: store.connectionStatus, tint: .hermesOrange, minimumWidth: 210, maximumWidth: 300)
                 HermesStatusCard(title: "Events", value: "\(store.eventCount)", tint: .hermesPurple, minimumWidth: 100, maximumWidth: 120)
@@ -1098,13 +1118,14 @@ struct HermesTUIGatewayView: View {
 
             HStack(spacing: 10) {
                 Button(store.isConnected ? "Reconnect" : "Connect") {
+                    guard !store.isStreaming else { return }
                     store.disconnect()
-                    store.connect(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profile: selectedProfile)
+                    store.connect(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profile: selectedProfile, fast: fastModeEnabled && selectedProfileSupportsFastMode)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(store.isConnecting)
+                .disabled(store.isConnecting || store.isStreaming)
 
-                Button("New session") { store.createSession(profile: selectedProfile) }
+                Button("New session") { store.createSession(profile: selectedProfile, fast: fastModeEnabled && selectedProfileSupportsFastMode) }
                     .buttonStyle(.bordered)
                     .disabled(!store.isConnected || store.isStreaming || store.isResumingSession)
 
@@ -1114,7 +1135,7 @@ struct HermesTUIGatewayView: View {
 
                 Button("Close session") { store.closeSession() }
                     .buttonStyle(.bordered)
-                    .disabled(!store.isConnected || store.sessionID.isEmpty)
+                    .disabled(!store.isConnected || store.sessionID.isEmpty || store.isStreaming)
 
                 Menu {
                     if store.activeSessions.isEmpty {
@@ -1133,7 +1154,7 @@ struct HermesTUIGatewayView: View {
                 } label: {
                     Label("Live sessions", systemImage: "rectangle.stack.badge.person.crop")
                 }
-                .disabled(!store.isConnected)
+                .disabled(!store.isConnected || store.isStreaming)
             }
 
             if !store.lastErrorMessage.isEmpty {
@@ -1323,17 +1344,45 @@ struct HermesTUIGatewayView: View {
 
     private var shouldShowCompletionPicker: Bool { shouldShowSkillPicker || shouldShowPathPicker }
 
+    private var selectedAPIProfile: HermesAPIProfile? {
+        let active = normalizedProfile(selectedProfile)
+        return apiProfiles.first(where: { $0.id == active })
+    }
+
+    private var selectedProfileSupportsFastMode: Bool {
+        selectedAPIProfile?.supportsFastMode ?? false
+    }
+
+    private var activeFastMode: Bool {
+        fastModeEnabled && selectedProfileSupportsFastMode
+    }
+
+    private func clampFastModeIfNeeded() {
+        if fastModeEnabled && !selectedProfileSupportsFastMode {
+            fastModeEnabled = false
+        }
+    }
+
+    private func handleFastModeSelection(_ isEnabled: Bool) {
+        guard selectedProfileSupportsFastMode else {
+            fastModeEnabled = false
+            return
+        }
+        fastModeEnabled = isEnabled
+    }
+
     private func handleProfileSelection(_ newProfile: String) {
         selectedProfile = normalizedProfile(newProfile)
+        clampFastModeIfNeeded()
         let active = normalizedProfile(store.activeProfile)
         guard store.isConnected,
               !store.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !store.isConnecting,
               !store.isStreaming,
+              !store.isConnecting,
               !store.isResumingSession,
               active != selectedProfile
         else { return }
-        store.createSession(profile: selectedProfile)
+        store.createSession(profile: selectedProfile, fast: activeFastMode)
     }
 
     private func refreshAPIProfiles() async {
@@ -1352,6 +1401,7 @@ struct HermesTUIGatewayView: View {
         let current = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
         if current.isEmpty { selectedProfile = profiles.first?.id ?? "default" }
         else if !profiles.isEmpty && !profiles.contains(where: { $0.id == current }) { selectedProfile = profiles.first?.id ?? "default" }
+        clampFastModeIfNeeded()
     }
 
     private func normalizedProfile(_ profile: String) -> String {
@@ -1406,7 +1456,7 @@ struct HermesTUIGatewayView: View {
 
     private func submitPrompt() {
         let text = promptText
-        store.submitPrompt(text, attachment: selectedAttachment, attachmentPath: selectedAttachmentPath)
+        store.submitPrompt(text, attachment: selectedAttachment, attachmentPath: selectedAttachmentPath, fast: activeFastMode)
         promptText = ""
         selectedAttachment = nil
         selectedAttachmentPath = ""
@@ -1436,6 +1486,74 @@ struct HermesTUIGatewayView: View {
                 proxy.scrollTo("tui-gateway-bottom", anchor: .bottom)
             }
         }
+    }
+}
+
+private struct HermesTUIFastTogglePill: View {
+    @Binding var isOn: Bool
+    let isSupported: Bool
+    let isDisabled: Bool
+    let onChange: (Bool) -> Void
+
+    private var isControlDisabled: Bool { isDisabled || !isSupported }
+    private var effectiveIsOn: Bool { isSupported && isOn }
+
+    var body: some View {
+        Button {
+            guard !isControlDisabled else { return }
+            let nextValue = !effectiveIsOn
+            isOn = nextValue
+            onChange(nextValue)
+        } label: {
+            HStack(spacing: 6) {
+                Text(verbatim: "FAST")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(labelColor)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(toggleFill)
+                    .frame(width: 28, height: 16)
+                    .overlay(alignment: effectiveIsOn ? .trailing : .leading) {
+                        Circle()
+                            .fill(Color.white.opacity(isControlDisabled ? 0.72 : 0.95))
+                            .frame(width: 12, height: 12)
+                            .padding(2)
+                    }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(backgroundFill, in: Capsule())
+            .overlay(Capsule().stroke(borderColor, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(isControlDisabled)
+        .opacity(isControlDisabled ? 0.48 : 1.0)
+        .help(helpText)
+        .accessibilityLabel("Fast mode")
+        .accessibilityValue(effectiveIsOn ? "On" : "Off")
+    }
+
+    private var labelColor: Color {
+        if !isSupported { return .hermesSecondaryText }
+        return effectiveIsOn ? .white : .primary
+    }
+
+    private var toggleFill: Color {
+        if !isSupported { return .hermesSecondaryText }
+        return effectiveIsOn ? .hermesActionBlue : .hermesSecondaryText.opacity(0.8)
+    }
+
+    private var backgroundFill: Color {
+        if !isSupported { return .hermesSurface.opacity(0.45) }
+        return effectiveIsOn ? .hermesActionBlue.opacity(0.22) : .hermesSurface.opacity(0.74)
+    }
+
+    private var borderColor: Color {
+        if !isSupported { return .hermesSecondaryText.opacity(0.55) }
+        return effectiveIsOn ? .hermesActionBlue.opacity(0.7) : .hermesSecondaryText.opacity(0.8)
+    }
+
+    private var helpText: String {
+        isSupported ? "Send prompts with Hermes FAST mode" : "The selected profile model does not support FAST mode"
     }
 }
 

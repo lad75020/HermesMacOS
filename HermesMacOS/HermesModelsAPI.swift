@@ -588,6 +588,42 @@ struct HermesAPIProfile: Decodable, Identifiable, Equatable {
         }) { return true }
         return HermesReasoningModelSupport.supportsReasoningLevel(model: model, provider: provider)
     }
+
+    var supportsFastMode: Bool {
+        if supportedParameters.contains(where: { parameter in
+            let value = parameter.lowercased()
+            return value == "fast" || value == "service_tier" || value == "speed" || value == "priority"
+        }) { return true }
+        return HermesFastModeSupport.supportsFastMode(model: model, provider: provider)
+    }
+}
+
+enum HermesFastModeSupport {
+    static func supportsFastMode(model: String?, provider _: String?) -> Bool {
+        isOpenAIFastModel(model) || isAnthropicFastModel(model)
+    }
+
+    private static func isOpenAIFastModel(_ model: String?) -> Bool {
+        let base = strippedVendorPrefix(model).split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
+        guard !base.isEmpty, !base.contains("codex") else { return false }
+        return openAIFastPrefixes.contains { base.hasPrefix($0) }
+    }
+
+    private static func isAnthropicFastModel(_ model: String?) -> Bool {
+        let base = strippedVendorPrefix(model).split(separator: ":", maxSplits: 1).first.map(String.init) ?? ""
+        guard base.hasPrefix("claude-") else { return false }
+        return base.contains("opus-4-6") || base.contains("opus-4.6")
+    }
+
+    private static func strippedVendorPrefix(_ model: String?) -> String {
+        var raw = (model ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let slashIndex = raw.firstIndex(of: "/") {
+            raw = String(raw[raw.index(after: slashIndex)...])
+        }
+        return raw
+    }
+
+    private static let openAIFastPrefixes = ["gpt-", "o1", "o3", "o4"]
 }
 
 enum HermesReasoningModelSupport {
