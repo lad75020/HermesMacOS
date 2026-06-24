@@ -9,12 +9,14 @@ import SwiftUI
 
 enum HermesKnowledgeEraserItemKind: String, Codable, Equatable {
     case memoryEntry
+    case localMemoryEntry
     case userProfileBlock
     case skillBlock
 
     var label: String {
         switch self {
         case .memoryEntry: "Memory"
+        case .localMemoryEntry: "Local memory"
         case .userProfileBlock: "User profile"
         case .skillBlock: "Skill"
         }
@@ -55,12 +57,14 @@ private enum HermesKnowledgeEraserError: LocalizedError {
     case invalidWorkspace(String)
     case emptyTopic
     case noSelectedItems
+    case localMemoryProvider(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidWorkspace(let path): "The Hermes workspace path '\(path)' is invalid."
         case .emptyTopic: "Enter a topic description before scanning."
         case .noSelectedItems: "Select at least one item to erase."
+        case .localMemoryProvider(let message): "local_memory provider operation failed: \(message)"
         }
     }
 }
@@ -293,6 +297,7 @@ private final class HermesKnowledgeEraserRegistry {
         let matcher = HermesKnowledgeTopicMatcher(topic: normalizedTopic)
         var items: [HermesKnowledgeEraserItem] = []
         items.append(contentsOf: scanMemoryEntries(workspaceURL: workspaceURL, matcher: matcher))
+        items.append(contentsOf: scanLocalMemoryEntries(workspaceURL: workspaceURL, topic: normalizedTopic))
         items.append(contentsOf: scanUserProfile(workspaceURL: workspaceURL, matcher: matcher))
         items.append(contentsOf: scanSkills(workspaceURL: workspaceURL, matcher: matcher))
         items.sort { lhs, rhs in
@@ -323,6 +328,13 @@ private final class HermesKnowledgeEraserRegistry {
         let memoryIDs = selectedItems.filter { $0.kind == .memoryEntry }.map(\.id)
         if !memoryIDs.isEmpty {
             erasedIDs.append(contentsOf: try eraseMemoryEntries(workspaceURL: workspaceURL, selectedIDs: Set(memoryIDs)))
+        }
+
+        let localMemoryIDs = selectedItems.filter { $0.kind == .localMemoryEntry }.map(\.id)
+        if !localMemoryIDs.isEmpty {
+            let result = try eraseLocalMemoryEntries(workspaceURL: workspaceURL, selectedIDs: Set(localMemoryIDs))
+            erasedIDs.append(contentsOf: result.erased)
+            skippedIDs.append(contentsOf: result.skipped)
         }
 
         let fileItems = selectedItems.filter { $0.kind == .userProfileBlock || $0.kind == .skillBlock }
@@ -363,6 +375,29 @@ private final class HermesKnowledgeEraserRegistry {
                 preview: Self.preview(entry),
                 content: entry,
                 confidence: confidence
+            )
+        }
+    }
+
+    private func scanLocalMemoryEntries(workspaceURL: URL, topic: String) -> [HermesKnowledgeEraserItem] {
+        guard let response = try? runLocalMemoryScan(workspaceURL: workspaceURL, topic: topic), response.success else { return [] }
+        return response.results.map { record in
+            let sources = [record.mongo_match == true ? "MongoDB" : nil, record.chroma_match == true ? "ChromaDB" : nil]
+                .compactMap { $0 }
+                .joined(separator: " + ")
+            let scope = record.scopeSummary
+            let location = [sources.isEmpty ? nil : sources, scope.isEmpty ? nil : scope]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+            return HermesKnowledgeEraserItem(
+                id: Self.localMemoryItemID(for: record.memory_id),
+                kind: .localMemoryEntry,
+                title: "Local memory \(record.memory_id)",
+                path: "local_memory://durable_memories/\(record.memory_id)",
+                location: location.isEmpty ? "durable_memories + ChromaDB" : location,
+                preview: Self.preview(record.content),
+                content: record.content,
+                confidence: record.confidence ?? 0.8
             )
         }
     }
@@ -424,6 +459,19 @@ private final class HermesKnowledgeEraserRegistry {
         return erased
     }
 
+    private func eraseLocalMemoryEntries(workspaceURL: URL, selectedIDs: Set<String>) throws -> (erased: [String], skipped: [String]) {
+        let memoryIDs = selectedIDs.compactMap(Self.localMemoryRecordID(from:))
+        guard !memoryIDs.isEmpty else { return ([], Array(selectedIDs)) }
+        let response = try runLocalMemoryErase(workspaceURL: workspaceURL, memoryIDs: memoryIDs)
+        guard response.success else {
+            throw HermesKnowledgeEraserError.localMemoryProvider(response.error ?? response.message ?? "unknown error")
+        }
+        return (
+            erased: response.erased.map { Self.localMemoryItemID(for: $0) },
+            skipped: response.skipped.map { Self.localMemoryItemID(for: $0) }
+        )
+    }
+
     private func eraseBlocks(path: String, items: [HermesKnowledgeEraserItem]) throws -> (erased: [String], skipped: [String]) {
         let url = URL(fileURLWithPath: path)
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return ([], items.map(\.id)) }
@@ -464,6 +512,78 @@ private final class HermesKnowledgeEraserRegistry {
         }
         try markdown.write(to: url, atomically: true, encoding: .utf8)
         return url
+    }
+
+    private func runLocalMemoryScan(workspaceURL: URL, topic: String) throws -> HermesLocalMemoryEraserScanResponse {
+        let data = try runLocalMemoryOperation(workspaceURL: workspaceURL, operation: "scan", topic: topic, memoryIDs: [])
+        return try JSONDecoder().decode(HermesLocalMemoryEraserScanResponse.self, from: data)
+    }
+
+    private func runLocalMemoryErase(workspaceURL: URL, memoryIDs: [String]) throws -> HermesLocalMemoryEraserEraseResponse {
+        let data = try runLocalMemoryOperation(workspaceURL: workspaceURL, operation: "erase", topic: "", memoryIDs: memoryIDs)
+        return try JSONDecoder().decode(HermesLocalMemoryEraserEraseResponse.self, from: data)
+    }
+
+    private func runLocalMemoryOperation(workspaceURL: URL, operation: String, topic: String, memoryIDs: [String]) throws -> Data {
+        let script = Self.localMemoryPythonScript
+        let arguments = ["-c", script, operation, workspaceURL.path, topic] + memoryIDs
+        let result = try HermesProcessRunner.run(
+            executable: HermesRuntimePaths.defaultPythonExecutable,
+            arguments: arguments,
+            environment: Self.normalizedPythonEnvironment(hermesHome: workspaceURL.path),
+            currentDirectory: HermesRuntimePaths.defaultHermesAgentRoot,
+            timeout: 45
+        )
+        guard !result.timedOut else { throw HermesKnowledgeEraserError.localMemoryProvider("python helper timed out") }
+        guard result.exitCode == 0 else {
+            throw HermesKnowledgeEraserError.localMemoryProvider(result.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        guard let data = result.output.data(using: .utf8) else {
+            throw HermesKnowledgeEraserError.localMemoryProvider("python helper returned non-UTF-8 output")
+        }
+        return data
+    }
+
+    private static func normalizedPythonEnvironment(hermesHome: String) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        environment["HERMES_HOME"] = hermesHome
+        environment["TERM"] = environment["TERM"] ?? "xterm-256color"
+        let agentRoot = HermesRuntimePaths.defaultHermesAgentRoot
+        let existingPythonPath = environment["PYTHONPATH"] ?? ""
+        environment["PYTHONPATH"] = existingPythonPath.isEmpty ? agentRoot : agentRoot + ":" + existingPythonPath
+        environment["PATH"] = normalizedPATH(existing: environment["PATH"], hermesHome: hermesHome)
+        return environment
+    }
+
+    private static func normalizedPATH(existing: String?, hermesHome: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let preferredPaths = [
+            URL(fileURLWithPath: hermesHome).appendingPathComponent("node/bin").path,
+            "/opt/homebrew/bin",
+            "/opt/homebrew/sbin",
+            "/usr/local/bin",
+            "/usr/local/sbin",
+            URL(fileURLWithPath: home).appendingPathComponent(".local/bin").path
+        ]
+        let fallbackPaths = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
+        let currentPaths = (existing ?? "")
+            .split(separator: ":", omittingEmptySubsequences: true)
+            .map(String.init)
+        var seen = Set<String>()
+        return (preferredPaths + currentPaths + fallbackPaths).filter { path in
+            let standardized = URL(fileURLWithPath: path).standardizedFileURL.path
+            guard FileManager.default.fileExists(atPath: standardized), !seen.contains(standardized) else { return false }
+            seen.insert(standardized)
+            return true
+        }.joined(separator: ":")
+    }
+
+    private static func localMemoryItemID(for memoryID: String) -> String { "local_memory:\(memoryID)" }
+
+    private static func localMemoryRecordID(from itemID: String) -> String? {
+        let prefix = "local_memory:"
+        guard itemID.hasPrefix(prefix) else { return nil }
+        return String(itemID.dropFirst(prefix.count))
     }
 
     private func resolvedWorkspaceURL(from path: String) throws -> URL {
@@ -512,11 +632,84 @@ private final class HermesKnowledgeEraserRegistry {
         return collapsed.isEmpty ? "topic" : String(collapsed.prefix(80))
     }
 
+    private static let localMemoryPythonScript = #"""
+import json
+import sys
+
+operation = sys.argv[1]
+hermes_home = sys.argv[2]
+topic = sys.argv[3]
+memory_ids = sys.argv[4:]
+
+try:
+    from plugins.memory.local_memory import LocalMemoryProvider
+
+    provider = LocalMemoryProvider()
+    provider.initialize(
+        "hermes-macos-knowledge-eraser",
+        hermes_home=hermes_home,
+        platform="macos",
+        agent_identity="default",
+        agent_workspace="hermes",
+        agent_context="primary",
+    )
+    if operation == "scan":
+        payload = {
+            "success": True,
+            "results": provider.find_eraser_keyword_matches(topic, limit=200, scoped=False),
+        }
+    elif operation == "erase":
+        payload = provider.erase_eraser_memories(memory_ids, reason="knowledge_eraser")
+        payload["success"] = True
+    else:
+        raise ValueError(f"Unsupported local_memory operation: {operation}")
+    print(json.dumps(payload, sort_keys=True))
+except Exception as exc:  # noqa: BLE001 - returned to the Swift UI as a user-visible operation failure
+    print(json.dumps({"success": False, "error": str(exc), "results": [], "erased": [], "skipped": memory_ids}, sort_keys=True))
+    sys.exit(1)
+"""#
+
     private static let archiveDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
         return formatter
     }()
+}
+
+private struct HermesLocalMemoryEraserScanResponse: Decodable {
+    let success: Bool
+    let error: String?
+    let results: [HermesLocalMemoryEraserRecord]
+}
+
+private struct HermesLocalMemoryEraserEraseResponse: Decodable {
+    let success: Bool
+    let error: String?
+    let message: String?
+    let erased: [String]
+    let skipped: [String]
+}
+
+private struct HermesLocalMemoryEraserRecord: Decodable {
+    let memory_id: String
+    let content: String
+    let memory_type: String?
+    let confidence: Double?
+    let updated_at: String?
+    let scope: [String: String]?
+    let source_session_ids: [String]?
+    let mongo_match: Bool?
+    let chroma_match: Bool?
+
+    var scopeSummary: String {
+        guard let scope else { return "" }
+        let values = [scope["agent_identity"], scope["agent_workspace"], scope["user_id"]]
+            .compactMap { value -> String? in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+        return values.joined(separator: "/")
+    }
 }
 
 private struct HermesKnowledgeTopicMatcher {
