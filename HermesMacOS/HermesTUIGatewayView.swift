@@ -99,6 +99,12 @@ struct HermesTUILiveSession: Identifiable, Equatable {
     let isCurrent: Bool
 }
 
+struct HermesTUIModelCatalog: Equatable {
+    var provider = ""
+    var currentModel = ""
+    var models: [String] = []
+}
+
 @MainActor
 @Observable
 final class HermesTUIWorkspace: Identifiable {
@@ -106,6 +112,7 @@ final class HermesTUIWorkspace: Identifiable {
     let number: Int
     let store = HermesTUIGatewayStore()
     var selectedProfile: String
+    var selectedModel: String
     var fastModeEnabled: Bool
     var promptText = ""
     var requestResponses: [UUID: String] = [:]
@@ -114,10 +121,11 @@ final class HermesTUIWorkspace: Identifiable {
     private var acknowledgedCompletionToken = ""
     private var acknowledgedFailureToken = ""
 
-    init(number: Int, selectedProfile: String = "default", fastModeEnabled: Bool = false) {
+    init(number: Int, selectedProfile: String = "default", selectedModel: String = "", fastModeEnabled: Bool = false) {
         self.number = number
         let trimmedProfile = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
         self.selectedProfile = trimmedProfile.isEmpty ? "default" : trimmedProfile
+        self.selectedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         self.fastModeEnabled = fastModeEnabled
     }
 
@@ -155,6 +163,7 @@ final class HermesTUIGatewayStore {
     var storedSessionID = ""
     var sessionTitle = "New TUI session"
     var activeProfile = ""
+    var activeModel = ""
     var connectionStatus = "Idle"
     var eventCount = 0
     var lastErrorMessage = ""
@@ -184,10 +193,10 @@ final class HermesTUIGatewayStore {
         return trimmed.isEmpty ? "default" : trimmed
     }
 
-    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, profile: String, fast: Bool) {
+    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, profile: String, model: String = "", provider: String = "", fast: Bool) {
         guard !isConnecting, !isStreaming else { return }
         let selectedProfile = normalizedProfile(profile)
-        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, selectedProfile: selectedProfile, fast: fast) }
+        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, selectedProfile: selectedProfile, selectedModel: model, selectedProvider: provider, fast: fast) }
     }
 
     func disconnect() {
@@ -196,6 +205,7 @@ final class HermesTUIGatewayStore {
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
         latestCompletionToken = ""
+        activeModel = ""
         isConnected = false
         isConnecting = false
         isStreaming = false
@@ -204,17 +214,46 @@ final class HermesTUIGatewayStore {
         failPending(HermesTUIGatewayError.notConnected)
     }
 
-    func createSession(profile: String, fast: Bool) {
+    func createSession(profile: String, model: String = "", provider: String = "", fast: Bool) {
         guard !isStreaming else { return }
         let selectedProfile = normalizedProfile(profile)
-        Task { await createGatewaySession(profile: selectedProfile, fast: fast) }
+        Task { await createGatewaySession(profile: selectedProfile, model: model, provider: provider, fast: fast) }
     }
 
-    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", fast: Bool = false) {
+    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", model: String = "", provider: String = "", fast: Bool = false) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let path = attachmentPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || attachment != nil || !path.isEmpty else { return }
-        Task { await submit(text, attachment: attachment, attachmentPath: path, fast: fast) }
+        Task { await submit(text, attachment: attachment, attachmentPath: path, model: model, provider: provider, fast: fast) }
+    }
+
+    func fetchModelOptions(profile: String, refresh: Bool = false) async throws -> HermesTUIModelCatalog {
+        guard isConnected else { throw HermesTUIGatewayError.notConnected }
+        let selectedProfile = normalizedProfile(profile)
+        var params: [String: JSONValue] = ["profile": .string(selectedProfile)]
+        if !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            params["session_id"] = .string(sessionID)
+        }
+        if refresh { params["refresh"] = .bool(true) }
+        let result = try await request("model.options", params: params, timeoutSeconds: 60)
+        let object = result.objectValue
+        let currentProvider = object["provider"]?.stringValue ?? ""
+        let currentModel = object["model"]?.stringValue ?? ""
+        let rows = object["providers"]?.arrayValue.map(\.objectValue) ?? []
+        let preferredRow = rows.first { $0["is_current"]?.boolValue == true }
+            ?? rows.first { ($0["slug"]?.stringValue ?? "").caseInsensitiveCompare(currentProvider) == .orderedSame }
+            ?? rows.first { row in (row["models"]?.arrayValue ?? []).contains { $0.stringValue == currentModel } }
+        let models = (preferredRow?["models"]?.arrayValue ?? [])
+            .compactMap { $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let uniqueModels = models.reduce(into: [String]()) { result, model in
+            if !result.contains(where: { $0.caseInsensitiveCompare(model) == .orderedSame }) { result.append(model) }
+        }
+        return HermesTUIModelCatalog(
+            provider: preferredRow?["slug"]?.stringValue ?? currentProvider,
+            currentModel: currentModel,
+            models: uniqueModels
+        )
     }
 
     func interruptSession() {
@@ -240,6 +279,7 @@ final class HermesTUIGatewayStore {
                 sessionID = ""
                 storedSessionID = ""
                 activeProfile = ""
+                activeModel = ""
                 sessionTitle = "New TUI session"
                 latestCompletionToken = ""
                 isStreaming = false
@@ -313,7 +353,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, selectedProfile: String, fast: Bool) async {
+    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, selectedProfile: String, selectedModel: String = "", selectedProvider: String = "", fast: Bool) async {
         guard !isConnecting else { return }
         isConnecting = true
         lastErrorMessage = ""
@@ -331,7 +371,7 @@ final class HermesTUIGatewayStore {
             receiveTask?.cancel()
             receiveTask = Task { await receiveLoop(task) }
             if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                await createGatewaySession(profile: selectedProfile, fast: fast)
+                await createGatewaySession(profile: selectedProfile, model: selectedModel, provider: selectedProvider, fast: fast)
             }
             await refreshActiveSessions()
         } catch {
@@ -371,6 +411,7 @@ final class HermesTUIGatewayStore {
             sessionID = object["session_id"]?.stringValue ?? sessionID
             storedSessionID = object["resumed"]?.stringValue ?? object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? target
             activeProfile = selectedProfile
+            activeModel = object["info"]?.objectValue["model"]?.stringValue ?? activeModel
             latestCompletionToken = ""
             let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
             sessionTitle = displayTitle.isEmpty ? "TUI session \(shortSessionID(storedSessionID.isEmpty ? sessionID : storedSessionID))" : displayTitle
@@ -385,16 +426,21 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func createGatewaySession(profile: String, fast: Bool) async {
+    private func createGatewaySession(profile: String, model: String = "", provider: String = "", fast: Bool) async {
         do {
             let selectedProfile = normalizedProfile(profile)
             var params: [String: JSONValue] = ["profile": .string(selectedProfile)]
+            let selectedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            let selectedProvider = provider.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !selectedModel.isEmpty { params["model"] = .string(selectedModel) }
+            if !selectedProvider.isEmpty { params["provider"] = .string(selectedProvider) }
             if fast { params["fast"] = .bool(true) }
             let result = try await request("session.create", params: params, timeoutSeconds: 120)
             let object = result.objectValue
             sessionID = object["session_id"]?.stringValue ?? ""
             storedSessionID = object["stored_session_id"]?.stringValue ?? ""
             activeProfile = selectedProfile
+            activeModel = object["info"]?.objectValue["model"]?.stringValue ?? selectedModel
             sessionTitle = "TUI session \(shortSessionID(sessionID))"
             messages.removeAll()
             latestCompletionToken = ""
@@ -409,7 +455,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", fast: Bool = false) async {
+    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", model: String = "", provider: String = "", fast: Bool = false) async {
         guard canSendPrompt else {
             lastErrorMessage = HermesTUIGatewayError.missingSession.localizedDescription
             return
@@ -434,6 +480,10 @@ final class HermesTUIGatewayStore {
         connectionStatus = "Sending prompt"
         do {
             var params: [String: JSONValue] = ["session_id": .string(sessionID), "text": .string(finalText)]
+            let selectedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            let selectedProvider = provider.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !selectedModel.isEmpty { params["model"] = .string(selectedModel) }
+            if !selectedProvider.isEmpty { params["provider"] = .string(selectedProvider) }
             if fast { params["fast"] = .bool(true) }
             _ = try await request("prompt.submit", params: params, timeoutSeconds: 60)
             connectionStatus = "Streaming"
@@ -501,6 +551,7 @@ final class HermesTUIGatewayStore {
             let object = result.objectValue
             sessionID = object["session_id"]?.stringValue ?? target
             storedSessionID = object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? storedSessionID
+            activeModel = object["info"]?.objectValue["model"]?.stringValue ?? activeModel
             sessionTitle = activeSessions.first(where: { $0.id == target })?.title ?? "TUI session \(shortSessionID(target))"
             resetStreamGrouping(resetTurn: false)
             isStreaming = object["running"]?.boolValue ?? false
@@ -582,6 +633,7 @@ final class HermesTUIGatewayStore {
             connectionStatus = "Gateway ready"
         case "session.info":
             if let model = payload["model"]?.stringValue, !model.isEmpty {
+                activeModel = model
                 sessionTitle = "\(shortSessionID(event.sessionID ?? sessionID)) • \(model)"
             }
             connectionStatus = "Session info updated"
@@ -984,6 +1036,7 @@ private struct HermesTUIGatewayWorkspaceHost: View {
             selectedAttachment: $workspace.selectedAttachment,
             selectedAttachmentPath: $workspace.selectedAttachmentPath,
             selectedProfile: $workspace.selectedProfile,
+            selectedModel: $workspace.selectedModel,
             fastModeEnabled: $workspace.fastModeEnabled,
             connectedHostName: connectedHostName,
             connectedWindowID: connectedWindowID,
@@ -1055,6 +1108,72 @@ private struct HermesTUIWorkspaceButtonLabel: View {
     }
 }
 
+private struct HermesTUIModelSelector: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Binding var selectedModel: String
+    let models: [String]
+    let provider: String
+    let isLoading: Bool
+    let isDisabled: Bool
+    let onModelSelected: (String) -> Void
+    let onRefresh: () -> Void
+
+    private var currentModel: String {
+        let selected = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !selected.isEmpty { return selected }
+        return models.first ?? "Auto"
+    }
+
+    private var providerLabel: String {
+        let trimmed = provider.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "MODEL" : "MODEL · \(trimmed)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(providerLabel.uppercased())
+                    .hermesWebsiteLabelFont(size: 10, weight: .bold)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .lineLimit(1)
+                if isLoading { ProgressView().controlSize(.mini) }
+            }
+            Menu {
+                if models.isEmpty {
+                    Text("No models discovered")
+                } else {
+                    ForEach(models, id: \.self) { model in
+                        Button {
+                            selectedModel = model
+                            onModelSelected(model)
+                        } label: {
+                            Label(model, systemImage: model == currentModel ? "checkmark.circle.fill" : "circle")
+                        }
+                    }
+                }
+                Divider()
+                Button("Refresh models") { onRefresh() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.caption.weight(.semibold))
+                    Text(currentModel)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .disabled(isDisabled)
+            .help("AI model sent to Hermes Agent for this TUI session and prompt submissions")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 11)
+        .frame(minWidth: 160, maxWidth: 230, alignment: .leading)
+        .hermesGlassPanel(tint: colorScheme == .light ? Color.hermesLightGlassPaleBlue : Color.hermesPurple.opacity(0.08))
+    }
+}
+
 struct HermesTUIGatewayView: View {
     let apiSettings: HermesAPISettings
     let dashboardURL: String
@@ -1064,6 +1183,7 @@ struct HermesTUIGatewayView: View {
     @Binding var selectedAttachment: HermesPromptAttachment?
     @Binding var selectedAttachmentPath: String
     @Binding var selectedProfile: String
+    @Binding var selectedModel: String
     @Binding var fastModeEnabled: Bool
     let connectedHostName: String
     let connectedWindowID: UUID
@@ -1072,6 +1192,10 @@ struct HermesTUIGatewayView: View {
     @State private var isImportingAttachment = false
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var profileRefreshError = ""
+    @State private var availableModels: [String] = []
+    @State private var selectedModelProvider = ""
+    @State private var modelRefreshError = ""
+    @State private var isRefreshingModels = false
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var localPathSuggestions = HermesLocalPathSuggestionsStore()
     @State private var selectedSkillIndex = 0
@@ -1090,8 +1214,23 @@ struct HermesTUIGatewayView: View {
             await refreshAPIProfiles()
         }
         .onChange(of: apiSettings) { _, _ in Task { await refreshAPIProfiles() } }
-        .onChange(of: apiProfiles) { _, _ in clampFastModeIfNeeded() }
-        .onChange(of: selectedProfile) { _, _ in clampFastModeIfNeeded() }
+        .onChange(of: apiProfiles) { _, _ in
+            clampFastModeIfNeeded()
+            syncSelectedModelWithProfile()
+        }
+        .onChange(of: selectedProfile) { _, _ in
+            clampFastModeIfNeeded()
+            syncSelectedModelWithProfile(resetToProfileDefault: true)
+            Task { await refreshAvailableModels() }
+        }
+        .onChange(of: store.isConnected) { _, isConnected in
+            if isConnected { Task { await refreshAvailableModels() } }
+            else { availableModels = fallbackModelOptions() }
+        }
+        .onChange(of: store.activeModel) { _, model in
+            let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { selectedModel = trimmed }
+        }
         .onChange(of: promptText) { _, _ in handlePromptSkillQueryChange() }
         .onDisappear { }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
@@ -1121,6 +1260,15 @@ struct HermesTUIGatewayView: View {
                 ) { newProfile in
                     handleProfileSelection(newProfile)
                 }
+                HermesTUIModelSelector(
+                    selectedModel: $selectedModel,
+                    models: modelPickerOptions,
+                    provider: selectedModelProvider.isEmpty ? selectedAPIProfile?.provider ?? "" : selectedModelProvider,
+                    isLoading: isRefreshingModels,
+                    isDisabled: store.isConnecting || store.isStreaming || store.isResumingSession,
+                    onModelSelected: handleModelSelection,
+                    onRefresh: { Task { await refreshAvailableModels(refresh: true) } }
+                )
                 HermesTUIFastTogglePill(
                     isOn: $fastModeEnabled,
                     isSupported: selectedProfileSupportsFastMode,
@@ -1139,16 +1287,22 @@ struct HermesTUIGatewayView: View {
                     .foregroundStyle(Color.hermesDestructive)
             }
 
+            if !modelRefreshError.isEmpty {
+                Label(modelRefreshError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+            }
+
             HStack(spacing: 10) {
                 Button(store.isConnected ? "Reconnect" : "Connect") {
                     guard !store.isStreaming else { return }
                     store.disconnect()
-                    store.connect(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profile: selectedProfile, fast: fastModeEnabled && selectedProfileSupportsFastMode)
+                    store.connect(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: fastModeEnabled && selectedProfileSupportsFastMode)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(store.isConnecting || store.isStreaming)
 
-                Button("New session") { store.createSession(profile: selectedProfile, fast: fastModeEnabled && selectedProfileSupportsFastMode) }
+                Button("New session") { store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: fastModeEnabled && selectedProfileSupportsFastMode) }
                     .buttonStyle(.bordered)
                     .disabled(!store.isConnected || store.isStreaming || store.isResumingSession)
 
@@ -1262,6 +1416,12 @@ struct HermesTUIGatewayView: View {
                             errorMessage: dashboardSkills.lastErrorMessage,
                             onSelect: selectSkillSuggestion
                         )
+                    } else if shouldShowCommandPicker {
+                        HermesSlashCommandPicker(
+                            commands: filteredSlashCommandSuggestions,
+                            selectedIndex: selectedSkillIndex,
+                            onSelect: selectSlashCommandSuggestion
+                        )
                     } else if shouldShowPathPicker, let activePathToken {
                         HermesPathSlashPicker(
                             pathToken: activePathToken,
@@ -1293,6 +1453,10 @@ struct HermesTUIGatewayView: View {
                             guard shouldShowCompletionPicker else { return .ignored }
                             if shouldShowSkillPicker, let skill = selectedSkillSuggestion {
                                 selectSkillSuggestion(skill)
+                                return .handled
+                            }
+                            if shouldShowCommandPicker, let command = selectedSlashCommandSuggestion {
+                                selectSlashCommandSuggestion(command)
                                 return .handled
                             }
                             if shouldShowPathPicker, let path = selectedPathSuggestion {
@@ -1344,7 +1508,18 @@ struct HermesTUIGatewayView: View {
     }
 
     private var activeSlashToken: String? { promptText.hermesActiveSlashCompletionToken }
+    private var activeSlashCommandQuery: String? { promptText.hermesActiveSlashCommandQuery }
     private var activeSkillQuery: String? { promptText.hermesActiveSlashSkillQuery }
+
+    private var filteredSlashCommandSuggestions: [HermesSlashCommandSuggestion] {
+        guard let query = activeSlashCommandQuery else { return [] }
+        if query.isEmpty { return HermesSlashCommandSuggestion.all }
+        return HermesSlashCommandSuggestion.all.filter { suggestion in
+            suggestion.command.dropFirst().range(of: query, options: [.caseInsensitive, .anchored]) != nil ||
+            suggestion.aliases.contains { alias in alias.dropFirst().range(of: query, options: [.caseInsensitive, .anchored]) != nil } ||
+            suggestion.searchableText.range(of: query, options: [.caseInsensitive]) != nil
+        }
+    }
 
     private var filteredSkillSuggestions: [HermesDashboardSkill] {
         guard let query = activeSkillQuery else { return [] }
@@ -1355,7 +1530,12 @@ struct HermesTUIGatewayView: View {
     private var activePathToken: String? {
         guard let token = activeSlashToken else { return nil }
         let pathText = token.dropFirst()
-        guard !pathText.isEmpty, !dashboardSkills.isLoading, filteredSkillSuggestions.isEmpty else { return nil }
+        guard activeSkillQuery == nil,
+              !pathText.isEmpty,
+              !dashboardSkills.isLoading,
+              filteredSkillSuggestions.isEmpty,
+              filteredSlashCommandSuggestions.isEmpty
+        else { return nil }
         return token
     }
 
@@ -1363,9 +1543,13 @@ struct HermesTUIGatewayView: View {
         activeSkillQuery != nil && (dashboardSkills.isLoading || (!dashboardSkills.lastErrorMessage.isEmpty && activePathToken == nil) || !filteredSkillSuggestions.isEmpty)
     }
 
+    private var shouldShowCommandPicker: Bool {
+        activeSkillQuery == nil && activeSlashCommandQuery != nil && !filteredSlashCommandSuggestions.isEmpty
+    }
+
     private var shouldShowPathPicker: Bool { activePathToken != nil }
 
-    private var shouldShowCompletionPicker: Bool { shouldShowSkillPicker || shouldShowPathPicker }
+    private var shouldShowCompletionPicker: Bool { shouldShowSkillPicker || shouldShowCommandPicker || shouldShowPathPicker }
 
     private var selectedAPIProfile: HermesAPIProfile? {
         let active = normalizedProfile(selectedProfile)
@@ -1378,6 +1562,79 @@ struct HermesTUIGatewayView: View {
 
     private var activeFastMode: Bool {
         fastModeEnabled && selectedProfileSupportsFastMode
+    }
+
+    private var modelPickerOptions: [String] {
+        let options = availableModels.isEmpty ? fallbackModelOptions() : availableModels
+        let selected = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !selected.isEmpty, !options.contains(where: { $0.caseInsensitiveCompare(selected) == .orderedSame }) else { return options }
+        return [selected] + options
+    }
+
+    private var selectedModelForRequest: String {
+        selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var selectedProviderForRequest: String {
+        selectedModelProvider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? (selectedAPIProfile?.provider ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            : selectedModelProvider.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func fallbackModelOptions() -> [String] {
+        let model = (selectedAPIProfile?.model ?? store.activeModel).trimmingCharacters(in: .whitespacesAndNewlines)
+        return model.isEmpty ? [] : [model]
+    }
+
+    private func syncSelectedModelWithProfile(resetToProfileDefault: Bool = false) {
+        let profileModel = (selectedAPIProfile?.model ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if resetToProfileDefault || selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            selectedModel = profileModel
+        }
+        if resetToProfileDefault {
+            availableModels = fallbackModelOptions()
+            selectedModelProvider = selectedAPIProfile?.provider ?? ""
+        } else if availableModels.isEmpty {
+            availableModels = fallbackModelOptions()
+        }
+        if selectedModelProvider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            selectedModelProvider = selectedAPIProfile?.provider ?? ""
+        }
+    }
+
+    private func refreshAvailableModels(refresh: Bool = false) async {
+        guard store.isConnected else {
+            availableModels = fallbackModelOptions()
+            modelRefreshError = ""
+            return
+        }
+        isRefreshingModels = true
+        defer { isRefreshingModels = false }
+        do {
+            let catalog = try await store.fetchModelOptions(profile: selectedProfile, refresh: refresh)
+            availableModels = catalog.models.isEmpty ? fallbackModelOptions() : catalog.models
+            selectedModelProvider = catalog.provider.isEmpty ? selectedAPIProfile?.provider ?? "" : catalog.provider
+            if selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                selectedModel = catalog.currentModel.isEmpty ? selectedAPIProfile?.model ?? "" : catalog.currentModel
+            }
+            modelRefreshError = ""
+        } catch {
+            availableModels = fallbackModelOptions()
+            modelRefreshError = String(localized: "Models unavailable: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleModelSelection(_ newModel: String) {
+        selectedModel = newModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard store.isConnected,
+              !store.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !store.isStreaming,
+              !store.isConnecting,
+              !store.isResumingSession,
+              !selectedModelForRequest.isEmpty,
+              store.activeModel.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(selectedModelForRequest) != .orderedSame
+        else { return }
+        store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode)
     }
 
     private func clampFastModeIfNeeded() {
@@ -1396,6 +1653,7 @@ struct HermesTUIGatewayView: View {
 
     private func handleProfileSelection(_ newProfile: String) {
         selectedProfile = normalizedProfile(newProfile)
+        syncSelectedModelWithProfile(resetToProfileDefault: true)
         clampFastModeIfNeeded()
         let active = normalizedProfile(store.activeProfile)
         guard store.isConnected,
@@ -1405,7 +1663,7 @@ struct HermesTUIGatewayView: View {
               !store.isResumingSession,
               active != selectedProfile
         else { return }
-        store.createSession(profile: selectedProfile, fast: activeFastMode)
+        store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode)
     }
 
     private func refreshAPIProfiles() async {
@@ -1438,6 +1696,12 @@ struct HermesTUIGatewayView: View {
         return suggestions[selectedSkillIndex]
     }
 
+    private var selectedSlashCommandSuggestion: HermesSlashCommandSuggestion? {
+        let suggestions = filteredSlashCommandSuggestions
+        guard suggestions.indices.contains(selectedSkillIndex) else { return suggestions.first }
+        return suggestions[selectedSkillIndex]
+    }
+
     private var selectedPathSuggestion: HermesLocalPathSuggestion? {
         let suggestions = localPathSuggestions.suggestions
         guard suggestions.indices.contains(selectedSkillIndex) else { return suggestions.first }
@@ -1445,29 +1709,44 @@ struct HermesTUIGatewayView: View {
     }
 
     private func handlePromptSkillQueryChange() {
-        guard activeSlashToken != nil else {
+        guard activeSlashToken != nil || activeSkillQuery != nil else {
             localPathSuggestions.clear()
             selectedSkillIndex = 0
             return
         }
-        dashboardSkills.refreshIfNeeded(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        if activeSkillQuery != nil {
+            dashboardSkills.refreshIfNeeded(dashboardBaseURL: dashboardURL, apiSettings: apiSettings)
+        }
         if let activePathToken {
             localPathSuggestions.refresh(pathToken: activePathToken)
         } else {
             localPathSuggestions.clear()
         }
-        let count = shouldShowSkillPicker ? filteredSkillSuggestions.count : localPathSuggestions.suggestions.count
+        let count = activeCompletionSuggestionCount
         if count == 0 || selectedSkillIndex >= count { selectedSkillIndex = 0 }
     }
 
+    private var activeCompletionSuggestionCount: Int {
+        if shouldShowSkillPicker { return filteredSkillSuggestions.count }
+        if shouldShowCommandPicker { return filteredSlashCommandSuggestions.count }
+        if shouldShowPathPicker { return localPathSuggestions.suggestions.count }
+        return 0
+    }
+
     private func moveSkillSelection(delta: Int) {
-        let count = shouldShowSkillPicker ? filteredSkillSuggestions.count : localPathSuggestions.suggestions.count
+        let count = activeCompletionSuggestionCount
         guard count > 0 else { return }
         selectedSkillIndex = (selectedSkillIndex + delta + count) % count
     }
 
     private func selectSkillSuggestion(_ skill: HermesDashboardSkill) {
         promptText = promptText.replacingActiveSlashSkillQuery(with: skill.name)
+        localPathSuggestions.clear()
+        selectedSkillIndex = 0
+    }
+
+    private func selectSlashCommandSuggestion(_ command: HermesSlashCommandSuggestion) {
+        promptText = promptText.replacingActiveSlashCommandToken(with: command.command)
         localPathSuggestions.clear()
         selectedSkillIndex = 0
     }
@@ -1479,7 +1758,7 @@ struct HermesTUIGatewayView: View {
 
     private func submitPrompt() {
         let text = promptText
-        store.submitPrompt(text, attachment: selectedAttachment, attachmentPath: selectedAttachmentPath, fast: activeFastMode)
+        store.submitPrompt(text, attachment: selectedAttachment, attachmentPath: selectedAttachmentPath, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode)
         promptText = ""
         selectedAttachment = nil
         selectedAttachmentPath = ""
