@@ -2,7 +2,8 @@
 
 **Feature Branch**: `feature/time-machine-history-sessions-resume`  
 **Created**: 2026-06-27  
-**Status**: Draft  
+**Status**: Refined
+**Refined**: 2026-06-27 — Added Sessions-tab local_memory persistence action with duplicate protection.
 **Input**: User description: "Feature: History and Session Resume. Description: Lets users search conversations, browse stored sessions, inspect messages, filter by profile, and resume compatible Ask, Chat, or TUI sessions. Relevant files: HermesMacOS/HermesHistoryView.swift, HermesMacOS/HermesDashboardHistorySearch.swift, docs/reference-api-and-storage.md. Focus on this feature only; do not modify other features."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -55,6 +56,7 @@ A user opens Sessions, pages through non-cron stored sessions, changes display o
 2. **Given** a session is expanded, **When** details are not cached, **Then** the app fetches `api/sessions/{session_id}/messages`, caches the result, and renders messages.
 3. **Given** the user changes display order, **When** the list reloads, **Then** sessions are ordered chronologically or reverse chronologically as selected.
 4. **Given** a stored session should resume to TUI, **When** the user chooses that action, **Then** the selected session summary is forwarded to the TUI resume flow.
+5. **Given** a stored session has user prompts and assistant answers, **When** the user chooses to persist it to local_memory, **Then** HermesMacOS sends only user and assistant content to the local_memory provider and reports whether the session was stored or already present.
 
 ### Edge Cases
 
@@ -80,6 +82,8 @@ A user opens Sessions, pages through non-cron stored sessions, changes display o
 - **FR-008**: System MUST filter cron-initiated sessions from the Sessions browser.
 - **FR-009**: System MUST support pagination and chronological/reverse chronological display order for stored sessions.
 - **FR-010**: System MUST cache loaded session conversation details by session id and surface per-session load errors.
+- **FR-011**: System MUST provide a per-session Sessions-tab action that persists user prompts and assistant final answers into the configured `local_memory` provider.
+- **FR-012**: System MUST avoid duplicate local_memory insertion for a session/content pair that is already stored.
 - **FR-SEC**: System MUST obtain dashboard session tokens through `HermesDashboardClient`, send them only in `X-Hermes-Session-Token`, and reuse endpoint/TLS validation through shared network helpers.
 - **FR-INT**: System MUST preserve dashboard history/search/session API contracts documented in `docs/reference-api-and-storage.md`.
 
@@ -90,6 +94,7 @@ A user opens Sessions, pages through non-cron stored sessions, changes display o
 - **HermesDashboardConversationResult**: Search/detail result containing session metadata, matches, messages, and display title fallback.
 - **HermesDashboardConversationMessage**: Flexible decoded conversation message with role, content, timestamp, and tool metadata.
 - **HermesSessionsStore**: Stored session pagination, filtering, detail fetching, caching, cancellation, and status/error state.
+- **Hermes local_memory provider**: Local persistent memory backend that receives selected session user/assistant content for raw-turn capture and curation.
 - **HermesAgentSessionSummary**: Stored session row metadata used for browsing, filtering, display, and resume.
 
 ## Success Criteria *(mandatory)*
@@ -100,6 +105,7 @@ A user opens Sessions, pages through non-cron stored sessions, changes display o
 - **SC-002**: Profile filtering narrows search results to the selected normalized profile.
 - **SC-003**: Expanded search results show readable initial/final messages and offer valid resume targets.
 - **SC-004**: A user can browse non-cron stored sessions, change display order, page results, and load details.
+- **SC-006**: A user can store a Sessions-tab conversation in local_memory once, and a repeat action for identical session content reports already stored without inserting another raw turn.
 - **SC-005**: 401 token refresh retry, cancellation, empty search, and invalid dashboard failures produce stable UI states.
 - **SC-BUILD**: The `HermesMacOS` scheme builds successfully with Xcode or command-line `xcodebuild`.
 - **SC-SMOKE**: The primary History/Sessions flows can be validated independently with documented dashboard smoke checks.

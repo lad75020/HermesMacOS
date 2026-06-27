@@ -1,5 +1,7 @@
 # Implementation Plan: History and Session Resume
 
+> ⚠️ **STALE**: spec.md was refined on 2026-06-27. Run `/speckit.refine.propagate` to update this plan.
+
 **Branch**: `feature/time-machine-history-sessions-resume` | **Date**: 2026-06-27 | **Spec**: [spec.md](./spec.md)
 
 **Input**: Feature specification from `/specs/006-history-sessions-resume/spec.md`

@@ -1,5 +1,7 @@
 # Tasks: History and Session Resume
 
+> ⚠️ **STALE**: spec.md was refined on 2026-06-27. Run `/speckit.refine.propagate` to update this task list.
+
 **Input**: Design documents from `/specs/006-history-sessions-resume/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/dashboard-history-sessions-api.md, quickstart.md
