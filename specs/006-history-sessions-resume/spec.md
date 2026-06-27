@@ -1,7 +1,7 @@
 # Feature Specification: History and Session Resume
 
-**Feature Branch**: `feature/time-machine-history-sessions-resume`  
-**Created**: 2026-06-27  
+**Feature Branch**: `feature/time-machine-history-sessions-resume`
+**Created**: 2026-06-27
 **Status**: Refined
 **Refined**: 2026-06-27 — Added Sessions-tab local_memory persistence action with duplicate protection.
 **Input**: User description: "Feature: History and Session Resume. Description: Lets users search conversations, browse stored sessions, inspect messages, filter by profile, and resume compatible Ask, Chat, or TUI sessions. Relevant files: HermesMacOS/HermesHistoryView.swift, HermesMacOS/HermesDashboardHistorySearch.swift, docs/reference-api-and-storage.md. Focus on this feature only; do not modify other features."

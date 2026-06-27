@@ -1,12 +1,12 @@
 # Tasks: History and Session Resume
 
-> ⚠️ **STALE**: spec.md was refined on 2026-06-27. Run `/speckit.refine.propagate` to update this task list.
+**Propagated**: 2026-06-27 — Updated from spec.md refinement for Sessions-tab local_memory persistence.
 
 **Input**: Design documents from `/specs/006-history-sessions-resume/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/dashboard-history-sessions-api.md, quickstart.md
 
-**Tests/Verification**: Build verification and live dashboard/manual smoke checks are mandatory. Automated dashboard API fixture tests should be added when a test target exists.
+**Tests/Verification**: Build verification, focused ad-hoc local_memory idempotency verification, and live dashboard/manual smoke checks are mandatory. Automated dashboard API fixture tests should be added when a test target exists.
 
 ## Phase 1: Setup (Shared Infrastructure)
 
@@ -37,6 +37,13 @@
 - [x] T013 [US3] Trace session pagination, non-cron filtering, ordering, detail loading, and detail caching in `HermesMacOS/HermesHistoryView.swift`
 - [x] T014 [US3] Document Sessions browse/detail/resume smoke checks in `specs/006-history-sessions-resume/quickstart.md`
 
+## Phase 5A: User Story 3 refinement - Persist sessions to local_memory (Priority: P3)
+
+- [x] T018 [US3] Add a per-session Sessions-tab button and per-row storing/stored/error state in `HermesMacOS/HermesHistoryView.swift`
+- [x] T019 [US3] Build a user/assistant-only local_memory persistence payload from cached or lazy-loaded session messages in `HermesMacOS/HermesHistoryView.swift`
+- [x] T020 [US3] Check the local_memory raw-turn idempotency key before syncing so repeat actions report already stored instead of inserting duplicates in `HermesMacOS/HermesHistoryView.swift`
+- [x] T021 [US3] Verify the embedded local_memory helper with focused ad-hoc duplicate-prevention coverage
+
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 - [x] T015 Run XcodeMCP build for the `HermesMacOS` scheme
@@ -48,4 +55,5 @@
 - Phase 1 creates traceability artifacts.
 - Phase 2 confirms implementation anchors.
 - US1 is the MVP and should be validated before result resume or Sessions browse flows.
+- Phase 5A depends on Phase 5 because local_memory persistence reuses lazy-loaded session messages and per-session detail cache state.
 - Phase 6 verification must run before marking the queue feature complete.
