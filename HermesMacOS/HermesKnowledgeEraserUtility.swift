@@ -286,7 +286,7 @@ private struct HermesKnowledgeEraserItemRow: View {
     }
 }
 
-private final class HermesKnowledgeEraserRegistry {
+private final class HermesKnowledgeEraserRegistry: @unchecked Sendable {
     private let fileManager = FileManager.default
     private let entryDelimiter = "\n§\n"
 

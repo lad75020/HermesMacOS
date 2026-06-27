@@ -66,6 +66,30 @@ private struct HermesTUIGatewayWSTicketResponse: Decodable {
     let ticket: String
 }
 
+struct HermesTUIGatewayParsedEvent: Equatable {
+    let type: String
+    let sessionID: String?
+    let text: String?
+    let status: String?
+    let requestID: String?
+}
+
+enum HermesTUIGatewayEventParser {
+    static func parseEventEnvelope(_ text: String) throws -> HermesTUIGatewayParsedEvent? {
+        guard let data = text.data(using: .utf8) else { return nil }
+        let envelope = try JSONDecoder().decode(HermesTUIGatewayRPCEnvelope.self, from: data)
+        guard envelope.method == "event", let event = envelope.params else { return nil }
+        let payload = event.payload?.objectValue ?? [:]
+        return HermesTUIGatewayParsedEvent(
+            type: event.type,
+            sessionID: event.sessionID,
+            text: payload["text"]?.stringValue ?? payload["preview"]?.stringValue,
+            status: payload["status"]?.stringValue,
+            requestID: payload["request_id"]?.stringValue ?? payload["id"]?.stringValue
+        )
+    }
+}
+
 struct HermesTUIGatewayMessage: Identifiable, Equatable {
     enum Role: String, Equatable {
         case user

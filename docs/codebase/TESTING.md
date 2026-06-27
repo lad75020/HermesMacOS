@@ -1,48 +1,69 @@
 # HermesMacOS testing
 
-## Current test setup
-No dedicated test target, unit test bundle, UI test bundle, or separate test runner was detected in the repository. The Xcode project list reports one application target and one scheme, both named `HermesMacOS`.
+## Native test target
 
-## Current verification path
-The repository README documents build verification through Xcode or command-line `xcodebuild`:
+HermesMacOS declares a native macOS unit-test target named `HermesMacOSTest` in `project.yml`. Regenerate the Xcode project before relying on target membership:
 
 ```bash
 xcodegen generate
-xcodebuild   -project HermesMacOS.xcodeproj   -scheme HermesMacOS   -destination 'generic/platform=macOS'   build
+xcodebuild -list -project HermesMacOS.xcodeproj
 ```
 
-If DerivedData is locked by Xcode, README documents using an isolated DerivedData path.
+The project list should include targets and schemes for both `HermesMacOS` and `HermesMacOSTest`.
 
-## Manual smoke checks implied by code
-After a successful build, these areas need manual or integration smoke checks because they depend on live Hermes services or macOS permissions:
-- Ask Hermes: configure API base URL, fetch profiles, submit streaming and non-streaming requests, cancel an active request, resume a previous session.
-- Chat with Hermes: submit streaming and non-streaming chat prompts, system prompt, attachments, and cancellation.
-- TUI Gateway: connect to dashboard `api/ws`, create a session, submit a prompt, attach an image/text/document, verify `input.attachment` and streamed transcript bubbles, answer any request bubbles, create/switch/delete numbered workspaces, interrupt/close sessions, and resume a stored History or Sessions row into the selected TUI workspace.
-- Dashboard-backed tabs: verify the dashboard URL serves HTML with `window.__HERMES_SESSION_TOKEN__`, then exercise history, sessions, skills, schedules, plugins, toolsets, MCP servers, and raw config operations.
-- Approvals Inbox: trigger a local approval, approve/deny, and confirm auto-refresh updates the tab state.
-- Kanban: connect to a dashboard/plugin that exposes the expected Kanban API and live update stream.
-- Speech-to-text: grant microphone and speech recognition permissions, test Apple local transcription, then test Whisper WebSocket if available.
-- Local retention: opt into clipboard monitoring and message history, relaunch, and confirm retained data is readable after LocalAuthentication unlock.
-- TLS pinning: connect to a self-signed trusted host, review the approval prompt, pin the fingerprint, then reset and repeat.
-- SSH/gitrepo update: configure a saved remote endpoint with SSH credentials and run a preview before an update.
+## Default verification path
 
-## Suggested future automated coverage
-- Pure Swift unit tests for YAML manipulation in `HermesMCPServersYAML` and `HermesToolsetsYAMLUpdater`.
-- Unit tests for endpoint URL normalization in `HermesHostEndpoints` and `HermesAPISettings`.
-- Unit tests for redaction in `HermesSecretRedactor`.
-- Unit tests for attachment limits, MIME inference, and request body encoding in `HermesPromptAttachment` and Chat attachment payloads.
-- Unit tests for `HermesRequestFailureClassifier`.
-- Integration tests with a mock HTTP server for Hermes API and Dashboard endpoints.
-- UI smoke tests for tab navigation and settings persistence if a stable test host is available.
+Build the app target:
 
-## [TODO]
-- [TODO] Add actual test targets before documenting exact test commands beyond build verification.
-- [ASK USER] Which live Hermes host should be treated as the canonical integration-test target, if any?
+```bash
+xcodebuild \
+  -project HermesMacOS.xcodeproj \
+  -scheme HermesMacOS \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath /tmp/HermesMacOSBuildDerivedData \
+  build
+```
 
-## Evidence
-- `README.md`: build commands and note that the repository does not declare a separate test runner.
-- Terminal evidence: `xcodebuild -list -project HermesMacOS.xcodeproj` reported only target `HermesMacOS` and scheme `HermesMacOS`.
-- `project.yml`: one application target and no test target.
-- `HermesMacOS/HermesMCPServersYAML.swift`, `HermesDashboardToolsets.swift`: pure parsing/update logic suitable for unit tests.
-- `HermesMacOS/HermesSecurityUtilities.swift`: redaction and encrypted retention helpers.
-- `HermesMacOS/HermesModelsAPI.swift`, `HermesChatCompletionsAPI.swift`: request construction and streaming logic.
+Run the deterministic fixture-backed test suite:
+
+```bash
+xcodebuild \
+  -project HermesMacOS.xcodeproj \
+  -scheme HermesMacOSTest \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath /tmp/HermesMacOSTestDerivedData \
+  test
+```
+
+Default tests must not require a running Hermes API, Dashboard, TUI Gateway, Whisper service, microphone permission, SSH host, writable real Hermes home, or real repository mutation.
+
+## Test organization
+
+- `HermesMacOSTest/Functional/`: user-facing workflow coverage for tabs, Settings surfaces, dashboard-backed panels, local runtime utilities, and accessibility labels.
+- `HermesMacOSTest/Technical/`: endpoint/request construction, streaming parsers, attachment encoding, YAML mutation, security guardrails, retention, and async lifecycle contracts.
+- `HermesMacOSTest/Coverage/`: coverage inventory and contract-verifier tests tied to `specs/013-hermesmacos-test-target/contracts/test-coverage-contract.md`.
+- `HermesMacOSTest/Fixtures/`: deterministic fake API, dashboard, runtime, stream, and security fixtures.
+- `HermesMacOSTest/LiveSmoke/`: skip-by-default live smoke configuration and tests.
+- `HermesMacOSTest/Support/`: shared fixture loading, mock URL protocol, temporary runtime, bounded async, and redaction assertions.
+
+## Live smoke policy
+
+Live checks are opt-in only. Configure them with explicit environment variables documented in `HermesMacOSTest/LiveSmoke/LiveSmokeConfiguration.md`. Do not put live endpoints, dashboard tokens, API keys, SSH keys, real prompts, real clipboard entries, or real certificate pins in fixtures or committed logs.
+
+Suggested live smoke areas after the default suite passes:
+
+- Ask Hermes and Chat with Hermes against a disposable Hermes API profile.
+- TUI Gateway WebSocket connection against a known dashboard session.
+- Dashboard-backed History, Sessions, Skills, Schedules, Plugins, Toolsets, MCP Servers, and raw config.
+- Approvals Inbox and Kanban against a controlled local fixture/plugin environment.
+- Speech-to-text only after microphone and speech-recognition permission are intentionally granted.
+- TLS pinning only with disposable fixture hosts/fingerprints.
+- SSH/repository operations only against temporary repositories or explicit throwaway remotes.
+
+## Final implementation evidence
+
+- `xcodegen generate` completed successfully and generated `HermesMacOS.xcodeproj` with `HermesMacOSTest` target membership.
+- `xcodebuild -list -project HermesMacOS.xcodeproj` reported targets `HermesMacOS` and `HermesMacOSTest`, and schemes `HermesMacOS` and `HermesMacOSTest`.
+- `xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/HermesMacOSBuildDerivedData build` succeeded.
+- `xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOSTest -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/HermesMacOSTestDerivedData test` succeeded with 54 tests and 0 failures.
+- Optional live-smoke checks were not run; the suite currently verifies skip-by-default behavior.

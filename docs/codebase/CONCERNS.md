@@ -2,10 +2,10 @@
 
 ## Current risks and maintenance hotspots
 
-### No automated test target
-The repo currently relies on Xcode build verification and manual/live-service smoke checks. Pure logic exists for endpoint normalization, YAML editing, redaction, request encoding, and failure classification, but no test target covers it.
+### Automated test target is new
+The repo now includes `HermesMacOSTest`, a native macOS unit-test target with fixture-backed functional, technical, coverage, and live-smoke-skip tests.
 
-Impact: regressions in local config editing, request construction, or retention security can ship without a fast local signal.
+Impact: keep the coverage map and fixtures current as the app evolves so the new fast local signal does not drift from the product surface.
 
 ### Large feature files
 Several files exceed 500 lines and mix UI, state orchestration, parsing, and network or local operations:
@@ -55,14 +55,14 @@ The only scan hit was a prompt string containing the word `TODOs` inside `Hermes
 - Large in-memory histories, raw JSON stream buffers, and rendered images should continue to be bounded.
 
 ## [TODO]
-- [TODO] Add a `HermesMacOSTests` target for pure logic and security helpers.
-- [TODO] Add an integration-test fixture or mock server for Hermes API and Dashboard contracts.
+- [TODO] Keep `HermesMacOSTest/Coverage/HermesMacOSTestCoverageMap.swift` synchronized with new app surfaces.
+- [TODO] Extend mock/live-smoke fixtures when new Hermes API or Dashboard contracts are added.
 - [ASK USER] Decide whether hardcoded Whisper service should become a Settings field.
 - [ASK USER] Decide whether dashboard session-token extraction should move to a stable dashboard API endpoint.
 
 ## Evidence
 - Terminal scan output generated during this documentation pass: churn, code metrics, TODO/FIXME/HACK result, no CI, no test config.
-- `README.md`: no separate test runner and live backend requirements.
+- `README.md`, `docs/codebase/TESTING.md`: native `HermesMacOSTest` commands and live backend requirements.
 - `SECURITY.md`: sandbox disabled by design and guardrail model.
 - `HermesMacOS/HermesSecurityUtilities.swift`: sensitive URL validation, dashboard token scraping, redaction, encrypted retention, Keychain.
 - `HermesMacOS/HermesSpeechToText.swift`: hardcoded Whisper URL.

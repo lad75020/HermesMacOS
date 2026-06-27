@@ -359,6 +359,7 @@ private struct HermesResponseHistoryRow: View {
     var body: some View { historyRow(systemImage: entry.source.systemImage, badge: entry.source.displayName, title: entry.title, subtitle: entry.subtitle, badgeIcon: "text.bubble") }
 }
 
+@MainActor
 private func historyRow(systemImage: String, badge: String, title: String, subtitle: String, badgeIcon: String) -> some View {
     HStack(alignment: .center, spacing: 14) {
         Image(systemName: systemImage)

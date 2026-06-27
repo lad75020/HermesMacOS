@@ -1,0 +1,5 @@
+{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","session_id":"sess-test","payload":{}}}
+{"jsonrpc":"2.0","method":"event","params":{"type":"message.delta","session_id":"sess-test","payload":{"text":"Hello"}}}
+{"jsonrpc":"2.0","method":"event","params":{"type":"message.complete","session_id":"sess-test","payload":{"text":"Hello world","status":"complete"}}}
+{"jsonrpc":"2.0","method":"event","params":{"type":"approval.request","session_id":"sess-test","payload":{"request_id":"approval-test","prompt":"Approve fake action"}}}
+{"jsonrpc":"2.0","method":"event","params":{"type":"unknown.fixture","session_id":"sess-test","payload":{"preview":"Unknown event"}}}

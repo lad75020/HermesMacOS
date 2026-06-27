@@ -863,6 +863,10 @@ struct HermesPromptAttachment: Equatable {
         return "\n" + String(localized: "Attached file: \(filename) (\(mimeType), \(formattedByteCount))\nBinary document bytes are not inlined into the prompt by HermesMacOS. Use a file-aware tool or upload workflow if the model needs to inspect this document.")
     }
 
+    static func sizeLimit(forExtension ext: String) -> Int64 {
+        maxStoredBytes(forExtension: ext.lowercased())
+    }
+
     private static func maxStoredBytes(forExtension ext: String) -> Int64 {
         if imageFileExtensions.contains(ext) { return maxImageBytes }
         if utf8FileExtensions.contains(ext) { return maxTextBytes }

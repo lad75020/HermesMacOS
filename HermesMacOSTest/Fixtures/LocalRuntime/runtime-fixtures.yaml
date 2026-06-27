@@ -1,0 +1,18 @@
+mcp_servers:
+  fixture:
+    command: echo
+    args: [hello, hermes]
+    env:
+      HERMES_TEST_TOKEN: fake-token
+    disabled: false
+  disabled_server:
+    url: http://localhost:9999/mcp
+    disabled: true
+profiles:
+  default:
+    provider: test
+    model: hermes-test
+models:
+  main:
+    provider: test
+    model: hermes-test

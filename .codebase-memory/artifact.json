@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "commit": "e6f36bec5d0a0ac00d12b8e47180638840932904",
+    "indexed_at": "2026-06-27T20:38:51Z",
+    "project": "Volumes-WDBlack4TB-Code-HermesMacOS",
+    "nodes": 4134,
+    "edges": 9038,
+    "original_size": 4915200,
+    "compressed_size": 500468,
+    "compression_level": 9
+}

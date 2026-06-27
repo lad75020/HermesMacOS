@@ -687,7 +687,7 @@ private struct HermesMarqueeText: View {
 }
 
 private struct HermesMarqueeTextWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
+    static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
@@ -1117,7 +1117,7 @@ enum HermesBubbleTextFormatter {
 private struct HermesRenderedBubbleImage: Identifiable {
     private static let maxEncodedCharacters = 32_000_000
     private static let maxImageBytes = 24_000_000
-    private static let dataCache = NSCache<NSString, NSData>()
+    nonisolated(unsafe) private static let dataCache = NSCache<NSString, NSData>()
 
     let id: String
     let source: String

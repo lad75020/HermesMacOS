@@ -1,0 +1,12 @@
+{
+  "htmlWithToken": "<html><script>window.__HERMES_SESSION_TOKEN__ = 'dashboard-token-fixture';</script></html>",
+  "htmlWithoutToken": "<html><body>No token</body></html>",
+  "skills": {"skills": [{"name": "testing", "enabled": true}]},
+  "schedules": {"jobs": [{"id": "job-test", "name": "Fixture Job", "enabled": true}]},
+  "plugins": {"plugins": [{"name": "kanban", "status": "enabled"}]},
+  "toolsets": {"toolsets": [{"name": "web", "enabled": true}]},
+  "mcp_servers": {"servers": [{"name": "fixture", "command": "echo", "args": ["hello"]}]},
+  "history": {"conversations": [{"id": "session-test", "title": "Fixture Session"}]},
+  "sessions": {"sessions": [{"id": "session-test", "title": "Fixture Session"}]},
+  "raw_config": {"yaml": "provider: test\nmodel: hermes-test\n"}
+}

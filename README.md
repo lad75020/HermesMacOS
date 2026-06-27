@@ -17,6 +17,7 @@ HermesMacOS is a native SwiftUI macOS control surface for Hermes Agent APIs, das
 ├── project.yml                    # XcodeGen project definition
 ├── HermesMacOS.xcodeproj/         # Generated Xcode project
 ├── HermesMacOS/                   # SwiftUI app source, resources, entitlements
+├── HermesMacOSTest/               # Native macOS unit tests, fixtures, coverage map
 ├── docs/                          # App docs and source maps
 └── README.md
 ```
@@ -87,14 +88,26 @@ Open Settings in the app and configure:
 
 ## Testing and checks
 
-The repository does not declare a separate test runner. Build the Xcode scheme, then verify a configured backend with simple checks such as:
+Regenerate the project, build the app, and run the native fixture-backed test target:
+
+```bash
+xcodegen generate
+xcodebuild \
+  -project HermesMacOS.xcodeproj \
+  -scheme HermesMacOSTest \
+  -destination 'platform=macOS,arch=arm64' \
+  -derivedDataPath /tmp/HermesMacOSTestDerivedData \
+  test
+```
+
+The default `HermesMacOSTest` suite uses fake fixtures and temporary directories only. For live backend smoke checks, configure explicit disposable endpoints and run simple checks such as:
 
 ```bash
 curl -i https://your-host.example:8642/v1/profiles
 curl -i https://your-host.example:9120/
 ```
 
-For dashboard-backed features, the dashboard must provide a session token in its HTML and expose the expected API routes.
+For dashboard-backed live features, the dashboard must provide a session token in its HTML and expose the expected API routes.
 
 ## Security notes
 

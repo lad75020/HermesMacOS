@@ -6,6 +6,7 @@
 import CoreText
 import SwiftUI
 
+@MainActor
 enum HermesWebsiteFontRegistrar {
     private static var didRegister = false
 

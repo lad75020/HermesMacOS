@@ -1,0 +1,8 @@
+{
+  "profiles": {"data": [{"id": "default", "name": "default", "is_default": true}]},
+  "response": {"id": "resp-test", "output_text": "Hello from fixture"},
+  "chatCompletion": {"id": "chat-test", "choices": [{"message": {"role": "assistant", "content": "Hello chat"}}]},
+  "approval": {"id": "approval-test", "status": "pending", "summary": "Approve fixture"},
+  "cancel": {"cancelled": true, "request_id": "req-test"},
+  "errors": {"timeout": "The request timed out", "networkLoss": "The network connection was lost"}
+}

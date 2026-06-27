@@ -72,12 +72,13 @@ final class HermesDashboardToolsetsStore {
             } else {
                 enabledNames.remove(toolset.name)
             }
+            let enabledNamesSnapshot = enabledNames
             let allConfigurableToolsets = Set(toolsets.map(\.name))
             let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(dashboardBaseURL: dashboardBaseURL, apiBaseURL: apiSettings.baseURL)
             try await HermesDashboardClient.shared.mutateRawConfig(baseURL: baseURL, apiSettings: apiSettings) { yaml in
                 HermesToolsetsYAMLUpdater.updatedYAML(
                     yaml,
-                    enabledToolsets: enabledNames,
+                    enabledToolsets: enabledNamesSnapshot,
                     allConfigurableToolsets: allConfigurableToolsets
                 )
             }

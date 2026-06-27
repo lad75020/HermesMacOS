@@ -541,7 +541,7 @@ actor HermesDashboardClient {
         )
     }
 
-    func mutateRawConfig(baseURL: URL, apiSettings: HermesAPISettings, transform: (String) throws -> String) async throws {
+    func mutateRawConfig(baseURL: URL, apiSettings: HermesAPISettings, transform: @Sendable (String) throws -> String) async throws {
         let fetched = try await rawConfig(baseURL: baseURL, apiSettings: apiSettings)
         let updated = try transform(fetched.yaml)
         guard updated != fetched.yaml else { return }
@@ -878,6 +878,26 @@ enum HermesYAMLScalar {
     }
 }
 
+private final class HermesProcessOutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ newData: Data) {
+        guard !newData.isEmpty else { return }
+        lock.lock()
+        data.append(newData)
+        lock.unlock()
+    }
+
+    func string(appending remainder: Data) -> String {
+        lock.lock()
+        if !remainder.isEmpty { data.append(remainder) }
+        let snapshot = data
+        lock.unlock()
+        return String(data: snapshot, encoding: .utf8) ?? ""
+    }
+}
+
 enum HermesProcessRunner {
     static func run(executable: String, arguments: [String], environment: [String: String]? = nil, currentDirectory: String? = nil, timeout: TimeInterval? = nil) throws -> HermesProcessResult {
         let process = Process()
@@ -890,14 +910,9 @@ enum HermesProcessRunner {
         process.standardOutput = pipe
         process.standardError = pipe
 
-        let lock = NSLock()
-        var outputData = Data()
+        let outputBuffer = HermesProcessOutputBuffer()
         pipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            lock.lock()
-            outputData.append(data)
-            lock.unlock()
+            outputBuffer.append(handle.availableData)
         }
 
         let semaphore = DispatchSemaphore(value: 0)
@@ -918,10 +933,7 @@ enum HermesProcessRunner {
 
         pipe.fileHandleForReading.readabilityHandler = nil
         let remainder = pipe.fileHandleForReading.readDataToEndOfFile()
-        lock.lock()
-        outputData.append(remainder)
-        let text = String(data: outputData, encoding: .utf8) ?? ""
-        lock.unlock()
+        let text = outputBuffer.string(appending: remainder)
         return HermesProcessResult(exitCode: process.terminationStatus, output: text, timedOut: timedOut)
     }
 }

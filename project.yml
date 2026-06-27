@@ -8,7 +8,7 @@ options:
   createIntermediateGroups: true
 settings:
   base:
-    SWIFT_VERSION: 5.0
+    SWIFT_VERSION: 6.0
     MACOSX_DEPLOYMENT_TARGET: 26.0
 targets:
   HermesMacOS:
@@ -35,3 +35,41 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 Laurent Dubertrand"
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "HermesMacOS uses the microphone to dictate prompts into Ask Hermes."
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "HermesMacOS can transcribe your speech into Ask Hermes prompts."
+  HermesMacOSTest:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: HermesMacOSTest
+        excludes:
+          - Fixtures/**
+          - "**/*.md"
+      - path: HermesMacOSTest/Fixtures
+        buildPhase: resources
+    dependencies:
+      - target: HermesMacOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: fr.dubertrand.HermesMacOSTest
+        PRODUCT_NAME: HermesMacOSTest
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY[sdk=macosx*]: Apple Development
+        DEVELOPMENT_TEAM: RJYVGK9S3F
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/HermesMacOS.app/Contents/MacOS/HermesMacOS
+        BUNDLE_LOADER: $(TEST_HOST)
+schemes:
+  HermesMacOS:
+    build:
+      targets:
+        HermesMacOS: all
+    run:
+      config: Debug
+  HermesMacOSTest:
+    build:
+      targets:
+        HermesMacOS: all
+        HermesMacOSTest: [test]
+    test:
+      config: Debug
+      targets:
+        - name: HermesMacOSTest

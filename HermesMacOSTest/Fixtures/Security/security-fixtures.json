@@ -1,0 +1,8 @@
+{
+  "apiKey": "not-a-real-test-token",
+  "dashboardToken": "dashboard-token-test-only",
+  "sshPrivateKey": "fake-private-key-placeholder",
+  "certificateFingerprint": "AA:BB:CC:DD:EE:FF:00:11",
+  "prompt": "Please inspect fake token not-a-real-test-token",
+  "expectedRedactionMarker": "[REDACTED]"
+}

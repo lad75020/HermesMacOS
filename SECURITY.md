@@ -23,3 +23,9 @@ Settings provides a reset action for the current host pin so a changed certifica
 ## SSH Temporary Keys
 
 SSH private keys are stored in Keychain. When an SSH command needs an identity file, HermesMacOS creates a private temporary directory, writes the key file with `0600` permissions at creation time, and removes stale temporary key files on launch and before new key creation.
+
+## Test Fixtures and Live Smoke
+
+The `HermesMacOSTest` target uses deterministic fake fixtures and temporary directories by default. Fixtures must not contain real API keys, dashboard tokens, SSH private keys, certificate pins, prompts, responses, clipboard entries, repository paths, or Hermes profile data.
+
+Optional live-smoke checks must be explicitly configured, skip by default, and use disposable endpoints or throwaway repositories. Do not commit live-smoke output if it contains prompts, tool output, model responses, local file paths, or service tokens.
