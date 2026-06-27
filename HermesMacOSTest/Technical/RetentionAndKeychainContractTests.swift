@@ -15,4 +15,14 @@ final class RetentionAndKeychainContractTests: XCTestCase {
         XCTAssertFalse(redacted.contains("not-a-real-test-token-with-enough-length"))
         XCTAssertTrue(redacted.contains("[REDACTED]"))
     }
+
+
+    func testRetentionAndKeychainCoverageMatchesFR014() {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "security")
+        XCTAssertTrue(subcategories.contains("API Keychain storage"))
+        XCTAssertTrue(subcategories.contains("SSH Keychain storage"))
+        XCTAssertTrue(subcategories.contains("encrypted retention"))
+        XCTAssertTrue(subcategories.contains("retention clear paths"))
+        HermesTestAssertions.assertRedacts("prompt api_key=\(HermesTestAssertions.fakeAPIKey)")
+    }
 }

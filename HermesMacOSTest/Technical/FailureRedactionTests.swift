@@ -13,4 +13,13 @@ final class FailureRedactionTests: XCTestCase {
         let safeOutput = "Request failed for AskHermesWorkflowTests without exposing [REDACTED]"
         HermesTestAssertions.assertNoSecretLeak(safeOutput)
     }
+
+
+    func testFailureOutputCoversAllSensitiveSecretClasses() {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "security")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["bearer-token redaction", "dashboard-token redaction", "SSH redaction"])))
+        HermesTestAssertions.assertRedacts("Bearer \(HermesTestAssertions.fakeAPIKey)")
+        HermesTestAssertions.assertRedacts("dashboard token \(HermesTestAssertions.fakeDashboardToken)")
+        HermesTestAssertions.assertRedacts("-----BEGIN OPENSSH PRIVATE KEY-----\\nfake\\n-----END OPENSSH PRIVATE KEY-----")
+    }
 }

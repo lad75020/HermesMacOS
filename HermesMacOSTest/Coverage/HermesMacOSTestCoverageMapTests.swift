@@ -18,4 +18,17 @@ final class HermesMacOSTestCoverageMapTests: XCTestCase {
             }
         }
     }
+
+
+    func testCoverageMapTracksEveryRequiredSubcategoryNotJustTopLevelNames() throws {
+        let contract = try HermesTestAssertions.readRepositoryFile("specs/013-hermesmacos-test-target/contracts/test-coverage-contract.md")
+        XCTAssertGreaterThan(HermesMacOSTestCoverageMap.allRequiredSubcategories.count, 120)
+        for category in HermesMacOSTestCoverageMap.categories where !category.liveSmokeOnly {
+            XCTAssertFalse(category.requiredSubcategories.isEmpty, "\(category.displayName) must track concrete subcategories")
+            XCTAssertFalse(category.defaultCoverage.isEmpty, "\(category.displayName) must map to executable tests")
+        }
+        for requiredPhrase in ["multi-window endpoint/profile state", "session continuation headers", "temporary SSH key cleanup", "background polling", "critical control strings"] {
+            XCTAssertTrue(contract.contains(requiredPhrase), "Contract should remain the source for \(requiredPhrase)")
+        }
+    }
 }

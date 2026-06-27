@@ -13,4 +13,15 @@ final class ApprovalsAndKanbanWorkflowTests: XCTestCase {
         XCTAssertEqual(approvals?.defaultCoverage, ["ApprovalsAndKanbanWorkflowTests"])
         XCTAssertEqual(kanban?.defaultCoverage, ["ApprovalsAndKanbanWorkflowTests"])
     }
+
+
+    func testApprovalsAndKanbanSubcategoryCoverageMatchesFR008() throws {
+        let approvals = HermesMacOSTestCoverageMap.subcategories(for: "approvals")
+        XCTAssertTrue(approvals.isSuperset(of: Set(["pending approvals", "approve mutation", "deny mutation", "auto-refresh", "unavailable API state"])))
+        let kanban = HermesMacOSTestCoverageMap.subcategories(for: "kanban")
+        XCTAssertTrue(kanban.isSuperset(of: Set(["board load", "task mutations", "comment mutations", "action mutations", "live updates", "plugin unavailable state"])))
+        let fixture = try HermesFixtureLoader.string(named: "api-fixtures", extension: "json", subdirectory: "HermesAPI")
+        XCTAssertTrue(fixture.contains("approval-test"))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("kanban").defaultCoverage.contains { $0.contains("ApprovalsAndKanbanWorkflowTests") })
+    }
 }

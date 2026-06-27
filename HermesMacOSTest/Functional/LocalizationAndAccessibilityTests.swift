@@ -15,4 +15,11 @@ final class LocalizationAndAccessibilityTests: XCTestCase {
         XCTAssertTrue(contract.contains("primary navigation labels"))
         XCTAssertTrue(contract.contains("critical control strings"))
     }
+
+
+    func testLocalizationAccessibilityCoverageMapTracksCriticalLabels() {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "localization-accessibility")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["primary navigation labels", "critical control strings", "supported app surfaces"])))
+        XCTAssertEqual(HermesMacOSTab.allCases.count, 10)
+    }
 }

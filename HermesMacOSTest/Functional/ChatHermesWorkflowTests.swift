@@ -20,4 +20,14 @@ final class ChatHermesWorkflowTests: XCTestCase {
         XCTAssertTrue(fixture.contains("chatCompletion"))
         XCTAssertTrue(fixture.contains("assistant"))
     }
+
+
+    func testChatHermesSubcategoryCoverageMatchesFR006() throws {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "chat-hermes")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["system prompt", "streaming responses", "non-streaming responses", "attachments", "cancellation", "session continuation headers", "retained history", "user-visible errors"])))
+        XCTAssertEqual(HermesAPISettings.chatCompletionsURL(from: "http://localhost:8642/v1")?.path, "/v1/chat/completions")
+        let fixture = try HermesFixtureLoader.string(named: "api-fixtures", extension: "json", subdirectory: "HermesAPI")
+        XCTAssertTrue(fixture.contains("chatCompletion"))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("chat-hermes").defaultCoverage.contains { $0.contains("ChatHermesWorkflowTests") })
+    }
 }

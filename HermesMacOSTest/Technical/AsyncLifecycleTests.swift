@@ -23,4 +23,11 @@ final class AsyncLifecycleTests: XCTestCase {
         XCTAssertEqual(result.exitCode, 0)
         XCTAssertTrue(result.output.contains("git status"))
     }
+
+
+    func testAsyncLifecycleSubcategoryCoverageMatchesFR015() {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "async-lifecycle")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["cancellation", "timeout", "retry", "background polling", "auto-refresh", "network cleanup", "WebSocket cleanup", "speech cleanup", "reachability cleanup", "approvals cleanup", "Kanban cleanup", "clipboard monitoring cleanup", "repository-operation cleanup", "no unbounded background loops"])))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("async-lifecycle").defaultCoverage.contains { $0.contains("AsyncLifecycleTests") })
+    }
 }

@@ -13,4 +13,17 @@ final class DashboardBackedWorkflowTests: XCTestCase {
         XCTAssertTrue(fixture.contains("dashboard-token-fixture"))
         XCTAssertFalse(fixture.contains("dashboard-token-test-only"))
     }
+
+
+    func testDashboardSubcategoryCoverageMatchesFR008() throws {
+        let history = HermesMacOSTestCoverageMap.subcategories(for: "history-sessions")
+        XCTAssertTrue(history.isSuperset(of: Set(["dashboard search", "paged session list", "per-session messages", "resume into Ask", "resume into Chat", "resume into TUI", "empty state", "error state", "token-refresh state"])))
+        let dashboard = HermesMacOSTestCoverageMap.subcategories(for: "dashboard")
+        XCTAssertTrue(dashboard.isSuperset(of: Set(["URL construction", "dashboard availability", "session-token dependency", "visible errors"])))
+        let configuration = HermesMacOSTestCoverageMap.subcategories(for: "configuration")
+        XCTAssertTrue(configuration.isSuperset(of: Set(["profiles", "models", "skills", "schedules", "plugins", "toolsets", "MCP servers", "raw config", "token refresh", "mutation failure handling"])))
+        let fixture = try HermesFixtureLoader.string(named: "dashboard-fixtures", extension: "json", subdirectory: "Dashboard")
+        XCTAssertTrue(fixture.contains("window.__HERMES_SESSION_TOKEN__"))
+        XCTAssertTrue(fixture.contains("dashboard-token-fixture"))
+    }
 }

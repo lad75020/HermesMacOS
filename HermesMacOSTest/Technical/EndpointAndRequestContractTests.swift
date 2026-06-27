@@ -18,4 +18,14 @@ final class EndpointAndRequestContractTests: XCTestCase {
         XCTAssertNoThrow(try HermesEndpointSecurity.validateSensitiveURL(URL(string: "http://localhost:8642/v1")!))
         XCTAssertThrowsError(try HermesEndpointSecurity.validateSensitiveURL(URL(string: "http://example.com:8642/v1")!))
     }
+
+
+    func testHermesRequestMetadataCoverageIncludesHeadersAndCancellation() {
+        let askCoverage = HermesMacOSTestCoverageMap.subcategories(for: "ask-hermes")
+        let chatCoverage = HermesMacOSTestCoverageMap.subcategories(for: "chat-hermes")
+        XCTAssertTrue(askCoverage.contains("previous response continuation"))
+        XCTAssertTrue(chatCoverage.contains("session continuation headers"))
+        XCTAssertEqual(HermesAPISettings.requestCancelURL(from: "http://localhost:8642/v1", requestID: "req-contract")?.path, "/v1/requests/req-contract/cancel")
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("ask-hermes").defaultCoverage.contains { $0.contains("EndpointAndRequestContractTests") })
+    }
 }

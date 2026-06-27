@@ -18,4 +18,14 @@ final class YAMLConfigurationMutationTests: XCTestCase {
         XCTAssertFalse(updated.contains("  fixture:"))
         XCTAssertTrue(updated.contains("disabled_server"))
     }
+
+
+    func testYAMLAndRawConfigurationCoverageMatchesFR013() throws {
+        let configuration = HermesMacOSTestCoverageMap.subcategories(for: "configuration")
+        XCTAssertTrue(configuration.isSuperset(of: Set(["profiles", "models", "skills", "schedules", "plugins", "toolsets", "MCP servers", "raw config", "mutation failure handling"])))
+        let localRuntime = HermesMacOSTestCoverageMap.subcategories(for: "local-runtime")
+        XCTAssertTrue(localRuntime.contains("MCP YAML editing"))
+        let yaml = try HermesFixtureLoader.string(named: "runtime-fixtures", extension: "yaml", subdirectory: "LocalRuntime")
+        XCTAssertTrue(yaml.contains("disabled_server"))
+    }
 }

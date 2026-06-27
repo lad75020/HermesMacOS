@@ -20,4 +20,21 @@ final class AppShellAndSettingsTests: XCTestCase {
         let saved = HermesSavedEndpoint(apiURL: "http://localhost:8642/v1/", dashboardURL: "http://localhost:9119/")
         XCTAssertTrue(saved.matches(apiURL: "http://localhost:8642/v1", dashboardURL: "http://localhost:9119"))
     }
+
+
+    func testAppShellSubcategoryCoverageIsExecutable() {
+        let appShell = HermesMacOSTestCoverageMap.subcategories(for: "app-shell")
+        XCTAssertTrue(appShell.isSuperset(of: Set(["tab list", "selected tab state", "multi-window endpoint state", "multi-window profile state", "activity indicators"])))
+        XCTAssertEqual(HermesMacOSTab.allCases.first, .ask)
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("app-shell").defaultCoverage.contains { $0.contains("AppShellAndSettingsTests") })
+    }
+
+    func testSettingsSubcategoryCoverageIsExecutable() throws {
+        let settings = HermesMacOSTestCoverageMap.subcategories(for: "settings")
+        XCTAssertTrue(settings.isSuperset(of: Set(["API endpoint persistence", "dashboard endpoint persistence", "API key path", "self-signed certificate policy", "saved endpoint pairs", "SSH credentials", "allowed folders", "theme preference", "language preference", "font preference", "reachability indicators"])))
+        XCTAssertEqual(Set(HermesAppTheme.allCases.map(\.rawValue)), Set(["system", "light", "dark"]))
+        let saved = HermesSavedEndpoint(apiURL: "http://localhost:8642/v1/", dashboardURL: "http://localhost:9119/")
+        XCTAssertTrue(saved.matches(apiURL: "http://localhost:8642/v1", dashboardURL: "http://localhost:9119"))
+        try HermesTestAssertions.assertTaskManifestContains("AppShellAndSettingsTests.swift")
+    }
 }

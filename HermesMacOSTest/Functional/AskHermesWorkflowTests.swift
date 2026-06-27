@@ -21,4 +21,14 @@ final class AskHermesWorkflowTests: XCTestCase {
         XCTAssertTrue(fixture.contains("profiles"))
         HermesTestAssertions.assertNoSecretLeak(fixture)
     }
+
+
+    func testAskHermesSubcategoryCoverageMatchesFR005() throws {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "ask-hermes")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["profile loading", "streaming responses", "non-streaming responses", "reasoning settings", "attachments", "cancellation", "previous response continuation", "multi-workspace behavior", "retained history", "user-visible errors"])))
+        XCTAssertEqual(HermesAPISettings.requestCancelURL(from: "http://localhost:8642/v1", requestID: "req-ask")?.path, "/v1/requests/req-ask/cancel")
+        let fixture = try HermesFixtureLoader.string(named: "api-fixtures", extension: "json", subdirectory: "HermesAPI")
+        XCTAssertTrue(fixture.contains("resp-test"))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("ask-hermes").defaultCoverage.contains { $0.contains("AskHermesWorkflowTests") })
+    }
 }

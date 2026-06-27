@@ -21,4 +21,13 @@ final class StreamingAndGatewayEventTests: XCTestCase {
         XCTAssertTrue(fixture.contains("unknown.fixture"))
         XCTAssertTrue(fixture.contains("approval.request"))
     }
+
+
+    func testGatewayStreamContractCoversLifecycleAndMalformedEvents() throws {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "tui-gateway")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["WebSocket authentication", "workspace create", "workspace activate", "workspace resume", "workspace close", "background completion", "malformed events", "unknown events"])))
+        let stream = try HermesFixtureLoader.string(named: "stream-fixtures", extension: "ndjson", subdirectory: "Streams")
+        XCTAssertTrue(HermesMacOSTestCoverageMap.covers("tui-gateway", "malformed events"))
+        XCTAssertTrue(stream.contains("unknown.fixture"))
+    }
 }

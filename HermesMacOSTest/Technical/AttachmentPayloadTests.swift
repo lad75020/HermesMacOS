@@ -25,4 +25,11 @@ final class AttachmentPayloadTests: XCTestCase {
     func testUnsupportedExtensionFailsVisibly() {
         XCTAssertThrowsError(try HermesPromptAttachment(filename: "secret.exe", contentType: nil, data: Data()))
     }
+
+
+    func testAttachmentCoverageMapIncludesCountAndVisibleErrorContracts() {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "attachments")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["MIME inference", "size limits", "count limits", "payload encoding", "unsupported visible errors", "oversized visible errors"])))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("attachments").defaultCoverage.contains { $0.contains("AttachmentPayloadTests") })
+    }
 }

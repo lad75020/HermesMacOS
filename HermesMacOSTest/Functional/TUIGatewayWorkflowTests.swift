@@ -19,4 +19,14 @@ final class TUIGatewayWorkflowTests: XCTestCase {
         message.isResolved = true
         XCTAssertTrue(message.isResolved)
     }
+
+
+    func testTUIGatewaySubcategoryCoverageMatchesFR007() throws {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "tui-gateway")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["WebSocket authentication", "workspace create", "workspace activate", "workspace resume", "workspace close", "prompt submission", "attachment flow", "interrupt", "request-response bubbles", "event grouping", "background completion", "malformed events", "unknown events"])))
+        let stream = try HermesFixtureLoader.string(named: "stream-fixtures", extension: "ndjson", subdirectory: "Streams")
+        XCTAssertTrue(stream.contains("gateway.ready"))
+        XCTAssertTrue(stream.contains("unknown.fixture"))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("tui-gateway").defaultCoverage.contains { $0.contains("TUIGatewayWorkflowTests") })
+    }
 }

@@ -29,4 +29,11 @@ final class SecurityGuardrailTests: XCTestCase {
         let standardized = HermesFilesystemAccessPolicy.standardizedPath("/tmp/../tmp/hermes")
         XCTAssertEqual(standardized, "/tmp/hermes")
     }
+
+    func testSecuritySubcategoryCoverageMatchesFR014() {
+        let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "security")
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["sensitive URL validation", "bearer-token redaction", "dashboard-token redaction", "SSH redaction", "API Keychain storage", "SSH Keychain storage", "encrypted retention", "retention clear paths", "TLS pin approval", "TLS pin reset", "filesystem allowlist", "filesystem approval", "bounded process execution", "temporary SSH key cleanup"])))
+        HermesTestAssertions.assertRedacts("api_key=" + String(repeating: "z", count: 30))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.category("security").defaultCoverage.contains { $0.contains("SecurityGuardrailTests") })
+    }
 }

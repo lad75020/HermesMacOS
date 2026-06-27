@@ -65,5 +65,5 @@ Suggested live smoke areas after the default suite passes:
 - `xcodegen generate` completed successfully and generated `HermesMacOS.xcodeproj` with `HermesMacOSTest` target membership.
 - `xcodebuild -list -project HermesMacOS.xcodeproj` reported targets `HermesMacOS` and `HermesMacOSTest`, and schemes `HermesMacOS` and `HermesMacOSTest`.
 - `xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/HermesMacOSBuildDerivedData build` succeeded.
-- `xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOSTest -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/HermesMacOSTestDerivedData test` succeeded with 54 tests and 0 failures.
+- `xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOSTest -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/HermesMacOSTestDerivedData test` succeeded with 75 tests and 0 failures.
 - Optional live-smoke checks were not run; the suite currently verifies skip-by-default behavior.
