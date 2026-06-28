@@ -459,13 +459,13 @@ enum HermesSessionDisplayOrder: String, CaseIterable, Identifiable {
     }
 }
 
-private struct HermesLocalMemorySessionPersistMessage: Encodable, Sendable {
+private struct HermesHindsightSessionPersistMessage: Encodable, Sendable {
     let role: String
     let content: String
     let timestamp: Double?
 }
 
-private struct HermesLocalMemorySessionPersistPayload: Encodable, Sendable {
+private struct HermesHindsightSessionPersistPayload: Encodable, Sendable {
     let sessionID: String
     let title: String
     let source: String
@@ -473,7 +473,7 @@ private struct HermesLocalMemorySessionPersistPayload: Encodable, Sendable {
     let model: String
     let startedAt: Double?
     let endedAt: Double?
-    let messages: [HermesLocalMemorySessionPersistMessage]
+    let messages: [HermesHindsightSessionPersistMessage]
 
     enum CodingKeys: String, CodingKey {
         case title, source, profile, model, messages
@@ -483,7 +483,7 @@ private struct HermesLocalMemorySessionPersistPayload: Encodable, Sendable {
     }
 }
 
-private struct HermesLocalMemorySessionPersistResponse: Decodable, Sendable {
+private struct HermesHindsightSessionPersistResponse: Decodable, Sendable {
     let success: Bool
     let inserted: Bool
     let alreadyStored: Bool
@@ -572,13 +572,13 @@ final class HermesSessionsStore {
     var conversationResultsBySessionID: [String: HermesDashboardConversationResult] = [:]
     var loadingConversationIDs: Set<String> = []
     var conversationErrorBySessionID: [String: String] = [:]
-    var localMemoryPersistingSessionIDs: Set<String> = []
-    var localMemoryStoredSessionIDs: Set<String> = []
-    var localMemoryPersistenceMessageBySessionID: [String: String] = [:]
+    var hindsightPersistingSessionIDs: Set<String> = []
+    var hindsightStoredSessionIDs: Set<String> = []
+    var hindsightPersistenceMessageBySessionID: [String: String] = [:]
 
     private var requestTask: Task<Void, Never>?
     private var conversationTasks: [String: Task<Void, Never>] = [:]
-    private var localMemoryPersistenceTasks: [String: Task<Void, Never>] = [:]
+    private var hindsightPersistenceTasks: [String: Task<Void, Never>] = [:]
     private var activeRequestID: UUID?
 
     var pageCount: Int { max(1, Int(ceil(Double(total) / Double(pageSize)))) }
@@ -618,11 +618,11 @@ final class HermesSessionsStore {
     func cancel() {
         requestTask?.cancel()
         conversationTasks.values.forEach { $0.cancel() }
-        localMemoryPersistenceTasks.values.forEach { $0.cancel() }
+        hindsightPersistenceTasks.values.forEach { $0.cancel() }
         conversationTasks.removeAll()
-        localMemoryPersistenceTasks.removeAll()
+        hindsightPersistenceTasks.removeAll()
         loadingConversationIDs.removeAll()
-        localMemoryPersistingSessionIDs.removeAll()
+        hindsightPersistingSessionIDs.removeAll()
         requestTask = nil
         activeRequestID = nil
         isLoading = false
@@ -678,18 +678,18 @@ final class HermesSessionsStore {
         }
     }
 
-    func persistSessionToLocalMemory(for session: HermesAgentSessionSummary, dashboardURL: String, apiSettings: HermesAPISettings) {
-        guard !localMemoryPersistingSessionIDs.contains(session.id) else { return }
-        if localMemoryStoredSessionIDs.contains(session.id) {
-            localMemoryPersistenceMessageBySessionID[session.id] = "Already stored in local_memory."
+    func persistSessionToHindsight(for session: HermesAgentSessionSummary, dashboardURL: String, apiSettings: HermesAPISettings) {
+        guard !hindsightPersistingSessionIDs.contains(session.id) else { return }
+        if hindsightStoredSessionIDs.contains(session.id) {
+            hindsightPersistenceMessageBySessionID[session.id] = "Already stored in Hindsight."
             return
         }
 
-        localMemoryPersistenceTasks[session.id]?.cancel()
-        localMemoryPersistingSessionIDs.insert(session.id)
-        localMemoryPersistenceMessageBySessionID[session.id] = "Preparing local_memory import…"
+        hindsightPersistenceTasks[session.id]?.cancel()
+        hindsightPersistingSessionIDs.insert(session.id)
+        hindsightPersistenceMessageBySessionID[session.id] = "Preparing Hindsight import…"
 
-        localMemoryPersistenceTasks[session.id] = Task {
+        hindsightPersistenceTasks[session.id] = Task {
             do {
                 let conversation: HermesDashboardConversationResult
                 if let cached = conversationResultsBySessionID[session.id] {
@@ -714,32 +714,32 @@ final class HermesSessionsStore {
                     conversationErrorBySessionID[session.id] = nil
                 }
 
-                let payload = try Self.localMemoryPersistencePayload(for: conversation)
-                localMemoryPersistenceMessageBySessionID[session.id] = "Writing to local_memory…"
+                let payload = try Self.hindsightPersistencePayload(for: conversation)
+                hindsightPersistenceMessageBySessionID[session.id] = "Writing to Hindsight…"
                 let outcome = try await Task.detached(priority: .userInitiated) {
-                    try Self.runLocalMemoryPersistence(payload: payload, hermesHome: HermesRuntimePaths.defaultHermesHome)
+                    try Self.runHindsightPersistence(payload: payload, hermesHome: HermesRuntimePaths.defaultHermesHome)
                 }.value
                 try Task.checkCancellation()
                 if outcome.success {
-                    localMemoryStoredSessionIDs.insert(session.id)
-                    localMemoryPersistenceMessageBySessionID[session.id] = outcome.message ?? (outcome.alreadyStored ? "Already stored in local_memory." : "Stored in local_memory.")
-                    status = outcome.alreadyStored ? "Session already stored in local_memory" : "Session stored in local_memory"
+                    hindsightStoredSessionIDs.insert(session.id)
+                    hindsightPersistenceMessageBySessionID[session.id] = outcome.message ?? (outcome.alreadyStored ? "Already stored in Hindsight." : "Stored in Hindsight.")
+                    status = outcome.alreadyStored ? "Session already stored in Hindsight" : "Session stored in Hindsight"
                 } else {
-                    let message = outcome.error ?? outcome.message ?? "local_memory import failed"
-                    localMemoryPersistenceMessageBySessionID[session.id] = message
-                    status = "Could not store session in local_memory"
+                    let message = outcome.error ?? outcome.message ?? "Hindsight import failed"
+                    hindsightPersistenceMessageBySessionID[session.id] = message
+                    status = "Could not store session in Hindsight"
                 }
             } catch is CancellationError {
-                if localMemoryPersistingSessionIDs.contains(session.id) {
-                    localMemoryPersistenceMessageBySessionID[session.id] = "local_memory import cancelled."
+                if hindsightPersistingSessionIDs.contains(session.id) {
+                    hindsightPersistenceMessageBySessionID[session.id] = "Hindsight import cancelled."
                 }
             } catch {
                 isDashboardHTTPActive = false
-                localMemoryPersistenceMessageBySessionID[session.id] = error.localizedDescription
-                status = "Could not store session in local_memory"
+                hindsightPersistenceMessageBySessionID[session.id] = error.localizedDescription
+                status = "Could not store session in Hindsight"
             }
-            localMemoryPersistingSessionIDs.remove(session.id)
-            localMemoryPersistenceTasks[session.id] = nil
+            hindsightPersistingSessionIDs.remove(session.id)
+            hindsightPersistenceTasks[session.id] = nil
         }
     }
 
@@ -934,18 +934,18 @@ final class HermesSessionsStore {
         )
     }
 
-    nonisolated private static func localMemoryPersistencePayload(for conversation: HermesDashboardConversationResult) throws -> HermesLocalMemorySessionPersistPayload {
-        let messages = conversation.messages.compactMap { message -> HermesLocalMemorySessionPersistMessage? in
+    nonisolated private static func hindsightPersistencePayload(for conversation: HermesDashboardConversationResult) throws -> HermesHindsightSessionPersistPayload {
+        let messages = conversation.messages.compactMap { message -> HermesHindsightSessionPersistMessage? in
             let normalizedRole = message.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             guard normalizedRole == "user" || normalizedRole == "assistant" else { return nil }
             let content = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !content.isEmpty else { return nil }
-            return HermesLocalMemorySessionPersistMessage(role: normalizedRole, content: content, timestamp: message.timestamp)
+            return HermesHindsightSessionPersistMessage(role: normalizedRole, content: content, timestamp: message.timestamp)
         }
         guard messages.contains(where: { $0.role == "user" }) || messages.contains(where: { $0.role == "assistant" }) else {
-            throw NSError(domain: "HermesLocalMemory", code: 1, userInfo: [NSLocalizedDescriptionKey: "This session has no user prompts or assistant answers to store."])
+            throw NSError(domain: "HermesHindsight", code: 1, userInfo: [NSLocalizedDescriptionKey: "This session has no user prompts or assistant answers to store."])
         }
-        return HermesLocalMemorySessionPersistPayload(
+        return HermesHindsightSessionPersistPayload(
             sessionID: conversation.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? conversation.session.id : conversation.sessionID,
             title: conversation.sessionFriendlyName,
             source: conversation.session.source ?? "macos",
@@ -957,36 +957,51 @@ final class HermesSessionsStore {
         )
     }
 
-    nonisolated private static func runLocalMemoryPersistence(payload: HermesLocalMemorySessionPersistPayload, hermesHome: String) throws -> HermesLocalMemorySessionPersistResponse {
+    nonisolated private static func runHindsightPersistence(payload: HermesHindsightSessionPersistPayload, hermesHome: String) throws -> HermesHindsightSessionPersistResponse {
         let fileManager = FileManager.default
-        let payloadURL = fileManager.temporaryDirectory.appendingPathComponent("hermes-session-local-memory-\(UUID().uuidString).json")
+        let payloadURL = fileManager.temporaryDirectory.appendingPathComponent("hermes-session-hindsight-\(UUID().uuidString).json")
         let payloadData = try JSONEncoder().encode(payload)
         try payloadData.write(to: payloadURL, options: .atomic)
         defer { try? fileManager.removeItem(at: payloadURL) }
 
         let result = try HermesProcessRunner.run(
             executable: HermesRuntimePaths.defaultPythonExecutable,
-            arguments: ["-c", localMemoryPersistencePythonScript, payloadURL.path, hermesHome],
+            arguments: ["-c", hindsightPersistencePythonScript, payloadURL.path, hermesHome],
             environment: normalizedPythonEnvironment(hermesHome: hermesHome),
             currentDirectory: HermesRuntimePaths.defaultHermesAgentRoot,
-            timeout: 60
+            timeout: 180
         )
         guard !result.timedOut else {
-            throw NSError(domain: "HermesLocalMemory", code: 2, userInfo: [NSLocalizedDescriptionKey: "local_memory import timed out"])
+            throw NSError(domain: "HermesHindsight", code: 2, userInfo: [NSLocalizedDescriptionKey: "Hindsight import timed out"])
         }
-        guard let data = result.output.data(using: .utf8) else {
-            throw NSError(domain: "HermesLocalMemory", code: 3, userInfo: [NSLocalizedDescriptionKey: "local_memory helper returned non-UTF-8 output"])
+        guard result.output.data(using: .utf8) != nil else {
+            throw NSError(domain: "HermesHindsight", code: 3, userInfo: [NSLocalizedDescriptionKey: "Hindsight helper returned non-UTF-8 output"])
         }
-        if let response = try? JSONDecoder().decode(HermesLocalMemorySessionPersistResponse.self, from: data) {
+        if let response = decodeHindsightPersistenceResponse(from: result.output) {
             if result.exitCode != 0 || !response.success {
-                throw NSError(domain: "HermesLocalMemory", code: Int(result.exitCode), userInfo: [NSLocalizedDescriptionKey: response.error ?? response.message ?? "local_memory import failed"])
+                throw NSError(domain: "HermesHindsight", code: Int(result.exitCode), userInfo: [NSLocalizedDescriptionKey: response.error ?? response.message ?? "Hindsight import failed"])
             }
             return response
         }
         guard result.exitCode == 0 else {
-            throw NSError(domain: "HermesLocalMemory", code: Int(result.exitCode), userInfo: [NSLocalizedDescriptionKey: result.output.trimmingCharacters(in: .whitespacesAndNewlines)])
+            throw NSError(domain: "HermesHindsight", code: Int(result.exitCode), userInfo: [NSLocalizedDescriptionKey: result.output.trimmingCharacters(in: .whitespacesAndNewlines)])
         }
-        throw NSError(domain: "HermesLocalMemory", code: 4, userInfo: [NSLocalizedDescriptionKey: "local_memory helper returned an unreadable response"])
+        throw NSError(domain: "HermesHindsight", code: 4, userInfo: [NSLocalizedDescriptionKey: "Hindsight helper returned an unreadable response"])
+    }
+
+    nonisolated private static func decodeHindsightPersistenceResponse(from output: String) -> HermesHindsightSessionPersistResponse? {
+        let decoder = JSONDecoder()
+        if let data = output.data(using: .utf8), let response = try? decoder.decode(HermesHindsightSessionPersistResponse.self, from: data) {
+            return response
+        }
+        for line in output.split(whereSeparator: \.isNewline).reversed() {
+            let candidate = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard candidate.hasPrefix("{"), candidate.hasSuffix("}"), let data = candidate.data(using: .utf8) else { continue }
+            if let response = try? decoder.decode(HermesHindsightSessionPersistResponse.self, from: data) {
+                return response
+            }
+        }
+        return nil
     }
 
     nonisolated private static func normalizedPythonEnvironment(hermesHome: String) -> [String: String] {
@@ -1023,16 +1038,34 @@ final class HermesSessionsStore {
         }.joined(separator: ":")
     }
 
-    nonisolated private static let localMemoryPersistencePythonScript = #"""
+    nonisolated private static let hindsightPersistencePythonScript = #"""
 import json
+import re
 import sys
+from datetime import datetime, timezone
 
 payload_path = sys.argv[1]
 hermes_home = sys.argv[2]
 
+
+def iso_timestamp(value):
+    if value is None:
+        return None
+    try:
+        return datetime.fromtimestamp(float(value), timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    except Exception:
+        return None
+
+
+def tag_segment(value, fallback):
+    text = str(value or "").strip() or fallback
+    text = re.sub(r"[^A-Za-z0-9_-]+", "-", text).strip("-_")
+    return text or fallback
+
+
+provider = None
 try:
-    from plugins.memory.local_memory import LocalMemoryProvider
-    from plugins.memory.local_memory.models import content_hash
+    from plugins.memory.hindsight import HindsightMemoryProvider
 
     with open(payload_path, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -1040,10 +1073,12 @@ try:
     session_id = str(payload.get("session_id") or "").strip() or "hermes-macos-session"
     profile = str(payload.get("profile") or "default").strip() or "default"
     source = str(payload.get("source") or "macos").strip() or "macos"
+    title = str(payload.get("title") or "Hermes session").strip() or "Hermes session"
+    model = str(payload.get("model") or "").strip()
     raw_messages = payload.get("messages") or []
     messages = []
-    user_chunks = []
-    assistant_chunks = []
+    user_count = 0
+    assistant_count = 0
     for item in raw_messages:
         if not isinstance(item, dict):
             continue
@@ -1051,22 +1086,20 @@ try:
         content = str(item.get("content") or "").strip()
         if role not in {"user", "assistant"} or not content:
             continue
-        message = {"role": role, "content": content, "source": "hermes_macos_sessions_tab", "session_id": session_id}
-        if item.get("timestamp") is not None:
-            message["timestamp"] = item.get("timestamp")
+        message = {"role": role, "content": content}
+        timestamp = iso_timestamp(item.get("timestamp"))
+        if timestamp:
+            message["timestamp"] = timestamp
         messages.append(message)
         if role == "user":
-            user_chunks.append(content)
+            user_count += 1
         elif role == "assistant":
-            assistant_chunks.append(content)
+            assistant_count += 1
 
-    if not user_chunks and not assistant_chunks:
+    if not messages:
         raise ValueError("No user prompts or assistant answers were present in this session.")
 
-    user_content = "\n\n---\n\n".join(user_chunks) or "[no user prompts]"
-    assistant_content = "\n\n---\n\n".join(assistant_chunks) or "[no assistant answers]"
-
-    provider = LocalMemoryProvider()
+    provider = HindsightMemoryProvider()
     provider.initialize(
         session_id,
         hermes_home=hermes_home,
@@ -1075,55 +1108,77 @@ try:
         agent_workspace="hermes",
         agent_context="primary",
     )
+    if getattr(provider, "_mode", "") == "disabled":
+        raise RuntimeError("Hindsight memory provider is disabled or unavailable for this Hermes profile")
 
-    idempotency_key = content_hash(f"{profile}:{session_id}:{user_content}:{assistant_content}")
+    content = json.dumps(messages, ensure_ascii=False)
+    document_id = f"hermes-macos-session-{tag_segment(profile, 'default')}-{tag_segment(session_id, 'session')}"
+    metadata = provider._build_metadata(message_count=len(messages), turn_index=1)
+    metadata.update({
+        "source": "hermes_macos_sessions_tab",
+        "session_id": session_id,
+        "profile": profile,
+        "title": title,
+        "message_count": str(len(messages)),
+        "user_messages": str(user_count),
+        "assistant_messages": str(assistant_count),
+    })
+    if model:
+        metadata["model"] = model
+    if payload.get("started_at") is not None:
+        metadata["started_at"] = str(payload.get("started_at"))
+    if payload.get("ended_at") is not None:
+        metadata["ended_at"] = str(payload.get("ended_at"))
 
-    def raw_turn_id_for_key():
-        try:
-            row = provider.mongo_store.db.raw_turns.find_one({"idempotency_key": idempotency_key}, {"_id": 1})
-            if row:
-                return str(row.get("_id") or idempotency_key)
-        except Exception:
-            return ""
-        return ""
+    tags = [
+        "source:hermes_macos_sessions_tab",
+        f"profile:{tag_segment(profile, 'default')}",
+        f"session:{tag_segment(session_id, 'session')}",
+    ]
+    item = provider._build_retain_kwargs(
+        content,
+        context=f"HermesMacOS Sessions tab transcript: {title}",
+        metadata=metadata,
+        tags=tags,
+    )
+    item.pop("bank_id", None)
+    item.pop("retain_async", None)
 
-    existing_raw_turn_id = raw_turn_id_for_key()
-    if existing_raw_turn_id:
-        print(json.dumps({
-            "success": True,
-            "inserted": False,
-            "already_stored": True,
-            "raw_turn_id": existing_raw_turn_id,
-            "message": "Already stored in local_memory.",
-            "user_messages": len(user_chunks),
-            "assistant_messages": len(assistant_chunks),
-        }, sort_keys=True))
-    else:
-        provider.sync_turn(user_content, assistant_content, session_id=session_id, messages=messages)
-        raw_turn_id = raw_turn_id_for_key()
-        if not raw_turn_id:
-            raise RuntimeError("local_memory did not confirm raw turn persistence; check MongoDB/local_memory status")
-        print(json.dumps({
-            "success": True,
-            "inserted": True,
-            "already_stored": False,
-            "raw_turn_id": raw_turn_id,
-            "message": "Stored in local_memory.",
-            "user_messages": len(user_chunks),
-            "assistant_messages": len(assistant_chunks),
-        }, sort_keys=True))
+    provider._run_hindsight_operation(
+        lambda client: client.aretain_batch(
+            bank_id=provider._bank_id,
+            items=[item],
+            document_id=document_id,
+            retain_async=provider._retain_async,
+        )
+    )
+    print(json.dumps({
+        "success": True,
+        "inserted": True,
+        "already_stored": False,
+        "raw_turn_id": document_id,
+        "message": "Stored in Hindsight.",
+        "user_messages": user_count,
+        "assistant_messages": assistant_count,
+    }, sort_keys=True))
 except Exception as exc:  # noqa: BLE001 - surfaced to the Swift UI
     print(json.dumps({
         "success": False,
         "inserted": False,
         "already_stored": False,
         "raw_turn_id": "",
-        "message": "local_memory import failed",
+        "message": "Hindsight import failed",
         "error": str(exc),
         "user_messages": 0,
         "assistant_messages": 0,
     }, sort_keys=True))
     sys.exit(1)
+finally:
+    if provider is not None:
+        try:
+            provider.shutdown()
+        except Exception:
+            pass
 """#
 
 }
@@ -1273,12 +1328,12 @@ struct HermesSessionsView: View {
                         isExpanded: bindingForSessionDetails(session.id),
                         isResumeDisabled: isResponsesStreaming,
                         isResumeTUIDisabled: isTUIGatewayBusy,
-                        isLocalMemoryPersisting: store.localMemoryPersistingSessionIDs.contains(session.id),
-                        isLocalMemoryStored: store.localMemoryStoredSessionIDs.contains(session.id),
-                        localMemoryMessage: store.localMemoryPersistenceMessageBySessionID[session.id],
+                        isHindsightPersisting: store.hindsightPersistingSessionIDs.contains(session.id),
+                        isHindsightStored: store.hindsightStoredSessionIDs.contains(session.id),
+                        hindsightMessage: store.hindsightPersistenceMessageBySessionID[session.id],
                         onResume: { resumeSessionInAskHermes(session) },
                         onResumeTUI: { onResumeTUI(session) },
-                        onPersistLocalMemory: { store.persistSessionToLocalMemory(for: session, dashboardURL: dashboardURL, apiSettings: apiSettings) },
+                        onPersistHindsight: { store.persistSessionToHindsight(for: session, dashboardURL: dashboardURL, apiSettings: apiSettings) },
                         onToggleDetails: { toggleDetails(for: session) }
                     )
                 }
@@ -1321,12 +1376,12 @@ private struct HermesSessionSummaryRow: View {
     @Binding var isExpanded: Bool
     let isResumeDisabled: Bool
     let isResumeTUIDisabled: Bool
-    let isLocalMemoryPersisting: Bool
-    let isLocalMemoryStored: Bool
-    let localMemoryMessage: String?
+    let isHindsightPersisting: Bool
+    let isHindsightStored: Bool
+    let hindsightMessage: String?
     let onResume: () -> Void
     let onResumeTUI: () -> Void
-    let onPersistLocalMemory: () -> Void
+    let onPersistHindsight: () -> Void
     let onToggleDetails: () -> Void
 
     var body: some View {
@@ -1402,14 +1457,14 @@ private struct HermesSessionSummaryRow: View {
                 .help(isResumeTUIDisabled ? "TUI Gateway is busy" : "Resume this stored session in the TUI Gateway tab")
 
                 Button {
-                    onPersistLocalMemory()
+                    onPersistHindsight()
                 } label: {
-                    Label(localMemoryButtonTitle, systemImage: localMemoryButtonIcon)
+                    Label(hindsightButtonTitle, systemImage: hindsightButtonIcon)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .disabled(isLocalMemoryPersisting || isLocalMemoryStored)
-                .help(isLocalMemoryStored ? "This session/content pair is already stored in local_memory" : "Store this session's user prompts and assistant answers in local_memory")
+                .disabled(isHindsightPersisting || isHindsightStored)
+                .help(isHindsightStored ? "This session is already stored in Hindsight" : "Store this session's user prompts and assistant answers in Hindsight")
 
                 Button {
                     onToggleDetails()
@@ -1430,10 +1485,10 @@ private struct HermesSessionSummaryRow: View {
                 Spacer()
             }
 
-            if let localMemoryMessage, !localMemoryMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Label(localMemoryMessage, systemImage: isLocalMemoryStored ? "checkmark.circle.fill" : "brain.head.profile")
+            if let hindsightMessage, !hindsightMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Label(hindsightMessage, systemImage: isHindsightStored ? "checkmark.circle.fill" : "brain.head.profile")
                     .font(.caption)
-                    .foregroundStyle(isLocalMemoryStored ? Color.green : Color.hermesSecondaryText)
+                    .foregroundStyle(isHindsightStored ? Color.green : Color.hermesSecondaryText)
             }
 
             if let conversationError, !conversationError.isEmpty {
@@ -1465,15 +1520,15 @@ private struct HermesSessionSummaryRow: View {
         .padding(.vertical, 4)
     }
 
-    private var localMemoryButtonTitle: String {
-        if isLocalMemoryPersisting { return "Storing…" }
-        if isLocalMemoryStored { return "Stored in local_memory" }
-        return "Store in local_memory"
+    private var hindsightButtonTitle: String {
+        if isHindsightPersisting { return "Storing…" }
+        if isHindsightStored { return "Stored in Hindsight" }
+        return "Store in Hindsight"
     }
 
-    private var localMemoryButtonIcon: String {
-        if isLocalMemoryPersisting { return "arrow.triangle.2.circlepath" }
-        if isLocalMemoryStored { return "checkmark.circle.fill" }
+    private var hindsightButtonIcon: String {
+        if isHindsightPersisting { return "arrow.triangle.2.circlepath" }
+        if isHindsightStored { return "checkmark.circle.fill" }
         return "brain.head.profile"
     }
 

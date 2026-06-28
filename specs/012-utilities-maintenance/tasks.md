@@ -1,5 +1,7 @@
 # Tasks: Utilities and Maintenance
 
+**Propagated**: 2026-06-28 — Updated from spec.md refinement for Knowledge eraser Hindsight provider search and local_memory exclusion.
+
 **Input**: Design documents from `/specs/012-utilities-maintenance/`
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/utilities-maintenance.md, quickstart.md
@@ -14,6 +16,7 @@
 
 ## Phase 3: User Story 1 - Use utility panels safely (Priority: P1) 🎯 MVP
 - [x] T005 [US1] Trace utility panels, opt-in clipboard retention, history, debugging, knowledge eraser, and installation maintenance behavior
+- [X] T011 [US1] Update and verify Knowledge eraser provider-memory scanning so Hindsight provider matches appear as review candidates while local_memory provider search results are excluded
 
 ## Phase 4: User Story 2 - Dictate prompts with selected STT engine (Priority: P2)
 - [x] T006 [US2] Trace Apple local and Whisper WebSocket STT recording/transcription cleanup paths

@@ -80,7 +80,7 @@ enum HermesMacOSTestCoverageMap {
             identifier: "history-sessions",
             displayName: "History and Sessions",
             scope: .functional,
-            requiredSubcategories: ["dashboard search", "paged session list", "per-session messages", "resume into Ask", "resume into Chat", "resume into TUI", "empty state", "error state", "token-refresh state"],
+            requiredSubcategories: ["dashboard search", "paged session list", "per-session messages", "resume into Ask", "resume into Chat", "resume into TUI", "Hindsight session retention", "empty state", "error state", "token-refresh state"],
             defaultCoverage: ["DashboardBackedWorkflowTests"],
             liveSmokeOnly: false
         ),
@@ -128,7 +128,7 @@ enum HermesMacOSTestCoverageMap {
             identifier: "utilities",
             displayName: "Utilities",
             scope: .utility,
-            requiredSubcategories: ["clipboard retention", "prompt retention", "response retention", "raw stream debug controls", "knowledge eraser scan", "knowledge eraser review", "knowledge eraser archive", "knowledge eraser erase", "speech-to-text selection", "recording stop", "recording cancel", "reachability monitoring"],
+            requiredSubcategories: ["clipboard retention", "prompt retention", "response retention", "raw stream debug controls", "knowledge eraser scan", "knowledge eraser review", "knowledge eraser archive", "knowledge eraser erase", "knowledge eraser Hindsight provider", "speech-to-text selection", "recording stop", "recording cancel", "reachability monitoring"],
             defaultCoverage: ["UtilitiesWorkflowTests"],
             liveSmokeOnly: false
         ),

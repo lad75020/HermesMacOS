@@ -10,6 +10,7 @@ import SwiftUI
 enum HermesKnowledgeEraserItemKind: String, Codable, Equatable {
     case memoryEntry
     case localMemoryEntry
+    case hindsightMemoryEntry
     case userProfileBlock
     case skillBlock
 
@@ -17,6 +18,7 @@ enum HermesKnowledgeEraserItemKind: String, Codable, Equatable {
         switch self {
         case .memoryEntry: "Memory"
         case .localMemoryEntry: "Local memory"
+        case .hindsightMemoryEntry: "Hindsight memory"
         case .userProfileBlock: "User profile"
         case .skillBlock: "Skill"
         }
@@ -58,6 +60,7 @@ private enum HermesKnowledgeEraserError: LocalizedError {
     case emptyTopic
     case noSelectedItems
     case localMemoryProvider(String)
+    case hindsightProvider(String)
 
     var errorDescription: String? {
         switch self {
@@ -65,6 +68,7 @@ private enum HermesKnowledgeEraserError: LocalizedError {
         case .emptyTopic: "Enter a topic description before scanning."
         case .noSelectedItems: "Select at least one item to erase."
         case .localMemoryProvider(let message): "local_memory provider operation failed: \(message)"
+        case .hindsightProvider(let message): "Hindsight provider operation failed: \(message)"
         }
     }
 }
@@ -297,7 +301,7 @@ private final class HermesKnowledgeEraserRegistry: @unchecked Sendable {
         let matcher = HermesKnowledgeTopicMatcher(topic: normalizedTopic)
         var items: [HermesKnowledgeEraserItem] = []
         items.append(contentsOf: scanMemoryEntries(workspaceURL: workspaceURL, matcher: matcher))
-        items.append(contentsOf: scanLocalMemoryEntries(workspaceURL: workspaceURL, topic: normalizedTopic))
+        items.append(contentsOf: scanHindsightMemoryEntries(workspaceURL: workspaceURL, topic: normalizedTopic))
         items.append(contentsOf: scanUserProfile(workspaceURL: workspaceURL, matcher: matcher))
         items.append(contentsOf: scanSkills(workspaceURL: workspaceURL, matcher: matcher))
         items.sort { lhs, rhs in
@@ -333,6 +337,13 @@ private final class HermesKnowledgeEraserRegistry: @unchecked Sendable {
         let localMemoryIDs = selectedItems.filter { $0.kind == .localMemoryEntry }.map(\.id)
         if !localMemoryIDs.isEmpty {
             let result = try eraseLocalMemoryEntries(workspaceURL: workspaceURL, selectedIDs: Set(localMemoryIDs))
+            erasedIDs.append(contentsOf: result.erased)
+            skippedIDs.append(contentsOf: result.skipped)
+        }
+
+        let hindsightMemoryIDs = selectedItems.filter { $0.kind == .hindsightMemoryEntry }.map(\.id)
+        if !hindsightMemoryIDs.isEmpty {
+            let result = try eraseHindsightMemoryEntries(workspaceURL: workspaceURL, selectedIDs: Set(hindsightMemoryIDs))
             erasedIDs.append(contentsOf: result.erased)
             skippedIDs.append(contentsOf: result.skipped)
         }
@@ -398,6 +409,28 @@ private final class HermesKnowledgeEraserRegistry: @unchecked Sendable {
                 preview: Self.preview(record.content),
                 content: record.content,
                 confidence: record.confidence ?? 0.8
+            )
+        }
+    }
+
+    private func scanHindsightMemoryEntries(workspaceURL: URL, topic: String) -> [HermesKnowledgeEraserItem] {
+        guard let response = try? runHindsightScan(workspaceURL: workspaceURL, topic: topic), response.success else { return [] }
+        return response.results.map { record in
+            let type = record.fact_type.trimmingCharacters(in: .whitespacesAndNewlines)
+            let context = record.context?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let document = record.document_id?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let location = [type.isEmpty ? nil : type, context.isEmpty ? nil : context, document.isEmpty ? nil : document]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+            return HermesKnowledgeEraserItem(
+                id: Self.hindsightMemoryItemID(for: record.memory_id),
+                kind: .hindsightMemoryEntry,
+                title: "Hindsight memory \(record.memory_id)",
+                path: "hindsight://\(type.isEmpty ? "memory" : type)/\(record.memory_id)",
+                location: location.isEmpty ? "Hindsight memory provider" : location,
+                preview: Self.preview(record.text),
+                content: record.text,
+                confidence: record.confidence ?? 0.82
             )
         }
     }
@@ -472,6 +505,19 @@ private final class HermesKnowledgeEraserRegistry: @unchecked Sendable {
         )
     }
 
+    private func eraseHindsightMemoryEntries(workspaceURL: URL, selectedIDs: Set<String>) throws -> (erased: [String], skipped: [String]) {
+        let memoryIDs = selectedIDs.compactMap(Self.hindsightMemoryRecordID(from:))
+        guard !memoryIDs.isEmpty else { return ([], Array(selectedIDs)) }
+        let response = try runHindsightErase(workspaceURL: workspaceURL, memoryIDs: memoryIDs)
+        guard response.success else {
+            throw HermesKnowledgeEraserError.hindsightProvider(response.error ?? response.message ?? "unknown error")
+        }
+        return (
+            erased: response.erased.map { Self.hindsightMemoryItemID(for: $0) },
+            skipped: response.skipped.map { Self.hindsightMemoryItemID(for: $0) }
+        )
+    }
+
     private func eraseBlocks(path: String, items: [HermesKnowledgeEraserItem]) throws -> (erased: [String], skipped: [String]) {
         let url = URL(fileURLWithPath: path)
         guard let content = try? String(contentsOf: url, encoding: .utf8) else { return ([], items.map(\.id)) }
@@ -524,6 +570,16 @@ private final class HermesKnowledgeEraserRegistry: @unchecked Sendable {
         return try JSONDecoder().decode(HermesLocalMemoryEraserEraseResponse.self, from: data)
     }
 
+    private func runHindsightScan(workspaceURL: URL, topic: String) throws -> HermesHindsightEraserScanResponse {
+        let data = try runHindsightOperation(workspaceURL: workspaceURL, operation: "scan", topic: topic, memoryIDs: [])
+        return try JSONDecoder().decode(HermesHindsightEraserScanResponse.self, from: data)
+    }
+
+    private func runHindsightErase(workspaceURL: URL, memoryIDs: [String]) throws -> HermesHindsightEraserEraseResponse {
+        let data = try runHindsightOperation(workspaceURL: workspaceURL, operation: "erase", topic: "", memoryIDs: memoryIDs)
+        return try JSONDecoder().decode(HermesHindsightEraserEraseResponse.self, from: data)
+    }
+
     private func runLocalMemoryOperation(workspaceURL: URL, operation: String, topic: String, memoryIDs: [String]) throws -> Data {
         let script = Self.localMemoryPythonScript
         let arguments = ["-c", script, operation, workspaceURL.path, topic] + memoryIDs
@@ -540,6 +596,26 @@ private final class HermesKnowledgeEraserRegistry: @unchecked Sendable {
         }
         guard let data = result.output.data(using: .utf8) else {
             throw HermesKnowledgeEraserError.localMemoryProvider("python helper returned non-UTF-8 output")
+        }
+        return data
+    }
+
+    private func runHindsightOperation(workspaceURL: URL, operation: String, topic: String, memoryIDs: [String]) throws -> Data {
+        let script = Self.hindsightPythonScript
+        let arguments = ["-c", script, operation, workspaceURL.path, topic] + memoryIDs
+        let result = try HermesProcessRunner.run(
+            executable: HermesRuntimePaths.defaultPythonExecutable,
+            arguments: arguments,
+            environment: Self.normalizedPythonEnvironment(hermesHome: workspaceURL.path),
+            currentDirectory: HermesRuntimePaths.defaultHermesAgentRoot,
+            timeout: 45
+        )
+        guard !result.timedOut else { throw HermesKnowledgeEraserError.hindsightProvider("python helper timed out") }
+        guard result.exitCode == 0 else {
+            throw HermesKnowledgeEraserError.hindsightProvider(result.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        guard let data = result.output.data(using: .utf8) else {
+            throw HermesKnowledgeEraserError.hindsightProvider("python helper returned non-UTF-8 output")
         }
         return data
     }
@@ -580,8 +656,16 @@ private final class HermesKnowledgeEraserRegistry: @unchecked Sendable {
 
     private static func localMemoryItemID(for memoryID: String) -> String { "local_memory:\(memoryID)" }
 
+    private static func hindsightMemoryItemID(for memoryID: String) -> String { "hindsight:\(memoryID)" }
+
     private static func localMemoryRecordID(from itemID: String) -> String? {
         let prefix = "local_memory:"
+        guard itemID.hasPrefix(prefix) else { return nil }
+        return String(itemID.dropFirst(prefix.count))
+    }
+
+    private static func hindsightMemoryRecordID(from itemID: String) -> String? {
+        let prefix = "hindsight:"
         guard itemID.hasPrefix(prefix) else { return nil }
         return String(itemID.dropFirst(prefix.count))
     }
@@ -669,6 +753,145 @@ except Exception as exc:  # noqa: BLE001 - returned to the Swift UI as a user-vi
     sys.exit(1)
 """#
 
+    private static let hindsightPythonScript = #"""
+import asyncio
+import json
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+operation = sys.argv[1]
+hermes_home = sys.argv[2]
+topic = sys.argv[3]
+memory_ids = sys.argv[4:]
+
+
+def value(record, *names):
+    for name in names:
+        if isinstance(record, dict) and name in record:
+            return record.get(name)
+        candidate = getattr(record, name, None)
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def as_list(candidate):
+    if candidate is None:
+        return []
+    if isinstance(candidate, (list, tuple, set)):
+        return [str(item) for item in candidate if str(item).strip()]
+    return [str(candidate)] if str(candidate).strip() else []
+
+
+async def invalidate_memories(client, provider, ids):
+    base_url = str(getattr(client, "_base_url", "") or provider._probe_url() or provider._api_url or "").rstrip("/")
+    if not base_url:
+        raise RuntimeError("Hindsight API URL is unavailable")
+    bank_id = str(getattr(provider, "_bank_id", "") or "").strip()
+    if not bank_id:
+        raise RuntimeError("Hindsight bank ID is unavailable")
+    api_key = str(getattr(client, "_api_key", "") or getattr(provider, "_api_key", "") or "").strip()
+    erased = []
+    skipped = []
+    errors = []
+    for memory_id in ids:
+        memory_id = str(memory_id or "").strip()
+        if not memory_id:
+            continue
+        endpoint = (
+            f"{base_url}/v1/default/banks/"
+            f"{urllib.parse.quote(bank_id, safe='')}/memories/"
+            f"{urllib.parse.quote(memory_id, safe='')}"
+        )
+        body = json.dumps({"state": "invalidated", "reason": "knowledge_eraser"}).encode("utf-8")
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        request = urllib.request.Request(endpoint, data=body, headers=headers, method="PATCH")
+        try:
+            await asyncio.to_thread(urllib.request.urlopen, request, timeout=30)
+            erased.append(memory_id)
+        except urllib.error.HTTPError as exc:
+            skipped.append(memory_id)
+            detail = exc.read().decode("utf-8", errors="replace")[:400]
+            errors.append(f"{memory_id}: HTTP {exc.code} {detail}")
+        except Exception as exc:  # noqa: BLE001 - reported to Swift as skipped detail
+            skipped.append(memory_id)
+            errors.append(f"{memory_id}: {exc}")
+    return {"success": True, "erased": erased, "skipped": skipped, "message": "; ".join(errors)}
+
+
+provider = None
+try:
+    from plugins.memory.hindsight import HindsightMemoryProvider
+
+    provider = HindsightMemoryProvider()
+    provider.initialize(
+        "hermes-macos-knowledge-eraser",
+        hermes_home=hermes_home,
+        platform="macos",
+        agent_identity="default",
+        agent_workspace="hermes",
+        agent_context="primary",
+    )
+    if getattr(provider, "_mode", "") == "disabled":
+        raise RuntimeError("Hindsight memory provider is disabled or unavailable for this Hermes profile")
+    if operation == "scan":
+        recall_kwargs = {
+            "bank_id": provider._bank_id,
+            "query": topic,
+            "budget": provider._budget,
+            "max_tokens": 4096,
+            "types": ["world", "experience"],
+        }
+        if provider._recall_tags:
+            recall_kwargs["tags"] = provider._recall_tags
+            recall_kwargs["tags_match"] = provider._recall_tags_match
+        response = provider._run_hindsight_operation(lambda client: client.arecall(**recall_kwargs))
+        records = []
+        seen = set()
+        for item in response.results or []:
+            memory_id = str(value(item, "id", "memory_id") or "").strip()
+            text = str(value(item, "text", "content") or "").strip()
+            fact_type = str(value(item, "type", "fact_type") or "").strip()
+            if not memory_id or not text or fact_type == "observation" or memory_id in seen:
+                continue
+            seen.add(memory_id)
+            score = value(item, "score", "confidence", "relevance")
+            try:
+                confidence = float(score) if score is not None else 0.82
+            except Exception:
+                confidence = 0.82
+            records.append({
+                "memory_id": memory_id,
+                "text": text,
+                "fact_type": fact_type,
+                "context": value(item, "context"),
+                "confidence": confidence,
+                "document_id": value(item, "document_id"),
+                "chunk_id": value(item, "chunk_id"),
+                "tags": as_list(value(item, "tags")),
+                "entities": as_list(value(item, "entities")),
+            })
+        payload = {"success": True, "results": records}
+    elif operation == "erase":
+        payload = provider._run_hindsight_operation(lambda client: invalidate_memories(client, provider, memory_ids))
+    else:
+        raise ValueError(f"Unsupported Hindsight operation: {operation}")
+    print(json.dumps(payload, sort_keys=True))
+except Exception as exc:  # noqa: BLE001 - returned to the Swift UI as a user-visible operation failure
+    print(json.dumps({"success": False, "error": str(exc), "results": [], "erased": [], "skipped": memory_ids}, sort_keys=True))
+    sys.exit(1)
+finally:
+    if provider is not None:
+        try:
+            provider.shutdown()
+        except Exception:
+            pass
+"""#
+
     private static let archiveDateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
@@ -688,6 +911,32 @@ private struct HermesLocalMemoryEraserEraseResponse: Decodable {
     let message: String?
     let erased: [String]
     let skipped: [String]
+}
+
+private struct HermesHindsightEraserScanResponse: Decodable {
+    let success: Bool
+    let error: String?
+    let results: [HermesHindsightEraserRecord]
+}
+
+private struct HermesHindsightEraserEraseResponse: Decodable {
+    let success: Bool
+    let error: String?
+    let message: String?
+    let erased: [String]
+    let skipped: [String]
+}
+
+private struct HermesHindsightEraserRecord: Decodable {
+    let memory_id: String
+    let text: String
+    let fact_type: String
+    let context: String?
+    let confidence: Double?
+    let document_id: String?
+    let chunk_id: String?
+    let tags: [String]?
+    let entities: [String]?
 }
 
 private struct HermesLocalMemoryEraserRecord: Decodable {

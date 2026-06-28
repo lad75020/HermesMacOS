@@ -17,9 +17,18 @@ final class UtilitiesWorkflowTests: XCTestCase {
 
     func testUtilitiesSubcategoryCoverageMatchesFR010() throws {
         let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "utilities")
-        XCTAssertTrue(subcategories.isSuperset(of: Set(["clipboard retention", "prompt retention", "response retention", "raw stream debug controls", "knowledge eraser scan", "knowledge eraser review", "knowledge eraser archive", "knowledge eraser erase", "speech-to-text selection", "recording stop", "recording cancel", "reachability monitoring"])))
+        XCTAssertTrue(subcategories.isSuperset(of: Set(["clipboard retention", "prompt retention", "response retention", "raw stream debug controls", "knowledge eraser scan", "knowledge eraser review", "knowledge eraser archive", "knowledge eraser erase", "knowledge eraser Hindsight provider", "speech-to-text selection", "recording stop", "recording cancel", "reachability monitoring"])))
         HermesTestAssertions.assertRedacts("clipboard api_key=\(HermesTestAssertions.fakeAPIKey) prompt response")
         let contract = try HermesTestAssertions.readRepositoryFile("specs/013-hermesmacos-test-target/contracts/test-coverage-contract.md")
         XCTAssertTrue(contract.contains("speech-to-text"))
+    }
+
+    func testKnowledgeEraserScansHindsightProviderAndExcludesLocalMemorySearch() throws {
+        let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesKnowledgeEraserUtility.swift")
+        XCTAssertTrue(source.contains("items.append(contentsOf: scanHindsightMemoryEntries"))
+        XCTAssertTrue(source.contains("from plugins.memory.hindsight import HindsightMemoryProvider"))
+        XCTAssertTrue(source.contains("\"types\": [\"world\", \"experience\"]"))
+        XCTAssertTrue(source.contains("\"state\": \"invalidated\""))
+        XCTAssertFalse(source.contains("items.append(contentsOf: scanLocalMemoryEntries"))
     }
 }
