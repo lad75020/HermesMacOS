@@ -40,7 +40,7 @@ enum HermesMacOSTestCoverageMap {
             identifier: "app-shell",
             displayName: "App shell",
             scope: .functional,
-            requiredSubcategories: ["tab list", "selected tab state", "multi-window endpoint state", "multi-window profile state", "activity indicators"],
+            requiredSubcategories: ["tab list", "selected tab state", "tab visibility filtering", "multi-window endpoint state", "multi-window profile state", "activity indicators"],
             defaultCoverage: ["AppShellAndSettingsTests"],
             liveSmokeOnly: false
         ),
@@ -48,7 +48,7 @@ enum HermesMacOSTestCoverageMap {
             identifier: "settings",
             displayName: "Settings",
             scope: .functional,
-            requiredSubcategories: ["API endpoint persistence", "dashboard endpoint persistence", "API key path", "self-signed certificate policy", "saved endpoint pairs", "SSH credentials", "allowed folders", "theme preference", "language preference", "font preference", "reachability indicators"],
+            requiredSubcategories: ["API endpoint persistence", "dashboard endpoint persistence", "API key path", "self-signed certificate policy", "saved endpoint pairs", "SSH credentials", "allowed folders", "theme preference", "language preference", "font preference", "tab visibility controls", "reachability indicators"],
             defaultCoverage: ["AppShellAndSettingsTests"],
             liveSmokeOnly: false
         ),
@@ -74,6 +74,14 @@ enum HermesMacOSTestCoverageMap {
             scope: .integration,
             requiredSubcategories: ["WebSocket authentication", "workspace create", "workspace activate", "workspace resume", "workspace close", "prompt submission", "attachment flow", "interrupt", "request-response bubbles", "event grouping", "background completion", "malformed events", "unknown events"],
             defaultCoverage: ["TUIGatewayWorkflowTests", "StreamingAndGatewayEventTests"],
+            liveSmokeOnly: false
+        ),
+        .init(
+            identifier: "memory",
+            displayName: "Memory",
+            scope: .functional,
+            requiredSubcategories: ["Hindsight provider boundary", "memory list", "pagination", "filtering", "delete confirmation", "delete failure handling", "provider empty state", "provider error state", "sanitized provider errors"],
+            defaultCoverage: ["MemoryTabWorkflowTests", "HindsightMemoryClientTests"],
             liveSmokeOnly: false
         ),
         .init(
@@ -160,7 +168,7 @@ enum HermesMacOSTestCoverageMap {
             identifier: "localization-accessibility",
             displayName: "Localization/accessibility",
             scope: .functional,
-            requiredSubcategories: ["primary navigation labels", "critical control strings", "supported app surfaces"],
+            requiredSubcategories: ["primary navigation labels", "critical control strings", "supported app surfaces", "Memory tab controls", "Settings tab visibility controls"],
             defaultCoverage: ["LocalizationAndAccessibilityTests"],
             liveSmokeOnly: false
         ),

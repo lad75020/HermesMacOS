@@ -1,0 +1,33 @@
+import XCTest
+@testable import HermesMacOS
+
+final class HindsightMemoryClientTests: XCTestCase {
+    func testListJSONDecodingAcceptsOptionalMetadata() throws {
+        let request = MemoryListRequest(filterText: "", pageIndex: 0, pageSize: 10)
+        let page = try HermesHindsightMemoryClient.decodeListOutput(HindsightMemoryFixtures.listJSON(), request: request)
+        XCTAssertEqual(page.entries.count, 2)
+        XCTAssertEqual(page.entries[0].id, "h-1")
+        XCTAssertEqual(page.entries[0].kind, "experience")
+        XCTAssertEqual(page.entries[0].metadata["bank"], "default")
+        XCTAssertEqual(page.totalCount, 2)
+        XCTAssertFalse(page.hasMore)
+    }
+
+    func testMalformedRowsAreRejected() {
+        let request = MemoryListRequest(filterText: "", pageIndex: 0, pageSize: 10)
+        XCTAssertThrowsError(try HermesHindsightMemoryClient.decodeListOutput(HindsightMemoryFixtures.malformedListJSON(), request: request))
+    }
+
+    func testDeleteJSONDecodingAndSecretRedaction() throws {
+        let result = try HermesHindsightMemoryClient.decodeDeleteOutput(HindsightMemoryFixtures.deleteJSON(id: "h-1"), requestedID: "h-1")
+        XCTAssertTrue(result.deleted)
+        XCTAssertEqual(result.entryID, "h-1")
+
+        XCTAssertThrowsError(try HermesHindsightMemoryClient.decodeDeleteOutput(HindsightMemoryFixtures.failedDeleteJSON(), requestedID: "h-1")) { error in
+            let text = error.localizedDescription
+            XCTAssertFalse(text.contains("Authorization"))
+            XCTAssertFalse(text.contains("api_key="))
+            XCTAssertFalse(text.contains("Traceback"))
+        }
+    }
+}

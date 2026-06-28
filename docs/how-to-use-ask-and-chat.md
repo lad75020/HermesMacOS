@@ -59,6 +59,10 @@ Use the workspace controls to create independent Ask sessions. Each workspace ha
 
    The History tab can resume a compatible session into Chat with Hermes.
 
+## Optional side-tab visibility
+
+Open Settings → App tabs to hide or restore the Ask Hermes tab and Chat with Hermes tab independently. Hiding a prompt tab only changes side navigation visibility: existing in-memory drafts, attachments, workspaces, and sessions stay intact and return when the tab is shown again. If the hidden tab was selected, HermesMacOS falls back to the next visible tab.
+
 ## Cancellation
 Both Ask and Chat create a Hermes request ID for active work. Pressing Cancel stops the local task and asks the API gateway to cancel `/v1/requests/{request_id}/cancel`.
 

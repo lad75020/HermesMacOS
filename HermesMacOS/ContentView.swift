@@ -41,6 +41,40 @@ enum HermesAppTheme: String, CaseIterable, Identifiable {
     }
 }
 
+enum HermesTabVisibilityPreferences {
+    static let askHermesVisibleKey = "hermes.macOS.tabs.askHermes.visible"
+    static let chatHermesVisibleKey = "hermes.macOS.tabs.chatHermes.visible"
+
+    static func askHermesVisible(in defaults: UserDefaults = .standard) -> Bool {
+        bool(defaults: defaults, key: askHermesVisibleKey, defaultValue: true)
+    }
+
+    static func chatHermesVisible(in defaults: UserDefaults = .standard) -> Bool {
+        bool(defaults: defaults, key: chatHermesVisibleKey, defaultValue: true)
+    }
+
+    static func visibleTabs(askHermesVisible: Bool, chatHermesVisible: Bool) -> [HermesMacOSTab] {
+        HermesMacOSTab.allCases.filter { tab in
+            switch tab {
+            case .ask: askHermesVisible
+            case .chat: chatHermesVisible
+            default: true
+            }
+        }
+    }
+
+    static func fallbackSelection(from selectedTab: HermesMacOSTab, askHermesVisible: Bool, chatHermesVisible: Bool) -> HermesMacOSTab {
+        let tabs = visibleTabs(askHermesVisible: askHermesVisible, chatHermesVisible: chatHermesVisible)
+        if tabs.contains(selectedTab) { return selectedTab }
+        return tabs.first ?? .dashboard
+    }
+
+    private static func bool(defaults: UserDefaults, key: String, defaultValue: Bool) -> Bool {
+        guard defaults.object(forKey: key) != nil else { return defaultValue }
+        return defaults.bool(forKey: key)
+    }
+}
+
 @MainActor
 @Observable
 final class HermesAskWorkspace: Identifiable {
@@ -124,6 +158,7 @@ struct HermesSideTabSwitcher: View {
     let tuiGatewayAttention: HermesTopTabAttention?
     let historyAttention: HermesTopTabAttention?
     let approvalsAttention: HermesTopTabAttention?
+    let visibleTabs: [HermesMacOSTab]
     let onSelectTab: (HermesMacOSTab) -> Void
     @State private var reachabilityMonitor = HermesReachabilityMonitor()
     @State private var isAskBlinking = false
@@ -150,7 +185,7 @@ struct HermesSideTabSwitcher: View {
             HermesReachabilityLEDRow(monitor: reachabilityMonitor)
                 .padding(.bottom, 2)
 
-            ForEach(HermesMacOSTab.allCases) { tab in
+            ForEach(visibleTabs) { tab in
                 HermesSideTabButton(
                     tab: tab,
                     isSelected: selectedTab == tab,
@@ -446,6 +481,8 @@ private struct HermesContentPersistedStartupValues: Sendable {
 struct ContentView: View {
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("hermes.appTheme") private var appTheme: HermesAppTheme = .system
+    @AppStorage(HermesTabVisibilityPreferences.askHermesVisibleKey) private var askHermesTabVisible = true
+    @AppStorage(HermesTabVisibilityPreferences.chatHermesVisibleKey) private var chatHermesTabVisible = true
     @State private var apiSettings = HermesSettingsStore.loadAPISettings()
     @State private var dashboardURL = UserDefaults.standard.string(forKey: hermesDashboardURLStorageKey) ?? defaultHermesDashboardURL
     @State private var windowID = UUID()
@@ -460,6 +497,7 @@ struct ContentView: View {
     @State private var sessionsStore = HermesSessionsStore()
     @State private var approvalsInboxStore = HermesApprovalsInboxStore()
     @State private var kanbanStore = HermesKanbanStore()
+    @State private var memoryStore = HermesMemoryStore()
     @State private var tuiWorkspaces = [HermesTUIWorkspace(number: 1)]
     @State private var selectedTUIWorkspaceID: HermesTUIWorkspace.ID?
     @State private var installationSession = HermesInstallationSession()
@@ -518,6 +556,10 @@ struct ContentView: View {
         appTheme.colorScheme ?? systemColorScheme
     }
 
+    private var visibleTabs: [HermesMacOSTab] {
+        HermesTabVisibilityPreferences.visibleTabs(askHermesVisible: askHermesTabVisible, chatHermesVisible: chatHermesTabVisible)
+    }
+
     private var connectedHostName: String {
         HermesHostEndpoints.displayHost(from: apiSettings.baseURL)
     }
@@ -545,6 +587,7 @@ struct ContentView: View {
                 tuiGatewayAttention: tuiGatewayTabAttention,
                 historyAttention: historyTabAttention,
                 approvalsAttention: approvalsTabAttention,
+                visibleTabs: visibleTabs,
                 onSelectTab: handleTopTabSelection
             )
             activeTabContent
@@ -582,6 +625,8 @@ struct ContentView: View {
             connectionCenter.updateWindow(id: windowID, apiSettings: apiSettings, dashboardURL: newValue)
         }
         .onChange(of: chatDraft) { _, newValue in HermesSettingsStore.saveChatDraft(newValue) }
+        .onChange(of: askHermesTabVisible) { _, _ in applyVisibleTabFallback() }
+        .onChange(of: chatHermesTabVisible) { _, _ in applyVisibleTabFallback() }
         .onReceive(NotificationCenter.default.publisher(for: .hermesWindowConnectionDidChange)) { notification in
             guard let changedWindowID = notification.object as? UUID, changedWindowID == windowID,
                   let connection = connectionCenter.connection(id: windowID)
@@ -617,6 +662,8 @@ struct ContentView: View {
                 connectedHostName: connectedHostName,
                 connectedWindowID: windowID
             )
+        case .memory:
+            HermesMemoryView(store: memoryStore)
         case .tuiGateway:
             HermesTUIGatewayWorkspacesView(
                 apiSettings: apiSettings,
@@ -835,6 +882,14 @@ struct ContentView: View {
         if tab == .history { historySearchSession.acknowledgeTabAttention() }
     }
 
+    private func applyVisibleTabFallback() {
+        selectedTab = HermesTabVisibilityPreferences.fallbackSelection(
+            from: selectedTab,
+            askHermesVisible: askHermesTabVisible,
+            chatHermesVisible: chatHermesTabVisible
+        )
+    }
+
     private func acknowledgeChatTabAttention() {
         if let token = chatCompletionToken { acknowledgedChatCompletionToken = token }
         if let token = chatFailureToken { acknowledgedChatFailureToken = token }
@@ -854,6 +909,7 @@ struct ContentView: View {
 enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
     case ask
     case chat
+    case memory
     case tuiGateway
     case history
     case sessions
@@ -869,6 +925,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .ask: "Ask Hermes"
         case .chat: "Chat with Hermes"
+        case .memory: "Memory"
         case .tuiGateway: "TUI Gateway"
         case .history: "History"
         case .sessions: "Sessions"
@@ -884,6 +941,7 @@ enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .ask: "dot.radiowaves.left.and.right"
         case .chat: "text.bubble"
+        case .memory: "brain.head.profile"
         case .tuiGateway: "terminal.fill"
         case .history: "clock.arrow.circlepath"
         case .sessions: "rectangle.stack"

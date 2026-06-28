@@ -43,8 +43,11 @@ targets:
         excludes:
           - Fixtures/**
           - "**/*.md"
+      - path: HermesMacOSTest/Fixtures/HindsightMemoryFixtures.swift
       - path: HermesMacOSTest/Fixtures
         buildPhase: resources
+        excludes:
+          - HindsightMemoryFixtures.swift
     dependencies:
       - target: HermesMacOS
     settings:

@@ -34,6 +34,8 @@ struct SettingsView: View {
     @AppStorage("hermes.macOS.labelFont") private var labelFont: HermesWebsiteFont = .mondwest
     @AppStorage("hermes.macOS.chatBubbleFontSize") private var chatBubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
+    @AppStorage(HermesTabVisibilityPreferences.askHermesVisibleKey) private var askHermesTabVisible = true
+    @AppStorage(HermesTabVisibilityPreferences.chatHermesVisibleKey) private var chatHermesTabVisible = true
     @AppStorage(hermesSpeechToTextEngineStorageKey) private var speechToTextEngine: HermesSpeechToTextEngine = .appleLocal
     @State private var apiSettings = HermesAPISettings(apiKey: "")
     @State private var draft = HermesRequestDraft()
@@ -99,6 +101,16 @@ struct SettingsView: View {
                         promptFontSize = 14
                     }
                     Text("Adjust the text size used in Ask Hermes chat bubbles and in the prompt composer.")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesSecondaryText)
+                }
+
+                Section("App tabs") {
+                    Toggle("Ask Hermes tab", isOn: $askHermesTabVisible)
+                        .accessibilityLabel("Ask Hermes tab")
+                    Toggle("Chat with Hermes tab", isOn: $chatHermesTabVisible)
+                        .accessibilityLabel("Chat with Hermes tab")
+                    Text("Hide optional prompt tabs from the side navigation without clearing their current drafts, attachments, or sessions. Settings remains available to restore them.")
                         .font(.caption)
                         .foregroundStyle(Color.hermesSecondaryText)
                 }

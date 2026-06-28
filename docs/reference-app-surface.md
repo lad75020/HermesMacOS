@@ -20,6 +20,17 @@ Files: `HermesChatView.swift`, `HermesChatCompletionsAPI.swift`.
 
 Purpose: send chat prompts to `/v1/chat/completions` with streaming/non-streaming modes, optional system prompt, attachments, cancellation, and history resume.
 
+### Memory
+Files: `HermesMemoryView.swift`, `HermesMemoryStore.swift`, `HermesHindsightMemoryClient.swift`, `ContentView.swift`.
+
+Purpose: browse readable Hindsight memories from a native tab, page through provider-backed results, filter by text, refresh, and delete one memory after confirmation. Provider access stays behind the Hermes Agent Python/Hindsight boundary, uses bounded helper execution, and displays only sanitized user-facing errors.
+
+Key capabilities:
+- Hindsight-backed Memory rows with bounded previews and non-sensitive metadata summaries.
+- Refresh, Previous, Next, and range text for deterministic pagination.
+- Text filtering that resets to the first page and distinguishes filtered-empty, provider-empty, and provider-error states.
+- Row-specific delete confirmation with provider invalidation and page clamping after success.
+
 ### TUI Gateway
 Files: `HermesTUIGatewayView.swift`, `ContentView.swift`, `HermesHistoryView.swift`.
 
@@ -98,6 +109,7 @@ Settings include:
 - SSH username and private key import/removal for hosts.
 - Allowed folders for local filesystem access.
 - Theme, app language, title font, label font, prompt font size, and chat bubble font size.
+- Optional side-tab visibility controls for Ask Hermes and Chat with Hermes. Hiding these tabs removes their side-rail entries without clearing current drafts, attachments, workspaces, or sessions.
 
 ## App resources
 - Localizations: `Localizable.xcstrings` and localized InfoPlist strings in `*.lproj` directories.

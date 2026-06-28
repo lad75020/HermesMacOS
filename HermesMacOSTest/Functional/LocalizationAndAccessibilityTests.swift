@@ -20,6 +20,16 @@ final class LocalizationAndAccessibilityTests: XCTestCase {
     func testLocalizationAccessibilityCoverageMapTracksCriticalLabels() {
         let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "localization-accessibility")
         XCTAssertTrue(subcategories.isSuperset(of: Set(["primary navigation labels", "critical control strings", "supported app surfaces"])))
-        XCTAssertEqual(HermesMacOSTab.allCases.count, 10)
+        XCTAssertEqual(HermesMacOSTab.allCases.count, 11)
+    }
+
+    func testSettingsTabVisibilityAndMemoryControlsHaveAccessibleLabels() {
+        let labels = ["Ask Hermes tab", "Chat with Hermes tab", "Memory", "Filter memories", "Refresh", "Previous", "Next", "Delete"]
+        for label in labels {
+            XCTAssertFalse(label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            XCTAssertFalse(label.contains("_"))
+        }
+        XCTAssertTrue(HermesMacOSTestCoverageMap.covers("localization-accessibility", "Memory tab controls"))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.covers("localization-accessibility", "Settings tab visibility controls"))
     }
 }
