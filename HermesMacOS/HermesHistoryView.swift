@@ -2,7 +2,6 @@
 //  HermesHistoryView.swift
 //  HermesMacOS
 //
-
 import Foundation
 import SwiftUI
 
