@@ -760,19 +760,33 @@ final class HermesTUIGatewayStore {
         let data = try JSONEncoder().encode(request)
         guard let text = String(data: data, encoding: .utf8) else { throw HermesTUIGatewayError.requestFailed("Could not encode JSON-RPC request.") }
         return try await withTaskCancellationHandler {
-            try await withThrowingTaskGroup(of: JSONValue.self) { group in
-                group.addTask { [weak self] in
-                    guard let self else { throw HermesTUIGatewayError.notConnected }
-                    return try await self.waitForResponse(id: id)
+            try await withCheckedThrowingContinuation { continuation in
+                // Register first: session.create can answer before a separately
+                // scheduled waiter starts, which would otherwise drop the reply.
+                pendingResponses[id] = continuation
+                if Task.isCancelled {
+                    pendingResponses.removeValue(forKey: id)?.resume(throwing: CancellationError())
+                    return
                 }
-                group.addTask {
-                    try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
-                    throw HermesTUIGatewayError.requestFailed("Timed out waiting for \(method).")
+
+                Task { @MainActor in
+                    do {
+                        try await task.send(.string(text))
+                    } catch {
+                        pendingResponses.removeValue(forKey: id)?.resume(throwing: error)
+                    }
                 }
-                try await task.send(.string(text))
-                guard let value = try await group.next() else { throw HermesTUIGatewayError.requestFailed("No response for \(method).") }
-                group.cancelAll()
-                return value
+
+                Task { @MainActor in
+                    do {
+                        try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
+                    } catch {
+                        return
+                    }
+                    pendingResponses.removeValue(forKey: id)?.resume(
+                        throwing: HermesTUIGatewayError.requestFailed("Timed out waiting for \(method).")
+                    )
+                }
             }
         } onCancel: {
             Task { @MainActor in
@@ -780,12 +794,6 @@ final class HermesTUIGatewayStore {
                     continuation.resume(throwing: CancellationError())
                 }
             }
-        }
-    }
-
-    private func waitForResponse(id: String) async throws -> JSONValue {
-        try await withCheckedThrowingContinuation { continuation in
-            pendingResponses[id] = continuation
         }
     }
 

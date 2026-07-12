@@ -20,6 +20,21 @@ final class TUIGatewayWorkflowTests: XCTestCase {
         XCTAssertTrue(message.isResolved)
     }
 
+    func testTUIGatewayRegistersPendingResponseBeforeSendingRequest() throws {
+        let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesTUIGatewayView.swift")
+        let requestStart = try XCTUnwrap(source.range(of: "private func request(_ method:"))
+        let requestEnd = try XCTUnwrap(source.range(of: "private func webSocketURL(", range: requestStart.upperBound..<source.endIndex))
+        let requestSource = source[requestStart.lowerBound..<requestEnd.lowerBound]
+        let registration = try XCTUnwrap(requestSource.range(of: "pendingResponses[id] = continuation"))
+        let send = try XCTUnwrap(requestSource.range(of: "try await task.send(.string(text))"))
+
+        XCTAssertLessThan(
+            requestSource.distance(from: requestSource.startIndex, to: registration.lowerBound),
+            requestSource.distance(from: requestSource.startIndex, to: send.lowerBound),
+            "A fast JSON-RPC response can be dropped unless its continuation is registered before WebSocket send."
+        )
+    }
+
 
     func testTUIGatewaySubcategoryCoverageMatchesFR007() throws {
         let subcategories = HermesMacOSTestCoverageMap.subcategories(for: "tui-gateway")
