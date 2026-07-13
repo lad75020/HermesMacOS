@@ -856,14 +856,31 @@ final class HermesSessionsStore {
         guard visibleTotal > 0 else { return ([], 0, 0) }
 
         let batchSize = 100
-        var newestFirstNonCron: [HermesAgentSessionSummary] = []
-        var offset = 0
-        while offset < visibleTotal {
-            let limit = min(batchSize, visibleTotal - offset)
-            let response = try await fetchSessions(baseURL: baseURL, token: token, apiSettings: apiSettings, limit: limit, offset: offset)
-            newestFirstNonCron.append(contentsOf: response.sessions.filter { !$0.isCronInitiated })
-            offset += limit
+        let offsets = stride(from: 0, to: visibleTotal, by: batchSize)
+        let batches = try await withThrowingTaskGroup(of: (Int, [HermesAgentSessionSummary]).self) { group in
+            for offset in offsets {
+                let limit = min(batchSize, visibleTotal - offset)
+                group.addTask {
+                    let response = try await fetchSessions(
+                        baseURL: baseURL,
+                        token: token,
+                        apiSettings: apiSettings,
+                        limit: limit,
+                        offset: offset
+                    )
+                    return (offset, response.sessions)
+                }
+            }
+
+            var fetched: [(Int, [HermesAgentSessionSummary])] = []
+            for try await batch in group {
+                fetched.append(batch)
+            }
+            return fetched.sorted { $0.0 < $1.0 }
         }
+        let newestFirstNonCron = batches
+            .flatMap(\.1)
+            .filter { !$0.isCronInitiated }
 
         let filteredTotal = newestFirstNonCron.count
         guard filteredTotal > 0 else { return ([], 0, 0) }
