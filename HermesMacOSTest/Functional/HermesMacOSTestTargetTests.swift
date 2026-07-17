@@ -11,7 +11,7 @@ final class HermesMacOSTestTargetTests: XCTestCase {
     }
 
     func testTargetSmokeCanImportAppModuleAndReadTabs() {
-        XCTAssertEqual(HermesMacOSTab.allCases.first, .ask)
+        XCTAssertEqual(HermesMacOSTab.allCases.first, .tuiGateway)
         XCTAssertTrue(HermesMacOSTab.allCases.map(\.title).contains("Utilities"))
     }
 

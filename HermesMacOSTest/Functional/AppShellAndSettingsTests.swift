@@ -4,7 +4,7 @@ import XCTest
 final class AppShellAndSettingsTests: XCTestCase {
     func testDocumentedTabsHaveStableTitlesAndImages() {
         let titles = HermesMacOSTab.allCases.map(\.title)
-        XCTAssertEqual(titles, ["Ask Hermes", "Chat with Hermes", "Memory", "TUI Gateway", "History", "Sessions", "Approvals Inbox", "Kanban", "Hermes Dashboard", "Configuration", "Utilities"])
+        XCTAssertEqual(titles, ["TUI Gateway", "Ask Hermes", "Chat with Hermes", "Memory", "History", "Sessions", "Approvals Inbox", "Kanban", "Hermes Dashboard", "Configuration", "Utilities"])
         XCTAssertEqual(Set(HermesMacOSTab.allCases.map(\.systemImage)).count, HermesMacOSTab.allCases.count)
     }
 
@@ -25,7 +25,7 @@ final class AppShellAndSettingsTests: XCTestCase {
     func testAppShellSubcategoryCoverageIsExecutable() {
         let appShell = HermesMacOSTestCoverageMap.subcategories(for: "app-shell")
         XCTAssertTrue(appShell.isSuperset(of: Set(["tab list", "selected tab state", "tab visibility filtering", "multi-window endpoint state", "multi-window profile state", "activity indicators"])))
-        XCTAssertEqual(HermesMacOSTab.allCases.first, .ask)
+        XCTAssertEqual(HermesMacOSTab.allCases.first, .tuiGateway)
         XCTAssertTrue(HermesMacOSTestCoverageMap.category("app-shell").defaultCoverage.contains { $0.contains("AppShellAndSettingsTests") })
     }
 
@@ -49,12 +49,12 @@ final class AppShellAndSettingsTests: XCTestCase {
         XCTAssertFalse(visibleWithoutAsk.contains(.ask))
         XCTAssertTrue(visibleWithoutAsk.contains(.chat))
         XCTAssertTrue(visibleWithoutAsk.contains(.memory))
-        XCTAssertEqual(HermesTabVisibilityPreferences.fallbackSelection(from: .ask, askHermesVisible: false, chatHermesVisible: true), .chat)
+        XCTAssertEqual(HermesTabVisibilityPreferences.fallbackSelection(from: .ask, askHermesVisible: false, chatHermesVisible: true), .tuiGateway)
 
         let visibleWithoutPromptTabs = HermesTabVisibilityPreferences.visibleTabs(askHermesVisible: false, chatHermesVisible: false)
         XCTAssertFalse(visibleWithoutPromptTabs.contains(.ask))
         XCTAssertFalse(visibleWithoutPromptTabs.contains(.chat))
-        XCTAssertEqual(HermesTabVisibilityPreferences.fallbackSelection(from: .chat, askHermesVisible: false, chatHermesVisible: false), .memory)
+        XCTAssertEqual(HermesTabVisibilityPreferences.fallbackSelection(from: .chat, askHermesVisible: false, chatHermesVisible: false), .tuiGateway)
     }
 
     func testPromptTabVisibilityPreferencesAreNonSensitiveUserDefaults() {

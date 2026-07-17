@@ -502,7 +502,7 @@ struct ContentView: View {
     @State private var selectedTUIWorkspaceID: HermesTUIWorkspace.ID?
     @State private var installationSession = HermesInstallationSession()
     @State private var configurationWebViewStore = HermesDashboardWebViewStore()
-    @State private var selectedTab = HermesMacOSTab.ask
+    @State private var selectedTab = HermesMacOSTab.tuiGateway
     @State private var acknowledgedChatCompletionToken = ""
     @State private var acknowledgedChatFailureToken = ""
     @State private var didLoadPersistedStartupValues = false
@@ -907,10 +907,10 @@ struct ContentView: View {
 }
 
 enum HermesMacOSTab: String, CaseIterable, Identifiable, Hashable {
+    case tuiGateway
     case ask
     case chat
     case memory
-    case tuiGateway
     case history
     case sessions
     case approvals
