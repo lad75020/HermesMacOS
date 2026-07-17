@@ -94,10 +94,10 @@ Gateway events arrive as JSON-RPC notifications with `method` set to `event`:
 | Event type | UI behavior |
 | --- | --- |
 | `gateway.ready` | Updates status to `Gateway ready`. |
-| `session.info` | Updates the session title with the short session ID and model when available. |
+| `session.info` | Updates the session title with the short session ID and model when available. When `payload.usage.context_used` is present, updates the active assistant bubble's context counter, or the latest assistant bubble only while the current turn is safely active. |
 | `message.start` | Marks the workspace streaming, resets stream grouping, and sets status to `Hermes is responding`. |
 | `message.delta` | Appends assistant text to the active assistant bubble, creating a new bubble when the stream type changes. |
-| `message.complete` | Stops streaming. If no deltas arrived, creates an assistant bubble from final text. If one contiguous message segment exists, replaces it with final text. |
+| `message.complete` | Finalizes assistant text, attaches `payload.usage.context_used` to that response before stream grouping resets, then stops streaming. If no deltas arrived, creates an assistant bubble from final text. If one contiguous message segment exists, replaces it with final text. |
 | `reasoning.delta` | Appends or creates a `Reasoning` event bubble. |
 | `thinking.delta` | Appends or creates a `Thinking` event bubble. |
 | Any other `*.delta` | Appends or creates an event bubble titled from the event type. |
@@ -125,6 +125,12 @@ The store groups consecutive delta chunks by event/content type with these field
 Consecutive chunks of the same type append to one bubble. When the type changes, a new bubble is created. Non-stream events reset the active stream group so later deltas do not merge across tool/status/request boundaries.
 
 This keeps assistant text, reasoning, thinking, and tool output readable while preserving the backend event contract.
+
+## Current context token counter
+
+Assistant response headers show a compact counter beside **Hermes**, for example `Context 12.3K`, when the gateway reports real current-window occupancy. The only accepted used-token source is `payload.usage.context_used` on `message.complete` or `session.info`; JSON numbers and numeric strings are accepted. Optional `context_max` and `context_percent` enrich the accessibility label.
+
+The counter never falls back to `usage.total` or another cumulative session total. If `context_used` is absent, invalid, or zero, no counter is shown. Readings update an existing assistant response in place and never create transcript bubbles. Session identity, active-turn, user-turn, disconnect, create, activate, resume, and close boundaries prevent a reading from being attached to a response from another session or turn.
 
 ## Workspace model
 

@@ -20,6 +20,53 @@ final class TUIGatewayWorkflowTests: XCTestCase {
         XCTAssertTrue(message.isResolved)
     }
 
+    @MainActor
+    func testCurrentContextUsageFormatsAndUpdatesOnlyAssistantBubble() {
+        let usage = HermesTUICurrentContextUsage(used: 12_345, maximum: 131_072, percent: 9.42)
+        XCTAssertEqual(usage.displayText, "Context 12.3K")
+        XCTAssertEqual(usage.accessibilityText, "12,345 of 131,072 context tokens, 9.42 percent used")
+
+        let store = HermesTUIGatewayStore()
+        store.sessionID = "live-session"
+        store.isStreaming = true
+        store.messages = [
+            HermesTUIGatewayMessage(role: .user, title: "You", content: "Question"),
+            HermesTUIGatewayMessage(role: .assistant, title: "Hermes", content: "Answer")
+        ]
+
+        store.applyCurrentContextUsage(usage, eventSessionID: "live-session", allowLatestAssistant: true)
+
+        XCTAssertNil(store.messages[0].currentContextUsage)
+        XCTAssertEqual(store.messages[1].currentContextUsage, usage)
+        XCTAssertEqual(store.messages.count, 2)
+
+        store.messages[1].currentContextUsage = nil
+        store.isStreaming = false
+        store.applyCurrentContextUsage(usage, eventSessionID: "live-session", allowLatestAssistant: true)
+        XCTAssertNil(store.messages[1].currentContextUsage)
+
+        store.connectionStatus = "Completed"
+        store.applyCurrentContextUsage(usage, eventSessionID: "live-session", allowLatestAssistant: true)
+        XCTAssertEqual(store.messages[1].currentContextUsage, usage)
+    }
+
+    @MainActor
+    func testCurrentContextUsageDoesNotCrossSessionOrUserTurn() {
+        let store = HermesTUIGatewayStore()
+        store.sessionID = "current"
+        store.isStreaming = true
+        store.messages = [
+            HermesTUIGatewayMessage(role: .assistant, title: "Hermes", content: "Old answer"),
+            HermesTUIGatewayMessage(role: .user, title: "You", content: "New question")
+        ]
+
+        store.applyCurrentContextUsage(HermesTUICurrentContextUsage(used: 500), eventSessionID: "other", allowLatestAssistant: true)
+        store.applyCurrentContextUsage(HermesTUICurrentContextUsage(used: 600), eventSessionID: "current", allowLatestAssistant: true)
+
+        XCTAssertNil(store.messages[0].currentContextUsage)
+        XCTAssertNil(store.messages[1].currentContextUsage)
+    }
+
     func testTUIGatewayRegistersPendingResponseBeforeSendingRequest() throws {
         let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesTUIGatewayView.swift")
         let requestStart = try XCTUnwrap(source.range(of: "private func request(_ method:"))

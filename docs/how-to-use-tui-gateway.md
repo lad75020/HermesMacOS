@@ -77,6 +77,12 @@ The transcript can render more than assistant text. When Hermes asks for input, 
 
 Resolved request bubbles are marked as resolved in the transcript.
 
+## Read current context usage
+
+When Hermes reports current context-window occupancy, an assistant response header shows a compact value beside **Hermes**, such as `Context 12.3K`. It updates in place on the current response and remains visible after streaming completes. VoiceOver also announces the exact used-token count and, when supplied by the gateway, the context maximum and percentage.
+
+The value comes only from `usage.context_used` in `message.complete` or `session.info` events. HermesMacOS accepts a JSON number or numeric string. It deliberately does not substitute cumulative `usage.total`; when the gateway does not report current-window occupancy, the counter is omitted.
+
 ## Interrupt, close, and switch sessions
 
 - **Interrupt** sends `session.interrupt` for the current live session and stops local streaming state.

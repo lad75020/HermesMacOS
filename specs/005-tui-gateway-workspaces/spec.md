@@ -2,7 +2,8 @@
 
 **Feature Branch**: `feature/time-machine-tui-gateway-workspaces`  
 **Created**: 2026-06-27  
-**Status**: Draft  
+**Status**: Refined
+**Refined**: 2026-07-17 — Added live current-context token counts beside TUI assistant response bubble titles.
 **Input**: User description: "Feature: TUI Gateway Workspaces. Description: Mirrors live Hermes TUI sessions inside the native app with WebSocket JSON-RPC, multiple workspaces, attachments, streaming transcript events, and interactive requests. Relevant files: HermesMacOS/HermesTUIGatewayView.swift, docs/reference-tui-gateway-websocket.md, docs/how-to-use-tui-gateway.md. Focus on this feature only; do not modify other features."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -22,7 +23,7 @@ A user connects a TUI Gateway workspace to the dashboard WebSocket, obtains a li
 ---
 
 ### User Story 2 - Send prompts, attachments, and receive streamed events (Priority: P2)
-A user submits prompts and attachments through JSON-RPC and sees assistant, reasoning, thinking, tool, status, background, and error events rendered as distinct transcript bubbles.
+A user submits prompts and attachments through JSON-RPC and sees assistant, reasoning, thinking, tool, status, background, and error events rendered as distinct transcript bubbles. Assistant response bubble headers show the live current-context token occupancy reported by Hermes.
 
 **Why this priority**: This is the core TUI execution experience inside HermesMacOS.
 
@@ -32,6 +33,8 @@ A user submits prompts and attachments through JSON-RPC and sees assistant, reas
 1. **Given** a live session exists, **When** the user submits a prompt, **Then** the app sends `prompt.submit` and renders streamed events.
 2. **Given** an image attachment with a local path is selected, **When** the user sends it, **Then** `input.detect_drop` runs before `prompt.submit` and an attachment bubble appears.
 3. **Given** consecutive deltas change event type, **When** the transcript renders, **Then** assistant, reasoning, thinking, and tool/status output remain separate bubbles.
+4. **Given** Hermes reports `usage.context_used` for a response, **When** the usage arrives in `message.complete` or `session.info`, **Then** the current assistant response bubble shows a compact live context-token count immediately beside its title.
+5. **Given** Hermes does not report current-window context occupancy, **When** a response bubble renders, **Then** the app omits the context counter rather than substituting cumulative session token totals.
 
 ---
 
@@ -79,13 +82,14 @@ A user answers approval, clarification, sudo, and secret request bubbles directl
 - **FR-006**: System MUST support multiple independent TUI workspaces with isolated store, draft, attachment, request-response drafts, session, transcript, and attention state.
 - **FR-007**: System MUST support interactive approval, clarify, sudo, and secret request bubbles and send matching response methods.
 - **FR-008**: System MUST fail pending JSON-RPC requests on timeout, disconnect, or cancellation.
+- **FR-009**: System MUST parse current-window context occupancy from TUI Gateway usage payloads, associate the latest non-empty value with the active assistant response bubble, and render a compact monospaced context-token count beside the bubble title without using cumulative lifetime token totals as a fallback.
 - **FR-SEC**: System MUST validate dashboard URLs, reuse TLS/self-signed certificate policy, prefer one-time tickets, and protect secret/sudo input.
 - **FR-INT**: System MUST preserve the documented dashboard WebSocket JSON-RPC protocol.
 
 ### Key Entities *(include if feature involves data)*
 - **HermesTUIGatewayStore**: WebSocket connection, JSON-RPC request/response matching, event routing, session state, transcript, pending continuations, and failures.
 - **HermesTUIWorkspace**: Per-workspace store plus draft, request-response drafts, attachment state, and attention acknowledgements.
-- **HermesTUIGatewayMessage**: Transcript bubble for user, assistant, reasoning, tools, status, attachments, requests, errors, and background events.
+- **HermesTUIGatewayMessage**: Transcript bubble for user, assistant, reasoning, tools, status, attachments, requests, errors, and background events, including optional current-context token metadata for assistant responses.
 - **HermesTUILiveSession**: Live session menu row returned from `session.active_list`.
 - **JSONValue**: Shared value type for JSON-RPC params and event payload summaries.
 
@@ -96,13 +100,14 @@ A user answers approval, clarification, sudo, and secret request bubbles directl
 - **SC-003**: Image attachment flow runs `input.detect_drop` and adds an attachment event bubble.
 - **SC-004**: Two workspaces preserve independent connection, draft, attachment, and transcript state.
 - **SC-005**: Approval/clarify/sudo/secret requests can be answered and marked resolved.
+- **SC-006**: When the gateway emits `usage.context_used`, the corresponding assistant response bubble displays the compact context-token count beside `Hermes`, updates without creating a duplicate bubble, and preserves the final value after streaming completes.
 - **SC-BUILD**: The `HermesMacOS` scheme builds successfully with Xcode or command-line `xcodebuild`.
 - **SC-SMOKE**: The primary TUI Gateway journey can be validated independently with documented dashboard smoke checks.
 
 ## Assumptions
 - This pass documents the existing TUI Gateway implementation and does not add new WebSocket methods.
 - Live verification requires a reachable Hermes Dashboard exposing `api/ws` and auth routes.
-- No automated test target exists yet.
+- ~~No automated test target exists yet.~~ Superseded: `HermesMacOSTest` now provides automated coverage for TUI Gateway event parsing and workflow contracts.
 
 ## Clarifications
 ### Session 2026-06-27

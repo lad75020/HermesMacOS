@@ -1,3 +1,5 @@
+> ⚠️ **STALE**: spec.md was refined on 2026-07-17. Run `/speckit.refine.propagate` to update this plan.
+
 # Implementation Plan: TUI Gateway Workspaces
 
 **Branch**: `feature/time-machine-tui-gateway-workspaces` | **Date**: 2026-06-27 | **Spec**: [spec.md](./spec.md)

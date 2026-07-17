@@ -1,3 +1,5 @@
+> ⚠️ **STALE**: spec.md was refined on 2026-07-17. Run `/speckit.refine.propagate` to update this plan.
+
 # Tasks: TUI Gateway Workspaces
 
 **Input**: Design documents from `/specs/005-tui-gateway-workspaces/`

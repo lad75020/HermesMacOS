@@ -72,6 +72,54 @@ struct HermesTUIGatewayParsedEvent: Equatable {
     let text: String?
     let status: String?
     let requestID: String?
+    let currentContextUsage: HermesTUICurrentContextUsage?
+}
+
+struct HermesTUICurrentContextUsage: Equatable, Sendable {
+    let used: Int
+    let maximum: Int?
+    let percent: Double?
+
+    init(used: Int, maximum: Int? = nil, percent: Double? = nil) {
+        self.used = used
+        self.maximum = maximum
+        self.percent = percent
+    }
+
+    var displayText: String { "Context \(Self.compact(used))" }
+
+    var accessibilityText: String {
+        var text = Self.grouped(used)
+        if let maximum { text += " of \(Self.grouped(maximum))" }
+        text += " context tokens"
+        if let percent { text += ", \(Self.decimal(percent)) percent used" }
+        return text
+    }
+
+    private static func compact(_ value: Int) -> String {
+        let magnitude: (divisor: Double, suffix: String)?
+        if value >= 1_000_000 { magnitude = (1_000_000, "M") }
+        else if value >= 1_000 { magnitude = (1_000, "K") }
+        else { magnitude = nil }
+        guard let magnitude else { return String(value) }
+        let scaled = Double(value) / magnitude.divisor
+        let decimals = scaled < 100 && scaled.rounded() != scaled ? 1 : 0
+        return String(format: "%.*f%@", decimals, scaled, magnitude.suffix)
+    }
+
+    private static func grouped(_ value: Int) -> String {
+        let digits = String(value)
+        return stride(from: digits.count, to: 0, by: -3).reversed().enumerated().map { index, end in
+            let start = max(0, end - 3)
+            let lower = digits.index(digits.startIndex, offsetBy: start)
+            let upper = digits.index(digits.startIndex, offsetBy: end)
+            return (index == 0 && start == 0 ? "" : ",") + digits[lower..<upper]
+        }.joined()
+    }
+
+    private static func decimal(_ value: Double) -> String {
+        String(format: "%.2f", value).replacingOccurrences(of: #"\.?0+$"#, with: "", options: .regularExpression)
+    }
 }
 
 enum HermesTUIGatewayEventParser {
@@ -80,12 +128,23 @@ enum HermesTUIGatewayEventParser {
         let envelope = try JSONDecoder().decode(HermesTUIGatewayRPCEnvelope.self, from: data)
         guard envelope.method == "event", let event = envelope.params else { return nil }
         let payload = event.payload?.objectValue ?? [:]
+        let usage = payload["usage"]?.objectValue ?? [:]
         return HermesTUIGatewayParsedEvent(
             type: event.type,
             sessionID: event.sessionID,
             text: payload["text"]?.stringValue ?? payload["preview"]?.stringValue,
             status: payload["status"]?.stringValue,
-            requestID: payload["request_id"]?.stringValue ?? payload["id"]?.stringValue
+            requestID: payload["request_id"]?.stringValue ?? payload["id"]?.stringValue,
+            currentContextUsage: currentContextUsage(from: usage)
+        )
+    }
+
+    fileprivate static func currentContextUsage(from usage: [String: JSONValue]) -> HermesTUICurrentContextUsage? {
+        guard let used = usage["context_used"]?.nonnegativeIntValue, used > 0 else { return nil }
+        return HermesTUICurrentContextUsage(
+            used: used,
+            maximum: usage["context_max"]?.nonnegativeIntValue,
+            percent: usage["context_percent"]?.finiteDoubleValue
         )
     }
 }
@@ -112,6 +171,7 @@ struct HermesTUIGatewayMessage: Identifiable, Equatable {
     var eventType: String?
     var requestKind: RequestKind?
     var requestID: String?
+    var currentContextUsage: HermesTUICurrentContextUsage?
     var isResolved = false
     var createdAt = Date()
 }
@@ -207,6 +267,7 @@ final class HermesTUIGatewayStore {
     private var activeStreamContentType: String?
     private var currentTurnReceivedMessageDelta = false
     private var currentTurnMessageDeltaSegmentCount = 0
+    private var pendingCurrentContextUsage: HermesTUICurrentContextUsage?
 
     var canSendPrompt: Bool {
         isConnected && !isStreaming && !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -234,6 +295,8 @@ final class HermesTUIGatewayStore {
         isConnecting = false
         isStreaming = false
         isResumingSession = false
+        pendingCurrentContextUsage = nil
+        resetStreamGrouping()
         connectionStatus = "Disconnected"
         failPending(HermesTUIGatewayError.notConnected)
     }
@@ -286,6 +349,8 @@ final class HermesTUIGatewayStore {
             do {
                 _ = try await request("session.interrupt", params: ["session_id": .string(sessionID)], timeoutSeconds: 20)
                 isStreaming = false
+                pendingCurrentContextUsage = nil
+                resetStreamGrouping()
                 connectionStatus = "Interrupted"
                 appendEvent(title: "Interrupted", content: "The active TUI Gateway turn was interrupted.", eventType: "session.interrupt")
             } catch {
@@ -307,6 +372,8 @@ final class HermesTUIGatewayStore {
                 sessionTitle = "New TUI session"
                 latestCompletionToken = ""
                 isStreaming = false
+                pendingCurrentContextUsage = nil
+                resetStreamGrouping()
                 await refreshActiveSessions()
             } catch {
                 lastErrorMessage = error.localizedDescription
@@ -439,6 +506,7 @@ final class HermesTUIGatewayStore {
             latestCompletionToken = ""
             let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
             sessionTitle = displayTitle.isEmpty ? "TUI session \(shortSessionID(storedSessionID.isEmpty ? sessionID : storedSessionID))" : displayTitle
+            pendingCurrentContextUsage = nil
             resetStreamGrouping(resetTurn: false)
             isStreaming = object["running"]?.boolValue ?? false
             restoreMessages(from: object["messages"]?.arrayValue ?? [])
@@ -468,6 +536,7 @@ final class HermesTUIGatewayStore {
             sessionTitle = "TUI session \(shortSessionID(sessionID))"
             messages.removeAll()
             latestCompletionToken = ""
+            pendingCurrentContextUsage = nil
             resetStreamGrouping()
             isStreaming = false
             connectionStatus = sessionID.isEmpty ? "Session create failed" : "Session ready"
@@ -497,6 +566,7 @@ final class HermesTUIGatewayStore {
         if let activity = prepared.activity, !activity.isEmpty {
             appendEvent(title: "Attachment", content: activity, eventType: "input.attachment")
         }
+        pendingCurrentContextUsage = nil
         resetStreamGrouping()
         latestCompletionToken = ""
         messages.append(HermesTUIGatewayMessage(role: .user, title: "You", content: finalText))
@@ -577,6 +647,7 @@ final class HermesTUIGatewayStore {
             storedSessionID = object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? storedSessionID
             activeModel = object["info"]?.objectValue["model"]?.stringValue ?? activeModel
             sessionTitle = activeSessions.first(where: { $0.id == target })?.title ?? "TUI session \(shortSessionID(target))"
+            pendingCurrentContextUsage = nil
             resetStreamGrouping(resetTurn: false)
             isStreaming = object["running"]?.boolValue ?? false
             connectionStatus = isStreaming ? "Streaming" : "Session active"
@@ -624,6 +695,8 @@ final class HermesTUIGatewayStore {
                 if Task.isCancelled { return }
                 isConnected = false
                 isStreaming = false
+                pendingCurrentContextUsage = nil
+                resetStreamGrouping()
                 connectionStatus = "Disconnected"
                 lastErrorMessage = error.localizedDescription
                 failPending(error)
@@ -660,6 +733,11 @@ final class HermesTUIGatewayStore {
                 activeModel = model
                 sessionTitle = "\(shortSessionID(event.sessionID ?? sessionID)) • \(model)"
             }
+            applyCurrentContextUsage(
+                HermesTUIGatewayEventParser.currentContextUsage(from: payload["usage"]?.objectValue ?? [:]),
+                eventSessionID: event.sessionID,
+                allowLatestAssistant: true
+            )
             connectionStatus = "Session info updated"
         case "message.start":
             isStreaming = true
@@ -674,6 +752,12 @@ final class HermesTUIGatewayStore {
             let final = payload["text"]?.stringValue ?? ""
             let status = payload["status"]?.stringValue ?? "complete"
             if !final.isEmpty { completeAssistantMessage(text: final) }
+            applyCurrentContextUsage(
+                HermesTUIGatewayEventParser.currentContextUsage(from: payload["usage"]?.objectValue ?? [:]),
+                eventSessionID: event.sessionID,
+                allowLatestAssistant: true
+            )
+            pendingCurrentContextUsage = nil
             isStreaming = false
             resetStreamGrouping(resetTurn: true)
             if Self.isCompleteStatus(status) {
@@ -724,6 +808,7 @@ final class HermesTUIGatewayStore {
             appendEvent(title: "Background task complete", content: payload["text"]?.stringValue ?? eventSummary(payload: payload), eventType: event.type)
         case "error":
             isStreaming = false
+            pendingCurrentContextUsage = nil
             resetStreamGrouping(resetTurn: true)
             let message = payload["message"]?.stringValue ?? eventSummary(payload: payload)
             lastErrorMessage = message
@@ -739,6 +824,35 @@ final class HermesTUIGatewayStore {
             connectionStatus = shortStatus(event.type)
             appendEvent(title: event.type, content: eventSummary(payload: payload), eventType: event.type)
         }
+    }
+
+    func applyCurrentContextUsage(_ usage: HermesTUICurrentContextUsage?, eventSessionID: String?, allowLatestAssistant: Bool) {
+        guard let usage else { return }
+        let incomingSessionID = eventSessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let currentSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard incomingSessionID.isEmpty || (!currentSessionID.isEmpty && incomingSessionID == currentSessionID) else { return }
+        let canUpdateCompletedResponse = !isStreaming && connectionStatus == "Completed"
+        guard isStreaming || canUpdateCompletedResponse else { return }
+
+        if isStreaming, let activeAssistantMessageID,
+           let index = messages.firstIndex(where: { $0.id == activeAssistantMessageID && $0.role == .assistant }) {
+            messages[index].currentContextUsage = usage
+            pendingCurrentContextUsage = nil
+            return
+        }
+        guard allowLatestAssistant,
+              let assistantIndex = messages.lastIndex(where: { $0.role == .assistant })
+        else {
+            if isStreaming { pendingCurrentContextUsage = usage }
+            return
+        }
+        let lastUserIndex = messages.lastIndex(where: { $0.role == .user })
+        if let lastUserIndex, assistantIndex <= lastUserIndex {
+            if isStreaming { pendingCurrentContextUsage = usage }
+            return
+        }
+        messages[assistantIndex].currentContextUsage = usage
+        pendingCurrentContextUsage = nil
     }
 
     private func completionToken(for event: HermesTUIGatewayEvent, status: String) -> String {
@@ -869,11 +983,13 @@ final class HermesTUIGatewayStore {
             messages[index].content += content
             return (messages[index].id, false)
         }
-        let message = HermesTUIGatewayMessage(role: role, title: title, content: content, eventType: eventType)
+        var message = HermesTUIGatewayMessage(role: role, title: title, content: content, eventType: eventType)
         activeStreamContentType = type
         activeStreamMessageID = message.id
         if role == .assistant {
             activeAssistantMessageID = message.id
+            message.currentContextUsage = pendingCurrentContextUsage
+            pendingCurrentContextUsage = nil
         }
         messages.append(message)
         return (message.id, true)
@@ -918,6 +1034,7 @@ final class HermesTUIGatewayStore {
             return HermesTUIGatewayMessage(role: role == "user" ? .user : .assistant, title: role == "user" ? "You" : "Hermes", content: text)
         }
         messages = restored
+        pendingCurrentContextUsage = nil
         resetStreamGrouping()
     }
 
@@ -1906,6 +2023,12 @@ private struct HermesTUIGatewayBubble: View {
                     Text(message.title)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.hermesSecondaryText)
+                    if message.role == .assistant, let usage = message.currentContextUsage {
+                        Text(usage.displayText)
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(Color.hermesSecondaryText)
+                            .accessibilityLabel("Current context usage: \(usage.accessibilityText)")
+                    }
                     if let eventType = message.eventType {
                         Text(eventType)
                             .font(.caption2.monospaced())
@@ -1991,6 +2114,22 @@ private extension JSONValue {
         case .string(let value): return ["1", "true", "yes", "on"].contains(value.lowercased())
         default: return nil
         }
+    }
+
+    var finiteDoubleValue: Double? {
+        let value: Double?
+        switch self {
+        case .number(let number): value = number
+        case .string(let string): value = Double(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        default: value = nil
+        }
+        guard let value, value.isFinite else { return nil }
+        return value
+    }
+
+    var nonnegativeIntValue: Int? {
+        guard let value = finiteDoubleValue, let integer = Int(exactly: value), integer >= 0 else { return nil }
+        return integer
     }
 
     var objectValue: [String: JSONValue] {
