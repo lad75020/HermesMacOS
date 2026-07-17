@@ -809,7 +809,7 @@ struct ContentView: View {
 
     private func addTUIWorkspace() {
         let nextNumber = (tuiWorkspaces.map(\.number).max() ?? 0) + 1
-        let workspace = HermesTUIWorkspace(number: nextNumber, selectedProfile: selectedTUIWorkspace.selectedProfile, selectedModel: selectedTUIWorkspace.selectedModel, fastModeEnabled: selectedTUIWorkspace.fastModeEnabled)
+        let workspace = HermesTUIWorkspace(number: nextNumber, selectedProfile: selectedTUIWorkspace.selectedProfile, selectedModel: selectedTUIWorkspace.selectedModel, fastModeEnabled: selectedTUIWorkspace.fastModeEnabled, selectedReasoningEffort: selectedTUIWorkspace.selectedReasoningEffort)
         tuiWorkspaces.append(workspace)
         selectedTUIWorkspaceID = workspace.id
     }
@@ -830,7 +830,7 @@ struct ContentView: View {
         tuiWorkspaces.remove(at: deletedIndex)
 
         if tuiWorkspaces.isEmpty {
-            let replacement = HermesTUIWorkspace(number: 1, selectedProfile: workspace.selectedProfile, selectedModel: workspace.selectedModel, fastModeEnabled: workspace.fastModeEnabled)
+            let replacement = HermesTUIWorkspace(number: 1, selectedProfile: workspace.selectedProfile, selectedModel: workspace.selectedModel, fastModeEnabled: workspace.fastModeEnabled, selectedReasoningEffort: workspace.selectedReasoningEffort)
             tuiWorkspaces = [replacement]
             selectedTUIWorkspaceID = replacement.id
         } else if wasSelected {

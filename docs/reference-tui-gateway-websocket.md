@@ -74,8 +74,10 @@ Gateway events arrive as JSON-RPC notifications with `method` set to `event`:
 
 | Method | When sent | Important params | Result handling |
 | --- | --- | --- | --- |
-| `session.create` | Connect creates a new session, or the user presses **New session** | none | Stores `session_id`, optional `stored_session_id`, clears messages, marks `Session ready`, refreshes live sessions. |
-| `prompt.submit` | The user sends a prompt | `session_id`, `text` | Starts streaming state before the call; response success changes status to `Streaming`. Stream content arrives as events. |
+| `model.options` | After connecting, selecting a profile, or refreshing models | `profile`, optional `session_id`, `refresh` | Reads the selected provider row, including per-model `capabilities` metadata such as `fast` and `reasoning`. |
+| `session.create` | Connect creates a new session, or the user presses **New session** | profile/model/provider fields, optional `fast`, optional `reasoning_effort` | Stores `session_id`, optional `stored_session_id`, clears messages, marks `Session ready`, refreshes live sessions. |
+| `config.set` | The user changes the reasoning pill on an idle live session | `session_id`, `key: "reasoning"`, `value` | Applies the session-scoped effort before the next inference. |
+| `prompt.submit` | The user sends a prompt | `session_id`, `text`, optional `reasoning_effort` | Starts streaming state before the call; response success changes status to `Streaming`. The effort field is forward-compatible metadata; the live setting comes from `session.create` or `config.set`. |
 | `input.detect_drop` | Image attachment with a local path | `session_id`, `text` containing quoted path plus prompt | Requires `matched: true`; returned `text` becomes the prompt submitted through `prompt.submit`. |
 | `session.interrupt` | User presses **Interrupt** | `session_id` | Clears local streaming state and appends an interrupt event. |
 | `session.close` | User presses **Close session** | `session_id` | Clears live/stored IDs, resets the title, and refreshes live sessions. |
@@ -88,6 +90,12 @@ Gateway events arrive as JSON-RPC notifications with `method` set to `event`:
 | `secret.respond` | User answers a secret-value bubble | `request_id`, `value` | Marks the request bubble resolved or skipped. |
 
 `session.activate` and `session.resume` are intentionally separate. Activate switches to an already-live TUI Gateway session. Resume rehydrates a stored dashboard/session database entry into a live TUI session.
+
+## Reasoning capability and effort
+
+`model.options` provider rows expose `capabilities` keyed by model ID. HermesMacOS uses the currently selected model's `reasoning` value first; an explicit `false` disables the reasoning control even if the selected profile's default model supports reasoning. When the selected model has no capability row, the profile's `reasoning` object (`supported`, `effort_levels`) and the established model-support helper provide a conservative fallback.
+
+The reasoning menu uses only valid Hermes values: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and `ultra` (shown as Off, Minimal, Low, Medium, High, Extra High, Max, and Ultra). A new live session receives `reasoning_effort` only when its selected model supports reasoning. Changing the menu on an existing idle session immediately sends session-scoped `config.set`; a resumed `session.info`/resume `info` value updates the workspace only when it remains supported by the selected model.
 
 ## Event types handled by the transcript
 
@@ -140,6 +148,7 @@ The counter never falls back to `usage.total` or another cumulative session tota
 - request-response drafts keyed by transcript message ID
 - selected `HermesPromptAttachment`
 - selected local attachment path
+- selected reasoning effort (default `medium`)
 - acknowledged completion and failure tokens for numbered-button attention state
 
 `ContentView` owns the workspace array and selected workspace ID. `HermesTUIGatewayWorkspacesView` injects the selected workspace into `HermesTUIGatewayView` and renders the plus and numbered selectors beside the tab title.

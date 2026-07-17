@@ -22,7 +22,13 @@ This guide shows how to use the native TUI Gateway tab to run Hermes through the
 
 4. Use **New session** when you want a fresh live TUI session in the selected workspace.
 
-   This sends the JSON-RPC method `session.create` over the existing WebSocket and clears the selected workspace transcript.
+   This sends the JSON-RPC method `session.create` over the existing WebSocket and clears the selected workspace transcript. When the selected model supports it, the workspace's reasoning effort is sent as `reasoning_effort`.
+
+## Choose reasoning effort
+
+The compact **REASONING** menu sits directly below **FAST** in the TUI Gateway header. It is available only for the selected model when the gateway's `model.options` capability metadata reports reasoning support (with profile metadata used as a disconnected fallback).
+
+Choose Off, Minimal, Low, Medium, High, Extra High, Max, or Ultra. The default for each new workspace is Medium. For a new session, the selection is sent in `session.create`; changing it on an idle live session applies it immediately to the next inferred turn. The control is unavailable while connecting, streaming, or resuming.
 
 ## Use multiple TUI workspaces
 
@@ -32,7 +38,7 @@ The TUI Gateway title row has Ask-Hermes-style workspace controls:
 - Press a numbered workspace button to switch workspaces.
 - Right-click a numbered workspace button and choose **Delete Workspace** to remove it.
 
-Each workspace owns its own `HermesTUIGatewayStore`, draft prompt, request-response fields, selected attachment, and local attachment path. Switching workspaces preserves drafts, attachments, live sessions, transcripts, and active WebSocket state for the other workspaces.
+Each workspace owns its own `HermesTUIGatewayStore`, draft prompt, request-response fields, selected attachment, local attachment path, and reasoning effort. Switching workspaces preserves drafts, attachments, reasoning choices, live sessions, transcripts, and active WebSocket state for the other workspaces.
 
 The numbered buttons show attention state:
 

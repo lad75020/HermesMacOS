@@ -187,6 +187,39 @@ struct HermesTUIModelCatalog: Equatable {
     var provider = ""
     var currentModel = ""
     var models: [String] = []
+    var capabilities: [String: HermesTUIModelCapabilities] = [:]
+}
+
+struct HermesTUIModelCapabilities: Equatable {
+    var fast: Bool?
+    var reasoning: Bool?
+}
+
+enum HermesTUIReasoningCapability {
+    static func supports(selectedModel: String, provider: String, capabilities: [String: HermesTUIModelCapabilities], profile: HermesAPIProfile?) -> Bool {
+        if let supported = capabilities.first(where: { $0.key.caseInsensitiveCompare(selectedModel) == .orderedSame })?.value.reasoning {
+            return supported
+        }
+
+        let normalizedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let profileModel = profile?.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let profileMatchesSelectedModel = normalizedModel.isEmpty || profileModel.isEmpty || profileModel.caseInsensitiveCompare(normalizedModel) == .orderedSame
+        guard profileMatchesSelectedModel else {
+            return HermesReasoningModelSupport.supportsReasoningLevel(model: normalizedModel, provider: provider)
+        }
+        if let supported = profile?.reasoning?.supported { return supported }
+        return (profile?.supportsReasoningLevel ?? false)
+            || HermesReasoningModelSupport.supportsReasoningLevel(model: normalizedModel, provider: provider)
+    }
+
+    static func efforts(selectedModel: String, provider: String, capabilities: [String: HermesTUIModelCapabilities], profile: HermesAPIProfile?) -> [String] {
+        guard supports(selectedModel: selectedModel, provider: provider, capabilities: capabilities, profile: profile) else { return [] }
+        if capabilities.first(where: { $0.key.caseInsensitiveCompare(selectedModel) == .orderedSame })?.value.reasoning != nil {
+            return HermesReasoningEffort.all
+        }
+        let profileEfforts = HermesReasoningEffort.available(from: profile?.reasoning?.effortLevels ?? [])
+        return profileEfforts.isEmpty ? HermesReasoningEffort.all : profileEfforts
+    }
 }
 
 @MainActor
@@ -198,6 +231,7 @@ final class HermesTUIWorkspace: Identifiable {
     var selectedProfile: String
     var selectedModel: String
     var fastModeEnabled: Bool
+    var selectedReasoningEffort: String
     var promptText = ""
     var requestResponses: [UUID: String] = [:]
     var selectedAttachment: HermesPromptAttachment?
@@ -205,12 +239,13 @@ final class HermesTUIWorkspace: Identifiable {
     private var acknowledgedCompletionToken = ""
     private var acknowledgedFailureToken = ""
 
-    init(number: Int, selectedProfile: String = "default", selectedModel: String = "", fastModeEnabled: Bool = false) {
+    init(number: Int, selectedProfile: String = "default", selectedModel: String = "", fastModeEnabled: Bool = false, selectedReasoningEffort: String = "medium") {
         self.number = number
         let trimmedProfile = selectedProfile.trimmingCharacters(in: .whitespacesAndNewlines)
         self.selectedProfile = trimmedProfile.isEmpty ? "default" : trimmedProfile
         self.selectedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         self.fastModeEnabled = fastModeEnabled
+        self.selectedReasoningEffort = HermesReasoningEffort.normalized(selectedReasoningEffort) ?? "medium"
     }
 
     var attention: HermesTopTabAttention? {
@@ -248,6 +283,7 @@ final class HermesTUIGatewayStore {
     var sessionTitle = "New TUI session"
     var activeProfile = ""
     var activeModel = ""
+    var reasoningEffort = ""
     var connectionStatus = "Idle"
     var eventCount = 0
     var lastErrorMessage = ""
@@ -278,10 +314,10 @@ final class HermesTUIGatewayStore {
         return trimmed.isEmpty ? "default" : trimmed
     }
 
-    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, profile: String, model: String = "", provider: String = "", fast: Bool) {
+    func connect(dashboardBaseURL: String, apiSettings: HermesAPISettings, profile: String, model: String = "", provider: String = "", fast: Bool, reasoningEffort: String? = nil) {
         guard !isConnecting, !isStreaming else { return }
         let selectedProfile = normalizedProfile(profile)
-        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, selectedProfile: selectedProfile, selectedModel: model, selectedProvider: provider, fast: fast) }
+        Task { await connectGateway(dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings, createSessionIfMissing: true, selectedProfile: selectedProfile, selectedModel: model, selectedProvider: provider, fast: fast, reasoningEffort: reasoningEffort) }
     }
 
     func disconnect() {
@@ -291,6 +327,7 @@ final class HermesTUIGatewayStore {
         webSocketTask = nil
         latestCompletionToken = ""
         activeModel = ""
+        reasoningEffort = ""
         isConnected = false
         isConnecting = false
         isStreaming = false
@@ -301,17 +338,17 @@ final class HermesTUIGatewayStore {
         failPending(HermesTUIGatewayError.notConnected)
     }
 
-    func createSession(profile: String, model: String = "", provider: String = "", fast: Bool) {
+    func createSession(profile: String, model: String = "", provider: String = "", fast: Bool, reasoningEffort: String? = nil) {
         guard !isStreaming else { return }
         let selectedProfile = normalizedProfile(profile)
-        Task { await createGatewaySession(profile: selectedProfile, model: model, provider: provider, fast: fast) }
+        Task { await createGatewaySession(profile: selectedProfile, model: model, provider: provider, fast: fast, reasoningEffort: reasoningEffort) }
     }
 
-    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", model: String = "", provider: String = "", fast: Bool = false) {
+    func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", model: String = "", provider: String = "", fast: Bool = false, reasoningEffort: String? = nil) {
         let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let path = attachmentPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || attachment != nil || !path.isEmpty else { return }
-        Task { await submit(text, attachment: attachment, attachmentPath: path, model: model, provider: provider, fast: fast) }
+        Task { await submit(text, attachment: attachment, attachmentPath: path, model: model, provider: provider, fast: fast, reasoningEffort: reasoningEffort) }
     }
 
     func fetchModelOptions(profile: String, refresh: Bool = false) async throws -> HermesTUIModelCatalog {
@@ -336,11 +373,38 @@ final class HermesTUIGatewayStore {
         let uniqueModels = models.reduce(into: [String]()) { result, model in
             if !result.contains(where: { $0.caseInsensitiveCompare(model) == .orderedSame }) { result.append(model) }
         }
+        let capabilities = (preferredRow?["capabilities"]?.objectValue ?? [:]).reduce(into: [String: HermesTUIModelCapabilities]()) { result, entry in
+            let values = entry.value.objectValue
+            result[entry.key] = HermesTUIModelCapabilities(fast: values["fast"]?.boolValue, reasoning: values["reasoning"]?.boolValue)
+        }
         return HermesTUIModelCatalog(
             provider: preferredRow?["slug"]?.stringValue ?? currentProvider,
             currentModel: currentModel,
-            models: uniqueModels
+            models: uniqueModels,
+            capabilities: capabilities
         )
+    }
+
+    func setReasoningEffort(_ effort: String) {
+        guard !sessionID.isEmpty,
+              isConnected,
+              !isStreaming,
+              !isConnecting,
+              !isResumingSession,
+              let normalizedEffort = HermesReasoningEffort.normalized(effort)
+        else { return }
+        Task {
+            do {
+                _ = try await request(
+                    "config.set",
+                    params: ["session_id": .string(sessionID), "key": .string("reasoning"), "value": .string(normalizedEffort)],
+                    timeoutSeconds: 30
+                )
+                reasoningEffort = normalizedEffort
+            } catch {
+                lastErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     func interruptSession() {
@@ -369,6 +433,7 @@ final class HermesTUIGatewayStore {
                 storedSessionID = ""
                 activeProfile = ""
                 activeModel = ""
+                reasoningEffort = ""
                 sessionTitle = "New TUI session"
                 latestCompletionToken = ""
                 isStreaming = false
@@ -444,7 +509,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, selectedProfile: String, selectedModel: String = "", selectedProvider: String = "", fast: Bool) async {
+    private func connectGateway(dashboardBaseURL: String, apiSettings: HermesAPISettings, createSessionIfMissing: Bool, selectedProfile: String, selectedModel: String = "", selectedProvider: String = "", fast: Bool, reasoningEffort: String? = nil) async {
         guard !isConnecting else { return }
         isConnecting = true
         lastErrorMessage = ""
@@ -462,7 +527,7 @@ final class HermesTUIGatewayStore {
             receiveTask?.cancel()
             receiveTask = Task { await receiveLoop(task) }
             if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                await createGatewaySession(profile: selectedProfile, model: selectedModel, provider: selectedProvider, fast: fast)
+                await createGatewaySession(profile: selectedProfile, model: selectedModel, provider: selectedProvider, fast: fast, reasoningEffort: reasoningEffort)
             }
             await refreshActiveSessions()
         } catch {
@@ -503,6 +568,7 @@ final class HermesTUIGatewayStore {
             storedSessionID = object["resumed"]?.stringValue ?? object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? target
             activeProfile = selectedProfile
             activeModel = object["info"]?.objectValue["model"]?.stringValue ?? activeModel
+            updateReasoningEffort(from: object["info"]?.objectValue ?? [:])
             latestCompletionToken = ""
             let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
             sessionTitle = displayTitle.isEmpty ? "TUI session \(shortSessionID(storedSessionID.isEmpty ? sessionID : storedSessionID))" : displayTitle
@@ -518,7 +584,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func createGatewaySession(profile: String, model: String = "", provider: String = "", fast: Bool) async {
+    private func createGatewaySession(profile: String, model: String = "", provider: String = "", fast: Bool, reasoningEffort: String? = nil) async {
         do {
             let selectedProfile = normalizedProfile(profile)
             var params: [String: JSONValue] = ["profile": .string(selectedProfile)]
@@ -527,12 +593,16 @@ final class HermesTUIGatewayStore {
             if !selectedModel.isEmpty { params["model"] = .string(selectedModel) }
             if !selectedProvider.isEmpty { params["provider"] = .string(selectedProvider) }
             if fast { params["fast"] = .bool(true) }
+            let requestedReasoningEffort = HermesReasoningEffort.normalized(reasoningEffort ?? "")
+            if let requestedReasoningEffort { params["reasoning_effort"] = .string(requestedReasoningEffort) }
             let result = try await request("session.create", params: params, timeoutSeconds: 120)
             let object = result.objectValue
             sessionID = object["session_id"]?.stringValue ?? ""
             storedSessionID = object["stored_session_id"]?.stringValue ?? ""
             activeProfile = selectedProfile
             activeModel = object["info"]?.objectValue["model"]?.stringValue ?? selectedModel
+            self.reasoningEffort = requestedReasoningEffort ?? self.reasoningEffort
+            updateReasoningEffort(from: object["info"]?.objectValue ?? [:])
             sessionTitle = "TUI session \(shortSessionID(sessionID))"
             messages.removeAll()
             latestCompletionToken = ""
@@ -548,7 +618,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", model: String = "", provider: String = "", fast: Bool = false) async {
+    private func submit(_ text: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", model: String = "", provider: String = "", fast: Bool = false, reasoningEffort: String? = nil) async {
         guard canSendPrompt else {
             lastErrorMessage = HermesTUIGatewayError.missingSession.localizedDescription
             return
@@ -579,6 +649,7 @@ final class HermesTUIGatewayStore {
             if !selectedModel.isEmpty { params["model"] = .string(selectedModel) }
             if !selectedProvider.isEmpty { params["provider"] = .string(selectedProvider) }
             if fast { params["fast"] = .bool(true) }
+            if let reasoningEffort = HermesReasoningEffort.normalized(reasoningEffort ?? "") { params["reasoning_effort"] = .string(reasoningEffort) }
             _ = try await request("prompt.submit", params: params, timeoutSeconds: 60)
             connectionStatus = "Streaming"
         } catch {
@@ -587,6 +658,11 @@ final class HermesTUIGatewayStore {
             connectionStatus = "Prompt failed"
             updateAssistantMessage(text: "Request failed: \(error.localizedDescription)")
         }
+    }
+
+    private func updateReasoningEffort(from object: [String: JSONValue]) {
+        guard let effort = HermesReasoningEffort.normalized(object["reasoning_effort"]?.stringValue ?? "") else { return }
+        reasoningEffort = effort
     }
 
     private func promptPayload(text: String, attachment: HermesPromptAttachment?, attachmentPath: String) async throws -> (text: String, activity: String?) {
@@ -646,6 +722,7 @@ final class HermesTUIGatewayStore {
             sessionID = object["session_id"]?.stringValue ?? target
             storedSessionID = object["stored_session_id"]?.stringValue ?? object["session_key"]?.stringValue ?? storedSessionID
             activeModel = object["info"]?.objectValue["model"]?.stringValue ?? activeModel
+            updateReasoningEffort(from: object["info"]?.objectValue ?? [:])
             sessionTitle = activeSessions.first(where: { $0.id == target })?.title ?? "TUI session \(shortSessionID(target))"
             pendingCurrentContextUsage = nil
             resetStreamGrouping(resetTurn: false)
@@ -733,6 +810,7 @@ final class HermesTUIGatewayStore {
                 activeModel = model
                 sessionTitle = "\(shortSessionID(event.sessionID ?? sessionID)) • \(model)"
             }
+            updateReasoningEffort(from: payload)
             applyCurrentContextUsage(
                 HermesTUIGatewayEventParser.currentContextUsage(from: payload["usage"]?.objectValue ?? [:]),
                 eventSessionID: event.sessionID,
@@ -1187,6 +1265,7 @@ private struct HermesTUIGatewayWorkspaceHost: View {
             selectedProfile: $workspace.selectedProfile,
             selectedModel: $workspace.selectedModel,
             fastModeEnabled: $workspace.fastModeEnabled,
+            selectedReasoningEffort: $workspace.selectedReasoningEffort,
             connectedHostName: connectedHostName,
             connectedWindowID: connectedWindowID,
             workspaceControls: workspaceControls
@@ -1334,6 +1413,7 @@ struct HermesTUIGatewayView: View {
     @Binding var selectedProfile: String
     @Binding var selectedModel: String
     @Binding var fastModeEnabled: Bool
+    @Binding var selectedReasoningEffort: String
     let connectedHostName: String
     let connectedWindowID: UUID
     let workspaceControls: AnyView
@@ -1342,6 +1422,7 @@ struct HermesTUIGatewayView: View {
     @State private var apiProfiles: [HermesAPIProfile] = []
     @State private var profileRefreshError = ""
     @State private var availableModels: [String] = []
+    @State private var modelCapabilities: [String: HermesTUIModelCapabilities] = [:]
     @State private var selectedModelProvider = ""
     @State private var modelRefreshError = ""
     @State private var isRefreshingModels = false
@@ -1365,10 +1446,12 @@ struct HermesTUIGatewayView: View {
         .onChange(of: apiSettings) { _, _ in Task { await refreshAPIProfiles() } }
         .onChange(of: apiProfiles) { _, _ in
             clampFastModeIfNeeded()
+            clampReasoningEffortIfNeeded()
             syncSelectedModelWithProfile()
         }
         .onChange(of: selectedProfile) { _, _ in
             clampFastModeIfNeeded()
+            clampReasoningEffortIfNeeded()
             syncSelectedModelWithProfile(resetToProfileDefault: true)
             Task { await refreshAvailableModels() }
         }
@@ -1380,6 +1463,12 @@ struct HermesTUIGatewayView: View {
             let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { selectedModel = trimmed }
         }
+        .onChange(of: selectedModel) { _, _ in
+            clampReasoningEffortIfNeeded()
+            applyRestoredReasoningEffort(store.reasoningEffort)
+        }
+        .onChange(of: modelCapabilities) { _, _ in applyRestoredReasoningEffort(store.reasoningEffort) }
+        .onChange(of: store.reasoningEffort) { _, effort in applyRestoredReasoningEffort(effort) }
         .onChange(of: promptText) { _, _ in handlePromptSkillQueryChange() }
         .onDisappear { }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
@@ -1418,13 +1507,23 @@ struct HermesTUIGatewayView: View {
                     onModelSelected: handleModelSelection,
                     onRefresh: { Task { await refreshAvailableModels(refresh: true) } }
                 )
-                HermesTUIFastTogglePill(
-                    isOn: $fastModeEnabled,
-                    isSupported: selectedProfileSupportsFastMode,
-                    isDisabled: store.isConnecting || store.isStreaming || store.isResumingSession
-                ) { isEnabled in
-                    handleFastModeSelection(isEnabled)
+                VStack(alignment: .leading, spacing: 6) {
+                    HermesTUIFastTogglePill(
+                        isOn: $fastModeEnabled,
+                        isSupported: selectedProfileSupportsFastMode,
+                        isDisabled: store.isConnecting || store.isStreaming || store.isResumingSession
+                    ) { isEnabled in
+                        handleFastModeSelection(isEnabled)
+                    }
+                    HermesTUIReasoningPill(
+                        selectedEffort: selectedReasoningEffort,
+                        efforts: availableReasoningEfforts,
+                        isSupported: selectedModelSupportsReasoning,
+                        isDisabled: store.isConnecting || store.isStreaming || store.isResumingSession,
+                        onSelect: handleReasoningEffortSelection
+                    )
                 }
+                .fixedSize(horizontal: true, vertical: false)
                 HermesStatusCard(title: "Session", value: store.sessionTitle, tint: .hermesActionBlue, minimumWidth: 210, maximumWidth: .infinity)
                 HermesStatusCard(title: "Status", value: store.connectionStatus, tint: .hermesOrange, minimumWidth: 210, maximumWidth: 300)
                 HermesStatusCard(title: "Events", value: "\(store.eventCount)", tint: .hermesPurple, minimumWidth: 100, maximumWidth: 120)
@@ -1446,12 +1545,12 @@ struct HermesTUIGatewayView: View {
                 Button(store.isConnected ? "Reconnect" : "Connect") {
                     guard !store.isStreaming else { return }
                     store.disconnect()
-                    store.connect(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: fastModeEnabled && selectedProfileSupportsFastMode)
+                    store.connect(dashboardBaseURL: dashboardURL, apiSettings: apiSettings, profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode, reasoningEffort: activeReasoningEffort)
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(store.isConnecting || store.isStreaming)
 
-                Button("New session") { store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: fastModeEnabled && selectedProfileSupportsFastMode) }
+                Button("New session") { store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode, reasoningEffort: activeReasoningEffort) }
                     .buttonStyle(.bordered)
                     .disabled(!store.isConnected || store.isStreaming || store.isResumingSession)
 
@@ -1713,6 +1812,21 @@ struct HermesTUIGatewayView: View {
         fastModeEnabled && selectedProfileSupportsFastMode
     }
 
+    private var selectedModelSupportsReasoning: Bool {
+        HermesTUIReasoningCapability.supports(selectedModel: selectedModelForRequest, provider: selectedProviderForRequest, capabilities: modelCapabilities, profile: selectedAPIProfile)
+    }
+
+    private var availableReasoningEfforts: [String] {
+        HermesTUIReasoningCapability.efforts(selectedModel: selectedModelForRequest, provider: selectedProviderForRequest, capabilities: modelCapabilities, profile: selectedAPIProfile)
+    }
+
+    private var activeReasoningEffort: String? {
+        guard selectedModelSupportsReasoning,
+              availableReasoningEfforts.contains(selectedReasoningEffort)
+        else { return nil }
+        return selectedReasoningEffort
+    }
+
     private var modelPickerOptions: [String] {
         let options = availableModels.isEmpty ? fallbackModelOptions() : availableModels
         let selected = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1742,6 +1856,7 @@ struct HermesTUIGatewayView: View {
         }
         if resetToProfileDefault {
             availableModels = fallbackModelOptions()
+            modelCapabilities = [:]
             selectedModelProvider = selectedAPIProfile?.provider ?? ""
         } else if availableModels.isEmpty {
             availableModels = fallbackModelOptions()
@@ -1754,6 +1869,7 @@ struct HermesTUIGatewayView: View {
     private func refreshAvailableModels(refresh: Bool = false) async {
         guard store.isConnected else {
             availableModels = fallbackModelOptions()
+            modelCapabilities = [:]
             modelRefreshError = ""
             return
         }
@@ -1762,13 +1878,16 @@ struct HermesTUIGatewayView: View {
         do {
             let catalog = try await store.fetchModelOptions(profile: selectedProfile, refresh: refresh)
             availableModels = catalog.models.isEmpty ? fallbackModelOptions() : catalog.models
+            modelCapabilities = catalog.capabilities
             selectedModelProvider = catalog.provider.isEmpty ? selectedAPIProfile?.provider ?? "" : catalog.provider
             if selectedModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 selectedModel = catalog.currentModel.isEmpty ? selectedAPIProfile?.model ?? "" : catalog.currentModel
             }
             modelRefreshError = ""
+            clampReasoningEffortIfNeeded()
         } catch {
             availableModels = fallbackModelOptions()
+            modelCapabilities = [:]
             modelRefreshError = String(localized: "Models unavailable: \(error.localizedDescription)")
         }
     }
@@ -1783,7 +1902,7 @@ struct HermesTUIGatewayView: View {
               !selectedModelForRequest.isEmpty,
               store.activeModel.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(selectedModelForRequest) != .orderedSame
         else { return }
-        store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode)
+        store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode, reasoningEffort: activeReasoningEffort)
     }
 
     private func clampFastModeIfNeeded() {
@@ -1800,6 +1919,29 @@ struct HermesTUIGatewayView: View {
         fastModeEnabled = isEnabled
     }
 
+    private func clampReasoningEffortIfNeeded() {
+        guard selectedModelSupportsReasoning,
+              !availableReasoningEfforts.contains(selectedReasoningEffort)
+        else { return }
+        selectedReasoningEffort = availableReasoningEfforts.contains("medium") ? "medium" : availableReasoningEfforts.first ?? "medium"
+    }
+
+    private func applyRestoredReasoningEffort(_ effort: String) {
+        guard selectedModelSupportsReasoning,
+              let normalizedEffort = HermesReasoningEffort.normalized(effort),
+              availableReasoningEfforts.contains(normalizedEffort)
+        else { return }
+        selectedReasoningEffort = normalizedEffort
+    }
+
+    private func handleReasoningEffortSelection(_ effort: String) {
+        guard selectedModelSupportsReasoning,
+              availableReasoningEfforts.contains(effort)
+        else { return }
+        selectedReasoningEffort = effort
+        store.setReasoningEffort(effort)
+    }
+
     private func handleProfileSelection(_ newProfile: String) {
         selectedProfile = normalizedProfile(newProfile)
         syncSelectedModelWithProfile(resetToProfileDefault: true)
@@ -1812,7 +1954,7 @@ struct HermesTUIGatewayView: View {
               !store.isResumingSession,
               active != selectedProfile
         else { return }
-        store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode)
+        store.createSession(profile: selectedProfile, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode, reasoningEffort: activeReasoningEffort)
     }
 
     private func refreshAPIProfiles() async {
@@ -1907,7 +2049,7 @@ struct HermesTUIGatewayView: View {
 
     private func submitPrompt() {
         let text = promptText
-        store.submitPrompt(text, attachment: selectedAttachment, attachmentPath: selectedAttachmentPath, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode)
+        store.submitPrompt(text, attachment: selectedAttachment, attachmentPath: selectedAttachmentPath, model: selectedModelForRequest, provider: selectedProviderForRequest, fast: activeFastMode, reasoningEffort: activeReasoningEffort)
         promptText = ""
         selectedAttachment = nil
         selectedAttachmentPath = ""
@@ -2005,6 +2147,74 @@ private struct HermesTUIFastTogglePill: View {
 
     private var helpText: String {
         isSupported ? "Send prompts with Hermes FAST mode" : "The selected profile model does not support FAST mode"
+    }
+}
+
+private struct HermesTUIReasoningPill: View {
+    let selectedEffort: String
+    let efforts: [String]
+    let isSupported: Bool
+    let isDisabled: Bool
+    let onSelect: (String) -> Void
+
+    private var isControlDisabled: Bool { isDisabled || !isSupported }
+    private var selectedLabel: String { HermesReasoningEffort.label(for: selectedEffort) }
+
+    var body: some View {
+        Menu {
+            ForEach(efforts, id: \.self) { effort in
+                Button {
+                    onSelect(effort)
+                } label: {
+                    Label {
+                        Text(verbatim: HermesReasoningEffort.label(for: effort))
+                    } icon: {
+                        Image(systemName: effort == selectedEffort ? "checkmark.circle.fill" : "circle")
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(verbatim: "REASONING")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(labelColor)
+                Text(verbatim: selectedLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(labelColor)
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(labelColor)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(backgroundFill, in: Capsule())
+            .overlay(Capsule().stroke(borderColor, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .disabled(isControlDisabled)
+        .opacity(isControlDisabled ? 0.48 : 1.0)
+        .help(helpText)
+        .accessibilityLabel("Reasoning effort")
+        .accessibilityValue(isSupported ? selectedLabel : "Unavailable")
+    }
+
+    private var labelColor: Color {
+        isSupported ? .primary : .hermesSecondaryText
+    }
+
+    private var backgroundFill: Color {
+        isSupported ? .hermesSurface.opacity(0.74) : .hermesSurface.opacity(0.45)
+    }
+
+    private var borderColor: Color {
+        isSupported ? .hermesSecondaryText.opacity(0.8) : .hermesSecondaryText.opacity(0.55)
+    }
+
+    private var helpText: String {
+        isSupported ? "Choose the Hermes Agent reasoning effort for this TUI session" : "The selected model does not support reasoning effort"
     }
 }
 

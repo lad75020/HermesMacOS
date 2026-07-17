@@ -555,20 +555,23 @@ struct HermesAPIProfile: Decodable, Identifiable, Equatable {
     let model: String?
     let provider: String?
     let supportedParameters: [String]
+    let reasoning: HermesAPIProfileReasoning?
 
     enum CodingKeys: String, CodingKey {
         case id, name, model, provider
         case isDefault = "is_default"
         case supportedParameters = "supported_parameters"
+        case reasoning
     }
 
-    init(id: String, name: String, isDefault: Bool, model: String?, provider: String?, supportedParameters: [String] = []) {
+    init(id: String, name: String, isDefault: Bool, model: String?, provider: String?, supportedParameters: [String] = [], reasoning: HermesAPIProfileReasoning? = nil) {
         self.id = id
         self.name = name
         self.isDefault = isDefault
         self.model = model
         self.provider = provider
         self.supportedParameters = supportedParameters
+        self.reasoning = reasoning
     }
 
     init(from decoder: Decoder) throws {
@@ -579,9 +582,11 @@ struct HermesAPIProfile: Decodable, Identifiable, Equatable {
         model = try? container.decode(String.self, forKey: .model)
         provider = try? container.decode(String.self, forKey: .provider)
         supportedParameters = (try? container.decode([String].self, forKey: .supportedParameters)) ?? []
+        reasoning = try? container.decode(HermesAPIProfileReasoning.self, forKey: .reasoning)
     }
 
     var supportsReasoningLevel: Bool {
+        if let supported = reasoning?.supported { return supported }
         if supportedParameters.contains(where: { parameter in
             let value = parameter.lowercased()
             return value == "reasoning" || value == "reasoning_effort" || value == "include_reasoning"
@@ -595,6 +600,55 @@ struct HermesAPIProfile: Decodable, Identifiable, Equatable {
             return value == "fast" || value == "service_tier" || value == "speed" || value == "priority"
         }) { return true }
         return HermesFastModeSupport.supportsFastMode(model: model, provider: provider)
+    }
+}
+
+struct HermesAPIProfileReasoning: Decodable, Equatable {
+    let supported: Bool?
+    let effortLevels: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case supported
+        case effortLevels = "effort_levels"
+    }
+
+    init(supported: Bool? = nil, effortLevels: [String] = []) {
+        self.supported = supported
+        self.effortLevels = effortLevels
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        supported = try? container.decode(Bool.self, forKey: .supported)
+        effortLevels = (try? container.decode([String].self, forKey: .effortLevels)) ?? []
+    }
+}
+
+enum HermesReasoningEffort {
+    static let all = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+
+    static func normalized(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return all.contains(trimmed) ? trimmed : nil
+    }
+
+    static func label(for value: String) -> String {
+        switch normalized(value) {
+        case "none": return "Off"
+        case "minimal": return "Minimal"
+        case "low": return "Low"
+        case "medium": return "Medium"
+        case "high": return "High"
+        case "xhigh": return "Extra High"
+        case "max": return "Max"
+        case "ultra": return "Ultra"
+        default: return "Medium"
+        }
+    }
+
+    static func available(from values: [String]) -> [String] {
+        let supported = Set(values.compactMap(normalized))
+        return all.filter(supported.contains)
     }
 }
 

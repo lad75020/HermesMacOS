@@ -2,6 +2,57 @@ import XCTest
 @testable import HermesMacOS
 
 final class TUIGatewayWorkflowTests: XCTestCase {
+    func testReasoningEffortCanonicalValuesAndLabelsAreStable() {
+        XCTAssertEqual(HermesReasoningEffort.all, ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"])
+        XCTAssertEqual(HermesReasoningEffort.all.map(HermesReasoningEffort.label), ["Off", "Minimal", "Low", "Medium", "High", "Extra High", "Max", "Ultra"])
+        XCTAssertNil(HermesReasoningEffort.normalized("unsupported"))
+    }
+
+    func testReasoningCapabilityUsesSelectedModelBeforeProfileFallback() {
+        let profile = HermesAPIProfile(
+            id: "default",
+            name: "Default",
+            isDefault: true,
+            model: "gpt-5",
+            provider: "openai",
+            reasoning: HermesAPIProfileReasoning(supported: true, effortLevels: ["low", "medium", "high"])
+        )
+        let unsupportedCapabilities = ["gpt-4o": HermesTUIModelCapabilities(fast: false, reasoning: false)]
+
+        XCTAssertFalse(HermesTUIReasoningCapability.supports(selectedModel: "gpt-4o", provider: "openai", capabilities: unsupportedCapabilities, profile: profile))
+        XCTAssertFalse(HermesTUIReasoningCapability.supports(selectedModel: "gpt-4o", provider: "openai", capabilities: [:], profile: profile))
+        XCTAssertTrue(HermesTUIReasoningCapability.supports(selectedModel: "gpt-5", provider: "openai", capabilities: [:], profile: profile))
+        XCTAssertTrue(HermesTUIReasoningCapability.supports(selectedModel: "gpt-5", provider: "openai", capabilities: [:], profile: HermesAPIProfile(id: "fallback", name: "Fallback", isDefault: false, model: nil, provider: "openai")))
+        XCTAssertEqual(HermesTUIReasoningCapability.efforts(selectedModel: "gpt-5", provider: "openai", capabilities: [:], profile: profile), ["low", "medium", "high"])
+        XCTAssertEqual(HermesTUIReasoningCapability.efforts(selectedModel: "gpt-5", provider: "openai", capabilities: ["gpt-5": HermesTUIModelCapabilities(fast: true, reasoning: true)], profile: profile), HermesReasoningEffort.all)
+    }
+
+    func testProfileReasoningMetadataDecodesWhenPresentAndRemainsOptional() throws {
+        let supported = try JSONDecoder().decode(HermesAPIProfile.self, from: Data(#"{"id":"default","name":"Default","is_default":true,"model":"gpt-5","provider":"openai","reasoning":{"supported":true,"effort_levels":["low","high"]}}"#.utf8))
+        let legacy = try JSONDecoder().decode(HermesAPIProfile.self, from: Data(#"{"id":"legacy","name":"Legacy","is_default":false}"#.utf8))
+
+        XCTAssertEqual(supported.reasoning, HermesAPIProfileReasoning(supported: true, effortLevels: ["low", "high"]))
+        XCTAssertNil(legacy.reasoning)
+    }
+
+    @MainActor
+    func testTUIWorkspaceDefaultsAndCopiesReasoningEffort() {
+        let initial = HermesTUIWorkspace(number: 1)
+        XCTAssertEqual(initial.selectedReasoningEffort, "medium")
+
+        let copied = HermesTUIWorkspace(number: 2, selectedProfile: initial.selectedProfile, selectedModel: initial.selectedModel, fastModeEnabled: initial.fastModeEnabled, selectedReasoningEffort: "ultra")
+        XCTAssertEqual(copied.selectedReasoningEffort, "ultra")
+        XCTAssertEqual(HermesTUIWorkspace(number: 3, selectedReasoningEffort: "invalid").selectedReasoningEffort, "medium")
+    }
+
+    func testReasoningProtocolPayloadsUseSessionScopedConfiguration() throws {
+        let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesTUIGatewayView.swift")
+        XCTAssertTrue(source.contains("params[\"reasoning_effort\"] = .string(reasoningEffort)"))
+        XCTAssertTrue(source.contains("\"config.set\""))
+        XCTAssertTrue(source.contains("\"key\": .string(\"reasoning\")"))
+        XCTAssertTrue(source.contains("updateReasoningEffort(from: object[\"info\"]?.objectValue ?? [:])"))
+    }
+
     func testGatewayEventParserHandlesMessageAndRequestEvents() throws {
         let stream = try HermesFixtureLoader.string(named: "stream-fixtures", extension: "ndjson", subdirectory: "Streams")
         let parsed = try stream.split(separator: "\n").compactMap { try HermesTUIGatewayEventParser.parseEventEnvelope(String($0)) }
