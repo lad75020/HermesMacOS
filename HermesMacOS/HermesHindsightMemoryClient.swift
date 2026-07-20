@@ -163,10 +163,16 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
             guard response.success else {
                 throw HermesHindsightMemoryClientError.providerUnavailable(HermesHindsightMemoryClientError.sanitized(response.error ?? response.message ?? "provider returned failure"))
             }
-            let records = response.results ?? response.entries ?? []
-            let entries = try records.map { try $0.memoryEntry() }
+            let decodedRecords = response.results ?? response.entries ?? []
+            let entries: [MemoryEntry] = decodedRecords.compactMap { decodedRecord in
+                guard let record = decodedRecord.value else { return nil }
+                return try? record.memoryEntry()
+            }
+            if !decodedRecords.isEmpty, entries.isEmpty {
+                throw HermesHindsightMemoryClientError.malformedOutput("memory result contained no valid rows")
+            }
             let total = response.totalCount ?? max(request.offset + entries.count, entries.count)
-            let hasMore = response.hasMore ?? (request.offset + entries.count < total)
+            let hasMore = response.hasMore ?? (request.offset + decodedRecords.count < total)
             return MemoryPage(entries: entries, pageIndex: request.pageIndex, pageSize: request.pageSize, totalCount: total, hasMore: hasMore)
         } catch let error as HermesHindsightMemoryClientError {
             throw error
@@ -379,8 +385,8 @@ private struct HelperListResponse: Decodable {
     let success: Bool
     let error: String?
     let message: String?
-    let results: [HelperMemoryRecord]?
-    let entries: [HelperMemoryRecord]?
+    let results: [FailableDecodable<HelperMemoryRecord>]?
+    let entries: [FailableDecodable<HelperMemoryRecord>]?
     let totalCount: Int?
     let hasMore: Bool?
 
@@ -388,6 +394,14 @@ private struct HelperListResponse: Decodable {
         case success, error, message, results, entries
         case totalCount = "total_count"
         case hasMore = "has_more"
+    }
+}
+
+private struct FailableDecodable<Value: Decodable>: Decodable {
+    let value: Value?
+
+    init(from decoder: Decoder) throws {
+        value = try? Value(from: decoder)
     }
 }
 

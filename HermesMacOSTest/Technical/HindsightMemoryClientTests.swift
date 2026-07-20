@@ -18,6 +18,17 @@ final class HindsightMemoryClientTests: XCTestCase {
         XCTAssertThrowsError(try HermesHindsightMemoryClient.decodeListOutput(HindsightMemoryFixtures.malformedListJSON(), request: request))
     }
 
+    func testMalformedResultDoesNotHideValidResults() throws {
+        let request = MemoryListRequest(filterText: "Hermes", pageIndex: 0, pageSize: 10)
+        let output = Data(#"{"success":true,"total_count":3,"results":[{"id":"valid-1","content":"First valid memory"},{"id":"malformed-missing-content"},{"id":"valid-2","content":"Second valid memory"}]}"#.utf8)
+
+        let page = try HermesHindsightMemoryClient.decodeListOutput(output, request: request)
+
+        XCTAssertEqual(page.entries.map(\.id), ["valid-1", "valid-2"])
+        XCTAssertEqual(page.totalCount, 3)
+        XCTAssertFalse(page.hasMore)
+    }
+
     func testDeleteJSONDecodingAndSecretRedaction() throws {
         let result = try HermesHindsightMemoryClient.decodeDeleteOutput(HindsightMemoryFixtures.deleteJSON(id: "h-1"), requestedID: "h-1")
         XCTAssertTrue(result.deleted)
