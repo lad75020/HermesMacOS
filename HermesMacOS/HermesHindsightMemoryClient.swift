@@ -159,7 +159,7 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
 
     nonisolated static func decodeListOutput(_ data: Data, request: MemoryListRequest) throws -> MemoryPage {
         do {
-            let response = try JSONDecoder().decode(HelperListResponse.self, from: data)
+            let response = try JSONDecoder().decode(HelperListResponse.self, from: normalizedListOutput(data))
             guard response.success else {
                 throw HermesHindsightMemoryClientError.providerUnavailable(HermesHindsightMemoryClientError.sanitized(response.error ?? response.message ?? "provider returned failure"))
             }
@@ -178,6 +178,95 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
             throw error
         } catch {
             throw HermesHindsightMemoryClientError.malformedOutput(HermesHindsightMemoryClientError.sanitized(error.localizedDescription))
+        }
+    }
+
+    private nonisolated static func normalizedListOutput(_ data: Data) -> Data {
+        let bytes = Array(data)
+        let null = Array("null".utf8)
+        let nonFiniteNumbers = [
+            Array("-Infinity".utf8),
+            Array("Infinity".utf8),
+            Array("NaN".utf8),
+        ]
+        var normalized: [UInt8] = []
+        normalized.reserveCapacity(bytes.count)
+        var index = 0
+        var isInsideString = false
+        var isEscaped = false
+
+        while index < bytes.count {
+            let byte = bytes[index]
+            if isInsideString {
+                normalized.append(byte)
+                if isEscaped {
+                    isEscaped = false
+                } else if byte == 0x5C {
+                    isEscaped = true
+                } else if byte == 0x22 {
+                    isInsideString = false
+                }
+                index += 1
+                continue
+            }
+
+            if byte == 0x22 {
+                isInsideString = true
+                normalized.append(byte)
+                index += 1
+                continue
+            }
+
+            if isNonFiniteMemoryFieldValue(at: index, in: bytes),
+               let token = nonFiniteNumbers.first(where: { token in
+                guard index + token.count <= bytes.count,
+                      bytes[index..<(index + token.count)].elementsEqual(token),
+                      index == 0 || isJSONValueBoundary(bytes[index - 1]),
+                      index + token.count == bytes.count || isJSONValueBoundary(bytes[index + token.count])
+                else { return false }
+                return true
+            }) {
+                normalized.append(contentsOf: null)
+                index += token.count
+                continue
+            }
+
+            normalized.append(byte)
+            index += 1
+        }
+
+        return Data(normalized)
+    }
+
+    private nonisolated static func isNonFiniteMemoryFieldValue(at index: Int, in bytes: [UInt8]) -> Bool {
+        var cursor = index
+        while cursor > 0, isJSONWhitespace(bytes[cursor - 1]) { cursor -= 1 }
+        guard cursor > 0, bytes[cursor - 1] == 0x3A else { return false }
+        cursor -= 1
+        while cursor > 0, isJSONWhitespace(bytes[cursor - 1]) { cursor -= 1 }
+
+        return ["confidence", "score", "relevance"].contains { name in
+            let key = Array("\"\(name)\"".utf8)
+            guard cursor >= key.count else { return false }
+            return bytes[(cursor - key.count)..<cursor].elementsEqual(key)
+        }
+    }
+
+    private nonisolated static func isJSONWhitespace(_ byte: UInt8) -> Bool {
+        switch byte {
+        case 0x09, 0x0A, 0x0D, 0x20:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private nonisolated static func isJSONValueBoundary(_ byte: UInt8) -> Bool {
+        switch byte {
+        case 0x09, 0x0A, 0x0D, 0x20, 0x2C, 0x3A, 0x5B, 0x5D, 0x7B, 0x7D:
+            return true
+        default:
+            return false
         }
     }
 

@@ -29,6 +29,27 @@ final class HindsightMemoryClientTests: XCTestCase {
         XCTAssertFalse(page.hasMore)
     }
 
+    func testNonFiniteConfidenceDoesNotHideValidResults() throws {
+        let request = MemoryListRequest(filterText: "Hermes", pageIndex: 0, pageSize: 10)
+        for token in ["NaN", "Infinity", "-Infinity"] {
+            let output = Data("{\"success\":true,\"total_count\":3,\"results\":[{\"id\":\"valid-1\",\"content\":\"First valid memory\"},{\"id\":\"invalid-confidence\",\"content\":\"Memory with invalid confidence\",\"confidence\":\(token)},{\"id\":\"valid-2\",\"content\":\"Second valid memory\"}]}".utf8)
+
+            let page = try HermesHindsightMemoryClient.decodeListOutput(output, request: request)
+
+            XCTAssertEqual(page.entries.map(\.id), ["valid-1", "invalid-confidence", "valid-2"], token)
+            XCTAssertNil(page.entries[1].confidence, token)
+            XCTAssertEqual(page.totalCount, 3, token)
+            XCTAssertFalse(page.hasMore, token)
+        }
+    }
+
+    func testNonFiniteStructuralFieldsRemainMalformed() {
+        let request = MemoryListRequest(filterText: "Hermes", pageIndex: 0, pageSize: 10)
+        let output = Data(#"{"success":true,"total_count":NaN,"results":[{"id":"valid-1","content":"First valid memory"}]}"#.utf8)
+
+        XCTAssertThrowsError(try HermesHindsightMemoryClient.decodeListOutput(output, request: request))
+    }
+
     func testDeleteJSONDecodingAndSecretRedaction() throws {
         let result = try HermesHindsightMemoryClient.decodeDeleteOutput(HindsightMemoryFixtures.deleteJSON(id: "h-1"), requestedID: "h-1")
         XCTAssertTrue(result.deleted)
