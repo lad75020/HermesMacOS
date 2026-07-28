@@ -857,9 +857,7 @@ struct HermesPromptAttachment: Equatable {
     static let supportedFileExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "pdf", "docx", "pptx", "xlsx", "txt", "text", "json", "yaml", "yml", "toml", "swift"]
     static let imageFileExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
     static let utf8FileExtensions: Set<String> = ["txt", "text", "json", "yaml", "yml", "toml", "swift"]
-    static let maxImageBytes: Int64 = 20 * 1024 * 1024
-    static let maxTextBytes: Int64 = 1 * 1024 * 1024
-    static let maxDocumentBytes: Int64 = 8 * 1024 * 1024
+    static let maxFileBytes: Int64 = 128 * 1024 * 1024
     static let maxInlineTextCharacters = 120_000
 
     static var supportedContentTypes: [UTType] {
@@ -883,8 +881,8 @@ struct HermesPromptAttachment: Equatable {
         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
         guard Self.supportedFileExtensions.contains(ext) else { throw HermesAttachmentError.unsupportedFileType(ext.isEmpty ? name : ".\(ext)") }
         let byteCount = Int64(values.fileSize ?? 0)
-        let maxBytes = Self.maxStoredBytes(forExtension: ext)
-        if byteCount > maxBytes { throw HermesAttachmentError.fileTooLarge(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file), ByteCountFormatter.string(fromByteCount: maxBytes, countStyle: .file)) }
+        let maxBytes = Self.maxFileBytes
+        if byteCount > maxBytes { throw HermesAttachmentError.fileTooLarge(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file), ByteCountFormatter.string(fromByteCount: maxBytes, countStyle: .binary)) }
         let data = try Data(contentsOf: url)
         return try HermesPromptAttachment(filename: name, contentType: values.contentType, data: data, originalByteCount: byteCount > 0 ? byteCount : Int64(data.count))
     }
@@ -894,8 +892,8 @@ struct HermesPromptAttachment: Equatable {
         let ext = URL(fileURLWithPath: normalized).pathExtension.lowercased()
         guard Self.supportedFileExtensions.contains(ext) else { throw HermesAttachmentError.unsupportedFileType(ext.isEmpty ? normalized : ".\(ext)") }
         let byteCount = originalByteCount ?? Int64(data.count)
-        let maxBytes = Self.maxStoredBytes(forExtension: ext)
-        if byteCount > maxBytes { throw HermesAttachmentError.fileTooLarge(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file), ByteCountFormatter.string(fromByteCount: maxBytes, countStyle: .file)) }
+        let maxBytes = Self.maxFileBytes
+        if byteCount > maxBytes { throw HermesAttachmentError.fileTooLarge(ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file), ByteCountFormatter.string(fromByteCount: maxBytes, countStyle: .binary)) }
         self.filename = normalized
         self.fileExtension = ext
         self.mimeType = Self.mimeType(forExtension: ext, contentType: contentType)
@@ -917,15 +915,7 @@ struct HermesPromptAttachment: Equatable {
         return "\n" + String(localized: "Attached file: \(filename) (\(mimeType), \(formattedByteCount))\nBinary document bytes are not inlined into the prompt by HermesMacOS. Use a file-aware tool or upload workflow if the model needs to inspect this document.")
     }
 
-    static func sizeLimit(forExtension ext: String) -> Int64 {
-        maxStoredBytes(forExtension: ext.lowercased())
-    }
-
-    private static func maxStoredBytes(forExtension ext: String) -> Int64 {
-        if imageFileExtensions.contains(ext) { return maxImageBytes }
-        if utf8FileExtensions.contains(ext) { return maxTextBytes }
-        return maxDocumentBytes
-    }
+    static func sizeLimit(forExtension _: String) -> Int64 { maxFileBytes }
 
     private static func mimeType(forExtension ext: String, contentType: UTType?) -> String {
         if let preferred = contentType?.preferredMIMEType, !preferred.isEmpty { return preferred }
