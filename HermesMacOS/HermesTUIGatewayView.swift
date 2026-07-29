@@ -149,6 +149,18 @@ enum HermesTUIGatewayEventParser {
     }
 }
 
+enum HermesTUIGatewayEventPolicy {
+    private static let globalChangeNotifications: Set<String> = [
+        "sessions.changed",
+        "cron.changed",
+        "pet.changed"
+    ]
+
+    static func isGlobalChangeNotification(_ eventType: String) -> Bool {
+        globalChangeNotifications.contains(eventType)
+    }
+}
+
 struct HermesTUIGatewayMessage: Identifiable, Equatable {
     enum Role: String, Equatable {
         case user
@@ -793,6 +805,12 @@ final class HermesTUIGatewayStore {
             return
         }
         guard envelope.method == "event", let event = envelope.params else { return }
+        if HermesTUIGatewayEventPolicy.isGlobalChangeNotification(event.type) {
+            if event.type == "sessions.changed", !isRefreshingSessions {
+                Task { await refreshActiveSessions() }
+            }
+            return
+        }
         eventCount += 1
         handle(event)
     }

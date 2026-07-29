@@ -2,6 +2,14 @@ import XCTest
 @testable import HermesMacOS
 
 final class StreamingAndGatewayEventTests: XCTestCase {
+    func testGlobalChangeNotificationsStayOutOfTUITranscript() {
+        XCTAssertTrue(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("sessions.changed"))
+        XCTAssertTrue(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("cron.changed"))
+        XCTAssertTrue(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("pet.changed"))
+        XCTAssertFalse(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("message.delta"))
+        XCTAssertFalse(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("unknown.fixture"))
+    }
+
     func testGatewayParserIgnoresNonEventRPCResponses() throws {
         let rpcResponse = "{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"ok\":true}}"
         XCTAssertNil(try HermesTUIGatewayEventParser.parseEventEnvelope(rpcResponse))
