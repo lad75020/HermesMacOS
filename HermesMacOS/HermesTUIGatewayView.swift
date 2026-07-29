@@ -207,6 +207,64 @@ struct HermesTUIModelCapabilities: Equatable {
     var reasoning: Bool?
 }
 
+struct HermesDashboardProfile: Decodable, Equatable {
+    let name: String
+    let isDefault: Bool
+    let model: String?
+    let provider: String?
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case isDefault = "is_default"
+        case model
+        case provider
+    }
+}
+
+struct HermesDashboardProfilesResponse: Decodable, Equatable {
+    let profiles: [HermesDashboardProfile]
+
+    var apiProfiles: [HermesAPIProfile] {
+        var seen = Set<String>()
+        return profiles.compactMap { profile in
+            let id = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty, seen.insert(id.lowercased()).inserted else { return nil }
+            return HermesAPIProfile(
+                id: id,
+                name: id,
+                isDefault: profile.isDefault,
+                model: profile.model,
+                provider: profile.provider
+            )
+        }
+    }
+}
+
+enum HermesTUIGatewayProfilesClient {
+    static func fetchProfiles(
+        dashboardBaseURL: String,
+        apiSettings: HermesAPISettings
+    ) async throws -> [HermesAPIProfile] {
+        do {
+            let baseURL = try await HermesDashboardClient.shared.resolvedBaseURL(
+                dashboardBaseURL: dashboardBaseURL,
+                apiBaseURL: apiSettings.baseURL
+            )
+            let response = try await HermesDashboardClient.shared.getJSON(
+                HermesDashboardProfilesResponse.self,
+                baseURL: baseURL,
+                path: "api/profiles",
+                apiSettings: apiSettings
+            )
+            let profiles = response.apiProfiles
+            if !profiles.isEmpty { return profiles }
+        } catch {
+            // The API-server client retains its loopback key refresh and local filesystem fallback.
+        }
+        return try await HermesAPIProfilesClient.fetchProfiles(apiSettings: apiSettings)
+    }
+}
+
 enum HermesTUIReasoningCapability {
     static func supports(selectedModel: String, provider: String, capabilities: [String: HermesTUIModelCapabilities], profile: HermesAPIProfile?) -> Bool {
         if let supported = capabilities.first(where: { $0.key.caseInsensitiveCompare(selectedModel) == .orderedSame })?.value.reasoning {
@@ -1458,7 +1516,7 @@ struct HermesTUIGatewayView: View {
             composer
         }
         .background(HermesLiquidGlassCanvas().ignoresSafeArea())
-        .task(id: apiSettings.baseURL) {
+        .task(id: dashboardURL + "|" + apiSettings.baseURL) {
             await refreshAPIProfiles()
         }
         .onChange(of: apiSettings) { _, _ in Task { await refreshAPIProfiles() } }
@@ -1977,7 +2035,10 @@ struct HermesTUIGatewayView: View {
 
     private func refreshAPIProfiles() async {
         do {
-            let profiles = try await HermesAPIProfilesClient.fetchProfiles(apiSettings: apiSettings)
+            let profiles = try await HermesTUIGatewayProfilesClient.fetchProfiles(
+                dashboardBaseURL: dashboardURL,
+                apiSettings: apiSettings
+            )
             apiProfiles = profiles
             profileRefreshError = ""
             syncSelectedProfileWithAPIProfiles(profiles)

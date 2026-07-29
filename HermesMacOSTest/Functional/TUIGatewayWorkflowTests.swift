@@ -35,6 +35,23 @@ final class TUIGatewayWorkflowTests: XCTestCase {
         XCTAssertNil(legacy.reasoning)
     }
 
+    func testDashboardProfilesMapToTUIGatewayProfileOptions() throws {
+        let payload = Data(#"{"profiles":[{"name":"default","is_default":true,"model":"gpt-5.6-sol","provider":"openai-codex"},{"name":"ollama","is_default":false,"model":"gemma4:e4b","provider":"custom"},{"name":"opus47","is_default":false,"model":"claude-opus-4.7","provider":"anthropic"}]}"#.utf8)
+
+        let response = try JSONDecoder().decode(HermesDashboardProfilesResponse.self, from: payload)
+        let profiles = response.apiProfiles
+
+        XCTAssertEqual(profiles.map(\.id), ["default", "ollama", "opus47"])
+        XCTAssertEqual(profiles[1].model, "gemma4:e4b")
+        XCTAssertEqual(profiles[2].provider, "anthropic")
+    }
+
+    func testTUIGatewayLoadsProfilesFromDashboardBeforeAPIServerFallback() throws {
+        let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesTUIGatewayView.swift")
+        XCTAssertTrue(source.contains("HermesTUIGatewayProfilesClient.fetchProfiles"))
+        XCTAssertTrue(source.contains("dashboardBaseURL: dashboardURL"))
+    }
+
     @MainActor
     func testTUIWorkspaceDefaultsAndCopiesReasoningEffort() {
         let initial = HermesTUIWorkspace(number: 1)
