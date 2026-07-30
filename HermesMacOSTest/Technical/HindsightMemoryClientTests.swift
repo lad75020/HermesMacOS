@@ -13,6 +13,22 @@ final class HindsightMemoryClientTests: XCTestCase {
         XCTAssertFalse(page.hasMore)
     }
 
+    func testListDecodingToleratesDiagnosticsAroundFramedHelperPayload() throws {
+        let request = MemoryListRequest(filterText: "", pageIndex: 0, pageSize: 10)
+        let payload = String(decoding: HindsightMemoryFixtures.listJSON(), as: UTF8.self)
+        let output = Data("""
+        Hindsight diagnostic before payload
+        HERMES_MEMORY_JSON:\(payload)
+        Hindsight diagnostic after payload
+        """.utf8)
+
+        let page = try HermesHindsightMemoryClient.decodeListOutput(output, request: request)
+
+        XCTAssertEqual(page.entries.map(\.id), ["h-1", "h-2"])
+        XCTAssertEqual(page.totalCount, 2)
+        XCTAssertFalse(page.hasMore)
+    }
+
     func testMalformedRowsAreRejected() {
         let request = MemoryListRequest(filterText: "", pageIndex: 0, pageSize: 10)
         XCTAssertThrowsError(try HermesHindsightMemoryClient.decodeListOutput(HindsightMemoryFixtures.malformedListJSON(), request: request))
@@ -48,6 +64,20 @@ final class HindsightMemoryClientTests: XCTestCase {
         let output = Data(#"{"success":true,"total_count":NaN,"results":[{"id":"valid-1","content":"First valid memory"}]}"#.utf8)
 
         XCTAssertThrowsError(try HermesHindsightMemoryClient.decodeListOutput(output, request: request))
+    }
+
+    func testDeleteDecodingToleratesDiagnosticsAroundFramedHelperPayload() throws {
+        let payload = String(decoding: HindsightMemoryFixtures.deleteJSON(id: "h-1"), as: UTF8.self)
+        let output = Data("""
+        Hindsight diagnostic before payload
+        HERMES_MEMORY_JSON:\(payload)
+        Hindsight diagnostic after payload
+        """.utf8)
+
+        let result = try HermesHindsightMemoryClient.decodeDeleteOutput(output, requestedID: "h-1")
+
+        XCTAssertTrue(result.deleted)
+        XCTAssertEqual(result.entryID, "h-1")
     }
 
     func testDeleteJSONDecodingAndSecretRedaction() throws {

@@ -5,6 +5,8 @@
 
 import Foundation
 
+private let hindsightMemoryJSONMarker = "HERMES_MEMORY_JSON:"
+
 struct MemoryEntry: Identifiable, Equatable {
     let id: String
     let content: String
@@ -159,7 +161,8 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
 
     nonisolated static func decodeListOutput(_ data: Data, request: MemoryListRequest) throws -> MemoryPage {
         do {
-            let response = try JSONDecoder().decode(HelperListResponse.self, from: normalizedListOutput(data))
+            let payload = framedJSONPayload(from: data)
+            let response = try JSONDecoder().decode(HelperListResponse.self, from: normalizedListOutput(payload))
             guard response.success else {
                 throw HermesHindsightMemoryClientError.providerUnavailable(HermesHindsightMemoryClientError.sanitized(response.error ?? response.message ?? "provider returned failure"))
             }
@@ -179,6 +182,17 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
         } catch {
             throw HermesHindsightMemoryClientError.malformedOutput(HermesHindsightMemoryClientError.sanitized(error.localizedDescription))
         }
+    }
+
+    private nonisolated static func framedJSONPayload(from data: Data) -> Data {
+        guard let output = String(data: data, encoding: .utf8),
+              let framedLine = output.split(whereSeparator: { $0.isNewline }).last(where: {
+                  $0.hasPrefix(hindsightMemoryJSONMarker)
+              })
+        else {
+            return data
+        }
+        return Data(framedLine.dropFirst(hindsightMemoryJSONMarker.count).utf8)
     }
 
     private nonisolated static func normalizedListOutput(_ data: Data) -> Data {
@@ -272,7 +286,7 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
 
     nonisolated static func decodeDeleteOutput(_ data: Data, requestedID: String) throws -> MemoryDeletionResult {
         do {
-            let response = try JSONDecoder().decode(HelperDeleteResponse.self, from: data)
+            let response = try JSONDecoder().decode(HelperDeleteResponse.self, from: framedJSONPayload(from: data))
             guard response.success else {
                 throw HermesHindsightMemoryClientError.deletionFailed(HermesHindsightMemoryClientError.sanitized(response.error ?? response.message ?? "provider returned failure"))
             }
@@ -330,6 +344,8 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+
+JSON_OUTPUT_MARKER = "\#(hindsightMemoryJSONMarker)"
 
 operation = sys.argv[1]
 hermes_home = sys.argv[2]
@@ -457,9 +473,9 @@ try:
         payload = provider._run_hindsight_operation(lambda client: invalidate_memories(client, provider, [memory_id]))
     else:
         raise ValueError(f"Unsupported Hindsight memory tab operation: {operation}")
-    print(json.dumps(payload, sort_keys=True))
+    print(JSON_OUTPUT_MARKER + json.dumps(payload, sort_keys=True))
 except Exception as exc:
-    print(json.dumps({"success": False, "error": str(exc), "results": [], "erased": [], "skipped": []}, sort_keys=True))
+    print(JSON_OUTPUT_MARKER + json.dumps({"success": False, "error": str(exc), "results": [], "erased": [], "skipped": []}, sort_keys=True))
     sys.exit(1)
 finally:
     if provider is not None:
