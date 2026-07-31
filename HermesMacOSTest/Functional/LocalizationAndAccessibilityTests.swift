@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import HermesMacOS
 
@@ -23,9 +24,57 @@ final class LocalizationAndAccessibilityTests: XCTestCase {
         XCTAssertEqual(HermesMacOSTab.allCases.count, 11)
     }
 
-    func testSettingsTabVisibilityAndMemoryControlsHaveAccessibleLabels() {
-        let labels = ["Ask Hermes tab", "Chat with Hermes tab", "Memory", "Filter memories", "Refresh", "Previous", "Next", "Delete"]
-        for label in labels {
+    func testSettingsTabVisibilityAndMemoryStringsAreCatalogBacked() throws {
+        let catalogData = try Data(contentsOf: HermesTestAssertions.repositoryFile("HermesMacOS/Localizable.xcstrings"))
+        let catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
+        let expectedKeys: Set<String> = [
+            "%lld–%lld of %lld",
+            "%lld–%lld shown",
+            "App tabs",
+            "Ask Hermes tab",
+            "Browse, filter, and delete readable Hindsight memories without exposing raw provider debug output.",
+            "Cancel",
+            "Chat with Hermes tab",
+            "Could not delete memory: %@",
+            "Delete",
+            "Delete Memory",
+            "Delete memory %@",
+            "Delete memory %@?",
+            "Delete memory?",
+            "Deleting memory…",
+            "Filter memories",
+            "Hide optional prompt tabs from the side navigation without clearing their current drafts, attachments, or sessions. Settings remains available to restore them.",
+            "Hindsight memory helper returned malformed output: %@",
+            "Hindsight memory helper timed out.",
+            "Hindsight memory provider unavailable: %@",
+            "Loaded %lld memories.",
+            "Loaded one memory.",
+            "Loading memories…",
+            "Memory",
+            "Memory deleted.",
+            "Memory provider error: %@",
+            "Memory provider unavailable",
+            "Memory range: %@",
+            "Next",
+            "Next memory page",
+            "No matching memories",
+            "No memories found",
+            "No memories match this filter",
+            "No memories shown",
+            "Previous",
+            "Previous memory page",
+            "Refresh",
+            "Refresh memories",
+            "Shows a confirmation before deleting this Hindsight memory",
+            "This invalidates the selected Hindsight memory after provider confirmation. Preview: %@",
+            "Use Refresh to retry the active Hindsight provider. Default tests use fixtures; live provider access is opt-in.",
+        ]
+        let catalogKeys = Set(strings.keys)
+        let missing = expectedKeys.subtracting(catalogKeys).sorted()
+
+        XCTAssertTrue(missing.isEmpty, "Missing feature localization keys: \(missing)")
+        for label in ["Ask Hermes tab", "Chat with Hermes tab", "Memory", "Filter memories", "Refresh memories", "Previous memory page", "Next memory page", "Delete"] {
             XCTAssertFalse(label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             XCTAssertFalse(label.contains("_"))
         }

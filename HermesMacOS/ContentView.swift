@@ -523,6 +523,13 @@ struct ContentView: View {
         return tuiWorkspaces[0]
     }
 
+    private var activeMemoryContext: HindsightMemoryContext {
+        HindsightMemoryContext.active(
+            rootHermesHome: HermesRuntimePaths.defaultHermesHome,
+            profile: selectedAskWorkspace.draft.profile
+        )
+    }
+
     private var askTabAttention: HermesAskWorkspaceAttention? {
         if askWorkspaces.contains(where: { $0.attention == .failed }) { return .failed }
         if askWorkspaces.contains(where: { $0.attention == .completed }) { return .completed }
@@ -663,7 +670,7 @@ struct ContentView: View {
                 connectedWindowID: windowID
             )
         case .memory:
-            HermesMemoryView(store: memoryStore)
+            HermesMemoryView(store: memoryStore, context: activeMemoryContext)
         case .tuiGateway:
             HermesTUIGatewayWorkspacesView(
                 apiSettings: apiSettings,

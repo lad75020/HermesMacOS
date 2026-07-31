@@ -8,9 +8,68 @@ final class HindsightMemoryClientTests: XCTestCase {
         XCTAssertEqual(page.entries.count, 2)
         XCTAssertEqual(page.entries[0].id, "h-1")
         XCTAssertEqual(page.entries[0].kind, "experience")
-        XCTAssertEqual(page.entries[0].metadata["bank"], "default")
+        XCTAssertEqual(page.entries[0].profile, "bank-default")
+        XCTAssertEqual(page.entries[0].metadata["context"], "test")
+        XCTAssertEqual(page.entries[0].metadata["proof_count"], "2")
+        XCTAssertEqual(page.pageIndex, 0)
+        XCTAssertEqual(page.pageSize, 10)
+        XCTAssertEqual(page.offset, 0)
         XCTAssertEqual(page.totalCount, 2)
+        XCTAssertEqual(page.providerBank, "bank-default")
         XCTAssertFalse(page.hasMore)
+    }
+
+    func testInventoryDecodingUsesExactProviderPaginationMetadata() throws {
+        let request = MemoryListRequest(filterText: "Hermes", pageIndex: 0, pageSize: 10)
+        let output = Data(#"{"success":true,"items":[{"id":"h-11","text":"Provider page row","fact_type":"world"}],"total":13,"limit":5,"offset":10,"bank_id":"bank-research","profile":"research"}"#.utf8)
+
+        let page = try HermesHindsightMemoryClient.decodeListOutput(output, request: request)
+
+        XCTAssertEqual(page.entries.map(\.id), ["h-11"])
+        XCTAssertEqual(page.pageIndex, 2)
+        XCTAssertEqual(page.pageSize, 5)
+        XCTAssertEqual(page.offset, 10)
+        XCTAssertEqual(page.totalCount, 13)
+        XCTAssertEqual(page.providerBank, "bank-research")
+        XCTAssertEqual(page.profile, "research")
+        XCTAssertTrue(page.hasMore)
+    }
+
+    func testInventoryHelperUsesProviderSideSearchLimitAndOffset() {
+        let source = HermesHindsightMemoryClient.pythonHelperContract
+
+        XCTAssertTrue(source.contains("client.memories.list("))
+        XCTAssertTrue(source.contains("client.list_memories("))
+        XCTAssertTrue(source.contains("search_query=search_query"))
+        XCTAssertTrue(source.contains("limit=limit"))
+        XCTAssertTrue(source.contains("offset=offset"))
+        XCTAssertFalse(source.contains("client.arecall("))
+        XCTAssertFalse(source.contains("all_records[start:end]"))
+    }
+
+    func testListHelperArgumentsKeepProfilesHomesAndBanksIsolated() {
+        let request = MemoryListRequest(filterText: "  project notes  ", pageIndex: 2, pageSize: 5)
+        let alpha = HindsightMemoryContext.active(
+            rootHermesHome: "/private/tmp/hermes-memory-context",
+            profile: "alpha",
+            providerBank: "bank-alpha"
+        )
+        let beta = HindsightMemoryContext.active(
+            rootHermesHome: "/private/tmp/hermes-memory-context",
+            profile: "beta",
+            providerBank: "bank-beta"
+        )
+
+        XCTAssertEqual(alpha.hermesHome, "/private/tmp/hermes-memory-context/profiles/alpha")
+        XCTAssertEqual(beta.hermesHome, "/private/tmp/hermes-memory-context/profiles/beta")
+        XCTAssertEqual(
+            HermesHindsightMemoryClient.listHelperArguments(request: request, context: alpha),
+            ["list", alpha.hermesHome, "alpha", "bank-alpha", "project notes", "5", "10"]
+        )
+        XCTAssertEqual(
+            HermesHindsightMemoryClient.listHelperArguments(request: request, context: beta),
+            ["list", beta.hermesHome, "beta", "bank-beta", "project notes", "5", "10"]
+        )
     }
 
     func testListDecodingToleratesDiagnosticsAroundFramedHelperPayload() throws {
@@ -36,7 +95,7 @@ final class HindsightMemoryClientTests: XCTestCase {
 
     func testMalformedResultDoesNotHideValidResults() throws {
         let request = MemoryListRequest(filterText: "Hermes", pageIndex: 0, pageSize: 10)
-        let output = Data(#"{"success":true,"total_count":3,"results":[{"id":"valid-1","content":"First valid memory"},{"id":"malformed-missing-content"},{"id":"valid-2","content":"Second valid memory"}]}"#.utf8)
+        let output = Data(#"{"success":true,"items":[{"id":"valid-1","text":"First valid memory"},{"id":"malformed-missing-content"},{"id":"valid-2","text":"Second valid memory"}],"total":3,"limit":10,"offset":0}"#.utf8)
 
         let page = try HermesHindsightMemoryClient.decodeListOutput(output, request: request)
 
@@ -48,7 +107,7 @@ final class HindsightMemoryClientTests: XCTestCase {
     func testNonFiniteConfidenceDoesNotHideValidResults() throws {
         let request = MemoryListRequest(filterText: "Hermes", pageIndex: 0, pageSize: 10)
         for token in ["NaN", "Infinity", "-Infinity"] {
-            let output = Data("{\"success\":true,\"total_count\":3,\"results\":[{\"id\":\"valid-1\",\"content\":\"First valid memory\"},{\"id\":\"invalid-confidence\",\"content\":\"Memory with invalid confidence\",\"confidence\":\(token)},{\"id\":\"valid-2\",\"content\":\"Second valid memory\"}]}".utf8)
+            let output = Data("{\"success\":true,\"items\":[{\"id\":\"valid-1\",\"text\":\"First valid memory\"},{\"id\":\"invalid-confidence\",\"text\":\"Memory with invalid confidence\",\"confidence\":\(token)},{\"id\":\"valid-2\",\"text\":\"Second valid memory\"}],\"total\":3,\"limit\":10,\"offset\":0}".utf8)
 
             let page = try HermesHindsightMemoryClient.decodeListOutput(output, request: request)
 
@@ -61,9 +120,40 @@ final class HindsightMemoryClientTests: XCTestCase {
 
     func testNonFiniteStructuralFieldsRemainMalformed() {
         let request = MemoryListRequest(filterText: "Hermes", pageIndex: 0, pageSize: 10)
-        let output = Data(#"{"success":true,"total_count":NaN,"results":[{"id":"valid-1","content":"First valid memory"}]}"#.utf8)
+        let output = Data(#"{"success":true,"items":[{"id":"valid-1","text":"First valid memory"}],"total":NaN,"limit":10,"offset":0}"#.utf8)
 
         XCTAssertThrowsError(try HermesHindsightMemoryClient.decodeListOutput(output, request: request))
+    }
+
+    @MainActor
+    func testClientCancellationReachesHelperExecutor() async {
+        let probe = CancellableMemoryHelperProbe()
+        let client = HermesHindsightMemoryClient(helperExecutor: { invocation in
+            try await probe.execute(invocation)
+        })
+        let request = MemoryListRequest(filterText: "", pageIndex: 0, pageSize: 10)
+        let context = HindsightMemoryContext.active(
+            rootHermesHome: "/private/tmp/hermes-memory-context",
+            profile: "alpha",
+            providerBank: "bank-alpha"
+        )
+
+        let task = Task {
+            try await client.listMemories(request: request, context: context)
+        }
+        await probe.waitUntilStarted()
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("A cancelled helper request must throw CancellationError.")
+        } catch is CancellationError {
+            // Expected.
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+        let observedCancellation = await probe.observedCancellation
+        XCTAssertTrue(observedCancellation)
     }
 
     func testDeleteDecodingToleratesDiagnosticsAroundFramedHelperPayload() throws {
@@ -90,6 +180,37 @@ final class HindsightMemoryClientTests: XCTestCase {
             XCTAssertFalse(text.contains("Authorization"))
             XCTAssertFalse(text.contains("api_key="))
             XCTAssertFalse(text.contains("Traceback"))
+        }
+    }
+}
+
+private actor CancellableMemoryHelperProbe {
+    private(set) var observedCancellation = false
+    private var didStart = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilStarted() async {
+        if didStart { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func execute(_ invocation: HermesHindsightMemoryHelperInvocation) async throws -> String {
+        _ = invocation
+        didStart = true
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+
+        do {
+            while true {
+                try Task.checkCancellation()
+                await Task.yield()
+            }
+        } catch is CancellationError {
+            observedCancellation = true
+            throw CancellationError()
         }
     }
 }

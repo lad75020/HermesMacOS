@@ -936,4 +936,61 @@ enum HermesProcessRunner {
         let text = outputBuffer.string(appending: remainder)
         return HermesProcessResult(exitCode: process.terminationStatus, output: text, timedOut: timedOut)
     }
+
+    static func runCancellable(
+        executable: String,
+        arguments: [String],
+        environment: [String: String]? = nil,
+        currentDirectory: String? = nil,
+        timeout: TimeInterval? = nil
+    ) throws -> HermesProcessResult {
+        try Task.checkCancellation()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        if let currentDirectory { process.currentDirectoryURL = URL(fileURLWithPath: currentDirectory) }
+        if let environment { process.environment = environment }
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        let outputBuffer = HermesProcessOutputBuffer()
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            outputBuffer.append(handle.availableData)
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in semaphore.signal() }
+        try process.run()
+
+        let deadline = timeout.flatMap { $0 > 0 ? Date().addingTimeInterval($0) : nil }
+        var timedOut = false
+        var wasCancelled = false
+        while semaphore.wait(timeout: .now() + 0.05) == .timedOut {
+            if Task.isCancelled {
+                wasCancelled = true
+                break
+            }
+            if let deadline, Date() >= deadline {
+                timedOut = true
+                break
+            }
+        }
+
+        if !wasCancelled, Task.isCancelled { wasCancelled = true }
+        if wasCancelled || timedOut {
+            process.terminate()
+            if semaphore.wait(timeout: .now() + 3) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                semaphore.wait()
+            }
+        }
+
+        pipe.fileHandleForReading.readabilityHandler = nil
+        let remainder = pipe.fileHandleForReading.readDataToEndOfFile()
+        let text = outputBuffer.string(appending: remainder)
+        if wasCancelled { throw CancellationError() }
+        return HermesProcessResult(exitCode: process.terminationStatus, output: text, timedOut: timedOut)
+    }
 }

@@ -7,7 +7,9 @@ import SwiftUI
 
 struct HermesMemoryView: View {
     @Bindable var store: HermesMemoryStore
+    let context: HindsightMemoryContext
     @State private var pendingDeleteEntry: MemoryEntry?
+    @State private var filterTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -19,7 +21,15 @@ struct HermesMemoryView: View {
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .task { await store.load() }
+        .task(id: context) { await store.activate(context: context) }
+        .onChange(of: store.filterText) { _, newValue in
+            filterTask?.cancel()
+            filterTask = Task { await store.applyFilterChange(newValue) }
+        }
+        .onDisappear {
+            filterTask?.cancel()
+            filterTask = nil
+        }
         .confirmationDialog(
             pendingDeleteEntry.map { "Delete memory \($0.id)?" } ?? "Delete memory?",
             isPresented: Binding(
@@ -54,14 +64,7 @@ struct HermesMemoryView: View {
             HStack(spacing: 12) {
                 TextField("Filter memories", text: $store.filterText)
                     .textFieldStyle(.roundedBorder)
-                    .onSubmit { store.applyFilterChange() }
                     .accessibilityLabel("Filter memories")
-                Button {
-                    store.applyFilterChange()
-                } label: {
-                    Label("Apply Filter", systemImage: "line.3.horizontal.decrease.circle")
-                }
-                .accessibilityLabel("Apply memory filter")
                 Button {
                     store.refresh()
                 } label: {

@@ -7,6 +7,53 @@ import Foundation
 
 private let hindsightMemoryJSONMarker = "HERMES_MEMORY_JSON:"
 
+struct HindsightMemoryContext: Equatable, Hashable, Sendable {
+    let hermesHome: String
+    let profile: String
+    let providerBank: String?
+
+    static func active(
+        rootHermesHome: String,
+        profile: String,
+        providerBank: String? = nil
+    ) -> HindsightMemoryContext {
+        let safeProfile = normalizedProfile(profile)
+        let expandedHome = NSString(string: rootHermesHome).expandingTildeInPath
+        var rootURL = URL(fileURLWithPath: expandedHome, isDirectory: true).standardizedFileURL
+
+        // A caller may already be scoped to `<root>/profiles/<profile>`. Always
+        // derive from the Hermes root so changing profiles cannot nest homes.
+        if rootURL.deletingLastPathComponent().lastPathComponent == "profiles" {
+            rootURL.deleteLastPathComponent()
+            rootURL.deleteLastPathComponent()
+        }
+
+        let effectiveHome: URL
+        if safeProfile == "default" {
+            effectiveHome = rootURL
+        } else {
+            effectiveHome = rootURL
+                .appendingPathComponent("profiles", isDirectory: true)
+                .appendingPathComponent(safeProfile, isDirectory: true)
+        }
+
+        let trimmedBank = providerBank?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return HindsightMemoryContext(
+            hermesHome: effectiveHome.standardizedFileURL.path,
+            profile: safeProfile,
+            providerBank: trimmedBank.flatMap { $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    private static func normalizedProfile(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != ".", trimmed != ".." else { return "default" }
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "._-"))
+        guard trimmed.rangeOfCharacter(from: allowed.inverted) == nil else { return "default" }
+        return trimmed
+    }
+}
+
 struct MemoryEntry: Identifiable, Equatable {
     let id: String
     let content: String
@@ -48,8 +95,31 @@ struct MemoryPage: Equatable {
     let entries: [MemoryEntry]
     let pageIndex: Int
     let pageSize: Int
+    let offset: Int
     let totalCount: Int?
     let hasMore: Bool
+    let providerBank: String?
+    let profile: String?
+
+    init(
+        entries: [MemoryEntry],
+        pageIndex: Int,
+        pageSize: Int,
+        offset: Int? = nil,
+        totalCount: Int?,
+        hasMore: Bool,
+        providerBank: String? = nil,
+        profile: String? = nil
+    ) {
+        self.entries = entries
+        self.pageIndex = max(0, pageIndex)
+        self.pageSize = MemoryTabState.boundedPageSize(pageSize)
+        self.offset = max(0, offset ?? pageIndex * pageSize)
+        self.totalCount = totalCount
+        self.hasMore = hasMore
+        self.providerBank = providerBank
+        self.profile = profile
+    }
 
     var isEmpty: Bool { entries.isEmpty }
 }
@@ -112,51 +182,99 @@ enum HermesHindsightMemoryClientError: LocalizedError, Equatable {
 
 @MainActor
 protocol HindsightMemoryProviding: AnyObject {
-    func listMemories(request: MemoryListRequest) async throws -> MemoryPage
-    func deleteMemory(id: String) async throws -> MemoryDeletionResult
+    func listMemories(request: MemoryListRequest, context: HindsightMemoryContext) async throws -> MemoryPage
+    func deleteMemory(id: String, context: HindsightMemoryContext) async throws -> MemoryDeletionResult
+}
+
+struct HermesHindsightMemoryHelperInvocation: Equatable, Sendable {
+    let arguments: [String]
+    let context: HindsightMemoryContext
+    let timeout: TimeInterval
 }
 
 @MainActor
 final class HermesHindsightMemoryClient: HindsightMemoryProviding {
-    private let hermesHome: String
-    private let timeout: TimeInterval
+    typealias HelperExecutor = @Sendable (HermesHindsightMemoryHelperInvocation) async throws -> String
 
-    init(hermesHome: String = HermesRuntimePaths.defaultHermesHome, timeout: TimeInterval = 45) {
-        self.hermesHome = hermesHome
-        self.timeout = timeout
+    private let timeout: TimeInterval
+    private let helperExecutor: HelperExecutor
+
+    init(
+        timeout: TimeInterval = 45,
+        helperExecutor: HelperExecutor? = nil
+    ) {
+        self.timeout = max(1, timeout)
+        self.helperExecutor = helperExecutor ?? { invocation in
+            try await Self.executeHelper(invocation)
+        }
     }
 
-    func listMemories(request: MemoryListRequest) async throws -> MemoryPage {
-        let output = try await runHelper(arguments: ["list", hermesHome, request.filterText, String(request.pageIndex), String(request.pageSize)])
+    func listMemories(request: MemoryListRequest, context: HindsightMemoryContext) async throws -> MemoryPage {
+        let output = try await runHelper(
+            arguments: Self.listHelperArguments(request: request, context: context),
+            context: context
+        )
         return try Self.decodeListOutput(Data(output.utf8), request: request)
     }
 
-    func deleteMemory(id: String) async throws -> MemoryDeletionResult {
+    func deleteMemory(id: String, context: HindsightMemoryContext) async throws -> MemoryDeletionResult {
         let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        let output = try await runHelper(arguments: ["delete", hermesHome, trimmedID])
+        guard !trimmedID.isEmpty else {
+            throw HermesHindsightMemoryClientError.deletionFailed("memory ID is empty")
+        }
+        let output = try await runHelper(
+            arguments: ["delete", context.hermesHome, context.profile, context.providerBank ?? "", trimmedID],
+            context: context
+        )
         return try Self.decodeDeleteOutput(Data(output.utf8), requestedID: trimmedID)
     }
 
-    private func runHelper(arguments: [String]) async throws -> String {
-        let script = Self.pythonHelperScript
-        let timeout = timeout
-        let environment = Self.normalizedPythonEnvironment(hermesHome: hermesHome)
-        let executable = HermesRuntimePaths.defaultPythonExecutable
-        let currentDirectory = HermesRuntimePaths.defaultHermesAgentRoot
-        return try await Task.detached(priority: .userInitiated) {
-            let result = try HermesProcessRunner.run(
-                executable: executable,
-                arguments: ["-c", script] + arguments,
-                environment: environment,
-                currentDirectory: currentDirectory,
-                timeout: timeout
+    nonisolated static func listHelperArguments(
+        request: MemoryListRequest,
+        context: HindsightMemoryContext
+    ) -> [String] {
+        [
+            "list",
+            context.hermesHome,
+            context.profile,
+            context.providerBank ?? "",
+            request.filterText,
+            String(request.pageSize),
+            String(request.offset),
+        ]
+    }
+
+    nonisolated static var pythonHelperContract: String { pythonHelperScript }
+
+    private func runHelper(arguments: [String], context: HindsightMemoryContext) async throws -> String {
+        try Task.checkCancellation()
+        return try await helperExecutor(
+            HermesHindsightMemoryHelperInvocation(arguments: arguments, context: context, timeout: timeout)
+        )
+    }
+
+    private nonisolated static func executeHelper(_ invocation: HermesHindsightMemoryHelperInvocation) async throws -> String {
+        let worker = Task.detached(priority: .userInitiated) {
+            let result = try HermesProcessRunner.runCancellable(
+                executable: HermesRuntimePaths.defaultPythonExecutable,
+                arguments: ["-c", pythonHelperScript] + invocation.arguments,
+                environment: normalizedPythonEnvironment(hermesHome: invocation.context.hermesHome),
+                currentDirectory: HermesRuntimePaths.defaultHermesAgentRoot,
+                timeout: invocation.timeout
             )
             if result.timedOut { throw HermesHindsightMemoryClientError.timedOut }
             guard result.exitCode == 0 else {
-                throw HermesHindsightMemoryClientError.providerUnavailable(HermesHindsightMemoryClientError.sanitized(result.output))
+                throw HermesHindsightMemoryClientError.providerUnavailable(
+                    HermesHindsightMemoryClientError.sanitized(result.output)
+                )
             }
             return result.output
-        }.value
+        }
+        return try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 
     nonisolated static func decodeListOutput(_ data: Data, request: MemoryListRequest) throws -> MemoryPage {
@@ -166,17 +284,36 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
             guard response.success else {
                 throw HermesHindsightMemoryClientError.providerUnavailable(HermesHindsightMemoryClientError.sanitized(response.error ?? response.message ?? "provider returned failure"))
             }
-            let decodedRecords = response.results ?? response.entries ?? []
+            guard let decodedRecords = response.items,
+                  let total = response.total,
+                  let limit = response.limit,
+                  let offset = response.offset,
+                  total >= 0,
+                  (1...MemoryTabState.maximumPageSize).contains(limit),
+                  offset >= 0
+            else {
+                throw HermesHindsightMemoryClientError.malformedOutput(
+                    "inventory response is missing exact total/limit/offset metadata"
+                )
+            }
             let entries: [MemoryEntry] = decodedRecords.compactMap { decodedRecord in
                 guard let record = decodedRecord.value else { return nil }
-                return try? record.memoryEntry()
+                return try? record.memoryEntry(defaultBank: response.bankID)
             }
             if !decodedRecords.isEmpty, entries.isEmpty {
                 throw HermesHindsightMemoryClientError.malformedOutput("memory result contained no valid rows")
             }
-            let total = response.totalCount ?? max(request.offset + entries.count, entries.count)
-            let hasMore = response.hasMore ?? (request.offset + decodedRecords.count < total)
-            return MemoryPage(entries: entries, pageIndex: request.pageIndex, pageSize: request.pageSize, totalCount: total, hasMore: hasMore)
+            let hasMore = offset + decodedRecords.count < total
+            return MemoryPage(
+                entries: entries,
+                pageIndex: offset / limit,
+                pageSize: limit,
+                offset: offset,
+                totalCount: total,
+                hasMore: hasMore,
+                providerBank: response.bankID,
+                profile: response.profile
+            )
         } catch let error as HermesHindsightMemoryClientError {
             throw error
         } catch {
@@ -303,7 +440,7 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
         }
     }
 
-    private static func normalizedPythonEnvironment(hermesHome: String) -> [String: String] {
+    private nonisolated static func normalizedPythonEnvironment(hermesHome: String) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         environment["HERMES_HOME"] = hermesHome
         environment["TERM"] = environment["TERM"] ?? "xterm-256color"
@@ -314,7 +451,7 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
         return environment
     }
 
-    private static func normalizedPATH(existing: String?, hermesHome: String) -> String {
+    private nonisolated static func normalizedPATH(existing: String?, hermesHome: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let preferredPaths = [
             URL(fileURLWithPath: hermesHome).appendingPathComponent("node/bin").path,
@@ -337,7 +474,7 @@ final class HermesHindsightMemoryClient: HindsightMemoryProviding {
         }.joined(separator: ":")
     }
 
-    private static let pythonHelperScript = #"""
+    private nonisolated static let pythonHelperScript = #"""
 import asyncio
 import json
 import sys
@@ -349,6 +486,8 @@ JSON_OUTPUT_MARKER = "\#(hindsightMemoryJSONMarker)"
 
 operation = sys.argv[1]
 hermes_home = sys.argv[2]
+profile = sys.argv[3]
+expected_bank = sys.argv[4].strip()
 
 
 def value(record, *names):
@@ -369,27 +508,67 @@ def as_list(candidate):
     return [str(candidate)] if str(candidate).strip() else []
 
 
-def clean_record(item):
+def response_dict(response):
+    if isinstance(response, dict):
+        return response
+    if callable(getattr(response, "to_dict", None)):
+        return response.to_dict()
+    if callable(getattr(response, "model_dump", None)):
+        return response.model_dump(by_alias=True, exclude_none=True)
+    raise RuntimeError("Hindsight inventory returned an unsupported response shape")
+
+
+def clean_record(item, active_profile, bank_id):
     memory_id = str(value(item, "id", "memory_id") or "").strip()
     text = str(value(item, "text", "content", "fact") or "").strip()
-    fact_type = str(value(item, "type", "fact_type", "kind") or "").strip()
+    fact_type = str(value(item, "fact_type", "type", "kind") or "").strip()
     if not memory_id or not text:
-        return None
+        raise RuntimeError("Hindsight inventory returned a row without id or text")
+    confidence = value(item, "score", "confidence", "relevance")
+    if not isinstance(confidence, (int, float)):
+        confidence = None
     return {
         "id": memory_id,
         "content": text,
         "kind": fact_type,
         "source": "Hindsight",
-        "profile": value(item, "profile", "bank_id"),
-        "confidence": value(item, "score", "confidence", "relevance"),
-        "created_at": value(item, "created_at", "createdAt", "timestamp"),
-        "updated_at": value(item, "updated_at", "updatedAt"),
+        "profile": active_profile,
+        "confidence": confidence,
+        "created_at": str(value(item, "date", "mentioned_at", "created_at") or ""),
+        "updated_at": str(value(item, "consolidated_at", "updated_at") or ""),
         "metadata": {
-            "document_id": str(value(item, "document_id") or ""),
+            "bank": bank_id,
             "context": str(value(item, "context") or ""),
+            "chunk_id": str(value(item, "chunk_id") or ""),
+            "proof_count": str(value(item, "proof_count") or ""),
             "tags": ", ".join(as_list(value(item, "tags"))),
+            "entities": ", ".join(as_list(value(item, "entities"))),
+            "occurred_start": str(value(item, "occurred_start") or ""),
+            "occurred_end": str(value(item, "occurred_end") or ""),
         },
     }
+
+
+async def list_memory_inventory(client, bank_id, search_query, limit, offset):
+    def perform_list():
+        memories = getattr(client, "memories", None)
+        if memories is not None and callable(getattr(memories, "list", None)):
+            return client.memories.list(
+                bank_id=bank_id,
+                search_query=search_query,
+                limit=limit,
+                offset=offset,
+            )
+        if callable(getattr(client, "list_memories", None)):
+            return client.list_memories(
+                bank_id=bank_id,
+                search_query=search_query,
+                limit=limit,
+                offset=offset,
+            )
+        raise RuntimeError("Installed Hindsight client does not expose the memory inventory API")
+
+    return await asyncio.to_thread(perform_list)
 
 
 async def invalidate_memories(client, provider, ids):
@@ -433,49 +612,59 @@ try:
         "hermes-macos-memory-tab",
         hermes_home=hermes_home,
         platform="macos",
-        agent_identity="default",
+        agent_identity=profile,
         agent_workspace="hermes",
         agent_context="primary",
     )
     if getattr(provider, "_mode", "") == "disabled":
         raise RuntimeError("Hindsight memory provider is disabled or unavailable for this Hermes profile")
 
+    bank_id = str(getattr(provider, "_bank_id", "") or "").strip()
+    if not bank_id:
+        raise RuntimeError("Hindsight bank ID is unavailable")
+    if expected_bank and expected_bank != bank_id:
+        raise RuntimeError("Active Hindsight bank does not match the requested profile context")
+
     if operation == "list":
-        filter_text = sys.argv[3]
-        page_index = max(0, int(sys.argv[4]))
-        page_size = min(max(1, int(sys.argv[5])), 50)
-        query = filter_text.strip() or "memory"
-        recall_kwargs = {
-            "bank_id": provider._bank_id,
-            "query": query,
-            "budget": provider._budget,
-            "max_tokens": 8192,
+        search_query = sys.argv[5].strip() or None
+        limit = min(max(1, int(sys.argv[6])), 50)
+        offset = max(0, int(sys.argv[7]))
+        response = provider._run_hindsight_operation(
+            lambda client: list_memory_inventory(client, bank_id, search_query, limit, offset)
+        )
+        inventory = response_dict(response)
+        items = inventory.get("items")
+        total = inventory.get("total")
+        exact_limit = inventory.get("limit")
+        exact_offset = inventory.get("offset")
+        if not isinstance(items, list) or not isinstance(total, int) or not isinstance(exact_limit, int) or not isinstance(exact_offset, int):
+            raise RuntimeError("Hindsight inventory omitted exact items/total/limit/offset metadata")
+        payload = {
+            "success": True,
+            "items": [clean_record(item, profile, bank_id) for item in items],
+            "total": total,
+            "limit": exact_limit,
+            "offset": exact_offset,
+            "bank_id": bank_id,
+            "profile": profile,
         }
-        if provider._recall_tags:
-            recall_kwargs["tags"] = provider._recall_tags
-            recall_kwargs["tags_match"] = provider._recall_tags_match
-        response = provider._run_hindsight_operation(lambda client: client.arecall(**recall_kwargs))
-        all_records, seen = [], set()
-        for item in response.results or []:
-            record = clean_record(item)
-            if record is None or record["id"] in seen:
-                continue
-            seen.add(record["id"])
-            all_records.append(record)
-        if filter_text.strip():
-            needle = filter_text.strip().lower()
-            all_records = [record for record in all_records if needle in record["content"].lower() or needle in json.dumps(record.get("metadata", {})).lower()]
-        start = page_index * page_size
-        end = start + page_size
-        payload = {"success": True, "results": all_records[start:end], "total_count": len(all_records), "has_more": end < len(all_records)}
     elif operation == "delete":
-        memory_id = sys.argv[3]
+        memory_id = sys.argv[5]
         payload = provider._run_hindsight_operation(lambda client: invalidate_memories(client, provider, [memory_id]))
     else:
         raise ValueError(f"Unsupported Hindsight memory tab operation: {operation}")
     print(JSON_OUTPUT_MARKER + json.dumps(payload, sort_keys=True))
 except Exception as exc:
-    print(JSON_OUTPUT_MARKER + json.dumps({"success": False, "error": str(exc), "results": [], "erased": [], "skipped": []}, sort_keys=True))
+    print(JSON_OUTPUT_MARKER + json.dumps({
+        "success": False,
+        "error": str(exc),
+        "items": [],
+        "total": 0,
+        "limit": 0,
+        "offset": 0,
+        "erased": [],
+        "skipped": [],
+    }, sort_keys=True))
     sys.exit(1)
 finally:
     if provider is not None:
@@ -490,15 +679,16 @@ private struct HelperListResponse: Decodable {
     let success: Bool
     let error: String?
     let message: String?
-    let results: [FailableDecodable<HelperMemoryRecord>]?
-    let entries: [FailableDecodable<HelperMemoryRecord>]?
-    let totalCount: Int?
-    let hasMore: Bool?
+    let items: [FailableDecodable<HelperMemoryRecord>]?
+    let total: Int?
+    let limit: Int?
+    let offset: Int?
+    let bankID: String?
+    let profile: String?
 
     enum CodingKeys: String, CodingKey {
-        case success, error, message, results, entries
-        case totalCount = "total_count"
-        case hasMore = "has_more"
+        case success, error, message, items, total, limit, offset, profile
+        case bankID = "bank_id"
     }
 }
 
@@ -546,10 +736,22 @@ private struct HelperMemoryRecord: Decodable {
         createdAt = container.optionalString(for: ["created_at", "createdAt", "timestamp"])
         updatedAt = container.optionalString(for: ["updated_at", "updatedAt"])
         confidence = container.optionalDouble(for: ["confidence", "score", "relevance"])
-        metadata = container.stringDictionary(for: "metadata")
+        var decodedMetadata = container.stringDictionary(for: "metadata")
+        for key in ["context", "proof_count", "chunk_id", "document_id", "occurred_start", "occurred_end"] {
+            if let value = container.optionalString(for: [key]), !value.isEmpty {
+                decodedMetadata[key] = value
+            }
+        }
+        for key in ["tags", "entities"] {
+            let codingKey = DynamicCodingKey(key)
+            if let values = try? container.decode([String].self, forKey: codingKey), !values.isEmpty {
+                decodedMetadata[key] = values.joined(separator: ", ")
+            }
+        }
+        metadata = decodedMetadata
     }
 
-    func memoryEntry() throws -> MemoryEntry {
+    func memoryEntry(defaultBank: String? = nil) throws -> MemoryEntry {
         let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedID.isEmpty, !trimmedContent.isEmpty else {
@@ -560,7 +762,7 @@ private struct HelperMemoryRecord: Decodable {
             content: HermesSecretRedactor.redact(trimmedContent),
             kind: kind?.trimmingCharacters(in: .whitespacesAndNewlines),
             source: source?.trimmingCharacters(in: .whitespacesAndNewlines),
-            profile: profile?.trimmingCharacters(in: .whitespacesAndNewlines),
+            profile: (profile ?? defaultBank)?.trimmingCharacters(in: .whitespacesAndNewlines),
             createdAt: createdAt?.trimmingCharacters(in: .whitespacesAndNewlines),
             updatedAt: updatedAt?.trimmingCharacters(in: .whitespacesAndNewlines),
             confidence: confidence,

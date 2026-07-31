@@ -226,12 +226,23 @@ cd /Volumes/WDBlack4TB/Code/HermesMacOS && xcodebuild -project HermesMacOS.xcode
 
 ## Task Summary
 
-- **Total tasks**: 46
+- **Total tasks**: 51
 - **Setup**: 4 tasks
 - **Foundational**: 6 tasks
 - **User Story 1**: 9 tasks
 - **User Story 2**: 9 tasks
 - **User Story 3**: 9 tasks
 - **Polish**: 9 tasks
+- **Convergence**: 5 tasks
 - **Parallel tasks**: 17
 - **MVP scope**: Phase 1, Phase 2, and User Story 1
+
+---
+
+## Phase 7: Convergence
+
+- [x] T047 Replace semantic `arecall(query: "memory")` retrieval with the Hindsight memory inventory/list API using provider-side `search_query`, `limit`, and `offset`, and decode exact total/page metadata in HermesMacOS/HermesHindsightMemoryClient.swift with deterministic coverage in HermesMacOSTest/Technical/HindsightMemoryClientTests.swift per FR-006, FR-007, and FR-008
+- [x] T048 Add debounced live filter application while the user types, reset pagination to page zero, cancel superseded filter loads, and cover the behavior without timing sleeps in HermesMacOS/HermesMemoryView.swift, HermesMacOS/HermesMemoryStore.swift, and HermesMacOSTest/Functional/MemoryTabWorkflowTests.swift per US3/AC1 and SC-005
+- [x] T049 Propagate the active Hermes home/profile/provider bank context from the app shell into HermesMemoryStore and HermesHindsightMemoryClient, and safely reload Memory state when that context changes, with multi-profile tests in HermesMacOS/ContentView.swift, HermesMacOS/HermesMemoryStore.swift, HermesMacOS/HermesHindsightMemoryClient.swift, and HermesMacOSTest/Technical/HindsightMemoryClientTests.swift per FR-006 and plan: provider context
+- [x] T050 Make superseded Memory list operations cancellable through the store/client/helper boundary while retaining stale-response guards and bounded process timeouts, and add cancellation tests in HermesMacOS/HermesMemoryStore.swift, HermesMacOS/HermesHindsightMemoryClient.swift, and HermesMacOSTest/Functional/MemoryTabWorkflowTests.swift per plan: cancellable operations
+- [x] T051 Add the requested Settings and Memory labels, controls, pagination, empty/error, delete-confirmation, and accessibility strings to HermesMacOS/Localizable.xcstrings, then strengthen HermesMacOSTest/Functional/LocalizationAndAccessibilityTests.swift to verify catalog-backed feature strings per T006 and Constitution I/V

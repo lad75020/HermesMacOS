@@ -21,11 +21,11 @@ enum HindsightMemoryFixtures {
     static let providerError = "Traceback api_key=[REDACTED] failed with token [REDACTED]"
 
     static func listJSON() -> Data {
-        Data(#"{"success":true,"total_count":2,"has_more":false,"results":[{"memory_id":"h-1","text":"A retained Hindsight memory","fact_type":"experience","context":"test","confidence":0.92,"metadata":{"bank":"default"}},{"id":"h-2","content":"Second memory with optional metadata","kind":"world"}]}"#.utf8)
+        Data(#"{"success":true,"items":[{"id":"h-1","text":"A retained Hindsight memory","fact_type":"experience","context":"test","mentioned_at":"2026-06-28T10:00:00Z","proof_count":2,"tags":["fixture"]},{"id":"h-2","text":"Second memory with optional metadata","fact_type":"world"}],"total":2,"limit":10,"offset":0,"bank_id":"bank-default","profile":"default"}"#.utf8)
     }
 
     static func malformedListJSON() -> Data {
-        Data(#"{"success":true,"results":[{"memory_id":"missing-content"}]}"#.utf8)
+        Data(#"{"success":true,"items":[{"id":"missing-content"}],"total":1,"limit":10,"offset":0}"#.utf8)
     }
 
     static func deleteJSON(id: String = "h-1") -> Data {
