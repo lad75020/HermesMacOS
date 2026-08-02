@@ -493,6 +493,7 @@ struct ContentView: View {
     @State private var chatSession = HermesChatSession()
     @State private var clipboardHistory = HermesClipboardHistoryStore()
     @State private var promptHistory = HermesPromptHistoryStore()
+    @State private var tuiConversationHistory = HermesTUIConversationHistoryStore()
     @State private var historySearchSession = HermesDashboardHistorySearchSession()
     @State private var sessionsStore = HermesSessionsStore()
     @State private var approvalsInboxStore = HermesApprovalsInboxStore()
@@ -737,6 +738,9 @@ struct ContentView: View {
                 selectedWorkspaceID: selectedWorkspaceBinding,
                 chatSession: chatSession,
                 installationSession: installationSession,
+                tuiConversationHistory: tuiConversationHistory,
+                dashboardURL: dashboardURL,
+                apiSettings: $apiSettings,
                 connectedHostName: connectedHostName,
                 connectedWindowID: windowID,
                 onReviewInstallationWithHermes: reviewInstallationWithHermes

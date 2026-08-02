@@ -12,8 +12,15 @@ import UniformTypeIdentifiers
 private enum HermesMessagesHistoryMode: String, CaseIterable, Identifiable {
     case prompt
     case response
+    case tuiGateway
     var id: String { rawValue }
-    var title: String { self == .prompt ? String(localized: "Prompt") : String(localized: "Response") }
+    var title: String {
+        switch self {
+        case .prompt: String(localized: "Prompt")
+        case .response: String(localized: "Response")
+        case .tuiGateway: String(localized: "TUI Gateway")
+        }
+    }
 }
 
 struct HermesUtilitiesView: View {
@@ -23,6 +30,9 @@ struct HermesUtilitiesView: View {
     @Binding var selectedWorkspaceID: HermesAskWorkspace.ID
     @Bindable var chatSession: HermesChatSession
     @Bindable var installationSession: HermesInstallationSession
+    @Bindable var tuiConversationHistory: HermesTUIConversationHistoryStore
+    let dashboardURL: String
+    @Binding var apiSettings: HermesAPISettings
     let connectedHostName: String
     let connectedWindowID: UUID
     var onReviewInstallationWithHermes: (String) -> Void
@@ -129,6 +139,7 @@ struct HermesUtilitiesView: View {
         switch messagesHistoryMode {
         case .prompt: String(localized: "Last \(promptHistory.entries.count) of 10 prompts sent to Hermes")
         case .response: String(localized: "Last \(promptHistory.responseEntries.count) of 10 Hermes responses")
+        case .tuiGateway: String(localized: "\(tuiConversationHistory.conversations.count) TUI Gateway conversations")
         }
     }
 
@@ -211,18 +222,80 @@ struct HermesUtilitiesView: View {
                 ForEach(HermesMessagesHistoryMode.allCases) { mode in Text(mode.title).tag(mode) }
             }
             .pickerStyle(.segmented)
-            Toggle("Save prompt and response history", isOn: $messageHistoryPersistenceEnabled)
-                .tint(.hermesActionBlue)
-            Button(role: .destructive) {
-                if messagesHistoryMode == .prompt { promptHistory.clear(); historyStatusMessage = String(localized: "Prompt history cleared.") }
-                else { promptHistory.clearResponses(); historyStatusMessage = String(localized: "Response history cleared.") }
-            } label: { Label("Clear", systemImage: "trash") }
-            .buttonStyle(.bordered)
-            .disabled(messagesHistoryMode == .prompt ? promptHistory.entries.isEmpty : promptHistory.responseEntries.isEmpty)
-            Text(historyStatusMessage).font(.caption).foregroundStyle(Color.hermesSecondaryText)
-            if messagesHistoryMode == .prompt { promptHistoryList } else { responseHistoryList }
+            .onChange(of: messagesHistoryMode) { _, newMode in
+                if newMode == .tuiGateway {
+                    tuiConversationHistory.loadIfNeeded(dashboardURL: dashboardURL, apiSettings: apiSettings)
+                }
+            }
+
+            if messagesHistoryMode == .tuiGateway {
+                tuiGatewaySection
+            } else {
+                localHistorySection
+            }
         }
         .padding(.top, 12)
+    }
+
+    @ViewBuilder private var localHistorySection: some View {
+        Toggle("Save prompt and response history", isOn: $messageHistoryPersistenceEnabled)
+            .tint(.hermesActionBlue)
+        Button(role: .destructive) {
+            if messagesHistoryMode == .prompt { promptHistory.clear(); historyStatusMessage = String(localized: "Prompt history cleared.") }
+            else { promptHistory.clearResponses(); historyStatusMessage = String(localized: "Response history cleared.") }
+        } label: { Label("Clear", systemImage: "trash") }
+        .buttonStyle(.bordered)
+        .disabled(messagesHistoryMode == .prompt ? promptHistory.entries.isEmpty : promptHistory.responseEntries.isEmpty)
+        Text(historyStatusMessage).font(.caption).foregroundStyle(Color.hermesSecondaryText)
+        if messagesHistoryMode == .prompt { promptHistoryList } else { responseHistoryList }
+    }
+
+    @ViewBuilder private var tuiGatewaySection: some View {
+        HStack(spacing: 10) {
+            Button { tuiConversationHistory.load(dashboardURL: dashboardURL, apiSettings: apiSettings) } label: {
+                Label(tuiConversationHistory.isLoading ? String(localized: "Loading…") : String(localized: "Refresh"), systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .disabled(tuiConversationHistory.isLoading)
+            if tuiConversationHistory.isLoading {
+                Button("Cancel") { tuiConversationHistory.cancel() }.buttonStyle(.bordered)
+                ProgressView().controlSize(.small)
+            }
+            Spacer()
+        }
+        Text(tuiConversationHistory.status).font(.caption).foregroundStyle(Color.hermesSecondaryText)
+        if !tuiConversationHistory.lastErrorMessage.isEmpty {
+            Text(tuiConversationHistory.lastErrorMessage).font(.caption).foregroundStyle(Color.hermesDestructive)
+        }
+        tuiGatewayHistoryList
+    }
+
+    @ViewBuilder private var tuiGatewayHistoryList: some View {
+        if tuiConversationHistory.conversations.isEmpty {
+            ContentUnavailableView(
+                "No TUI Gateway conversations",
+                systemImage: "terminal",
+                description: Text(tuiConversationHistory.isLoading ? "Reading TUI Gateway conversations from the Hermes dashboard…" : "Start a TUI Gateway conversation, then refresh to see its prompt and final answer here.")
+            )
+            .frame(maxWidth: .infinity, minHeight: 220)
+        } else {
+            LazyVStack(spacing: 10) {
+                ForEach(tuiConversationHistory.conversations) { conversation in
+                    HermesTUIConversationHistoryRow(
+                        conversation: conversation,
+                        onCopyPrompt: { copyToClipboard(conversation.userPrompt, label: String(localized: "Copied TUI Gateway prompt to the clipboard.")) },
+                        onCopyAnswer: { copyToClipboard(conversation.finalAnswer, label: String(localized: "Copied TUI Gateway answer to the clipboard.")) }
+                    )
+                }
+            }
+        }
+    }
+
+    private func copyToClipboard(_ text: String, label: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        historyStatusMessage = label
     }
 
     @ViewBuilder private var promptHistoryList: some View {
@@ -357,6 +430,86 @@ private struct HermesPromptHistoryRow: View {
 private struct HermesResponseHistoryRow: View {
     let entry: HermesResponseHistoryEntry
     var body: some View { historyRow(systemImage: entry.source.systemImage, badge: entry.source.displayName, title: entry.title, subtitle: entry.subtitle, badgeIcon: "text.bubble") }
+}
+
+private struct HermesTUIConversationHistoryRow: View {
+    let conversation: HermesTUIConversationSummary
+    let onCopyPrompt: () -> Void
+    let onCopyAnswer: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Color.hermesActionBlue)
+                    .frame(width: 34, height: 34)
+                    .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.10), cornerRadius: 11)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(conversation.title)
+                        .hermesWebsiteTitleFont(size: 15, weight: .bold)
+                        .lineLimit(1)
+                    if !conversation.subtitle.isEmpty {
+                        Text(conversation.subtitle)
+                            .font(.caption)
+                            .foregroundStyle(Color.hermesSecondaryText)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+
+            messageBlock(
+                label: String(localized: "User prompt"),
+                icon: "text.quote",
+                text: conversation.userPrompt,
+                placeholder: String(localized: "No user prompt recorded."),
+                canCopy: conversation.hasUserPrompt,
+                onCopy: onCopyPrompt
+            )
+
+            messageBlock(
+                label: String(localized: "Agent final answer"),
+                icon: "text.bubble",
+                text: conversation.finalAnswer,
+                placeholder: String(localized: "No agent answer recorded."),
+                canCopy: conversation.hasFinalAnswer,
+                onCopy: onCopyAnswer
+            )
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hermesGlassPanel(tint: Color.hermesActionBlue.opacity(0.05), cornerRadius: 18)
+    }
+
+    @ViewBuilder
+    private func messageBlock(label: String, icon: String, text: String, placeholder: String, canCopy: Bool, onCopy: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Label(label, systemImage: icon)
+                    .hermesWebsiteLabelFont(size: 11, weight: .bold)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                Spacer(minLength: 0)
+                Button(action: onCopy) {
+                    Image(systemName: "doc.on.clipboard")
+                        .foregroundStyle(Color.hermesActionBlue)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canCopy)
+                .help(String(localized: "Copy to clipboard"))
+            }
+            Text(canCopy ? text : placeholder)
+                .font(.callout)
+                .foregroundStyle(canCopy ? Color.primary : Color.hermesSecondaryText)
+                .textSelection(.enabled)
+                .lineLimit(8)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .hermesGlassPanel(tint: Color.hermesSurfaceInput.opacity(0.55), cornerRadius: 12)
+    }
 }
 
 @MainActor

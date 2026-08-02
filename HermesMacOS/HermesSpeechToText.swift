@@ -6,6 +6,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 import Observation
+import os
 import Speech
 
 enum HermesSpeechToTextEngine: String, CaseIterable, Identifiable {
@@ -408,14 +409,21 @@ final class HermesSpeechToTextSession {
         let capacity = AVAudioFrameCount(max(1, Double(buffer.frameLength) * ratio).rounded(.up))
         guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else { return nil }
 
-        var didProvideInput = false
+        let didProvideInput = OSAllocatedUnfairLock(initialState: false)
         var conversionError: NSError?
         converter.convert(to: outputBuffer, error: &conversionError) { _, status in
-            if didProvideInput {
+            let shouldProvideInput = didProvideInput.withLock { didProvideInput in
+                if didProvideInput {
+                    return false
+                }
+                didProvideInput = true
+                return true
+            }
+
+            if !shouldProvideInput {
                 status.pointee = .noDataNow
                 return nil
             }
-            didProvideInput = true
             status.pointee = .haveData
             return buffer
         }
