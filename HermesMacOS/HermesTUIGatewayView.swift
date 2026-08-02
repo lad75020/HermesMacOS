@@ -161,6 +161,17 @@ enum HermesTUIGatewayEventPolicy {
     }
 }
 
+enum HermesTUIGatewayWebSocketPolicy {
+    // Native vision tool results can include a base64 image payload. Foundation's
+    // 1 MiB default disconnects the TUI Gateway with close code 1009 before the
+    // assistant can finish streaming, while Hermes bounds native image embeds.
+    static let maximumMessageSize = 32 * 1_024 * 1_024
+
+    static func configure(_ task: URLSessionWebSocketTask) {
+        task.maximumMessageSize = maximumMessageSize
+    }
+}
+
 struct HermesTUIGatewayMessage: Identifiable, Equatable {
     enum Role: String, Equatable {
         case user
@@ -654,6 +665,7 @@ final class HermesTUIGatewayStore {
             let wsURL = try await webSocketURL(baseURL: baseURL, apiSettings: apiSettings)
             let session = HermesNetworkSessionFactory.session(for: apiSettings)
             let task = session.webSocketTask(with: wsURL)
+            HermesTUIGatewayWebSocketPolicy.configure(task)
             webSocketTask = task
             task.resume()
             isConnected = true

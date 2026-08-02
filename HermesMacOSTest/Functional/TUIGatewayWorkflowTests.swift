@@ -294,6 +294,16 @@ final class TUIGatewayWorkflowTests: XCTestCase {
         XCTAssertNil(store.messages[1].currentContextUsage)
     }
 
+    func testTUIGatewayConfiguresWebSocketForNativeVisionFrames() {
+        let session = URLSession(configuration: .ephemeral)
+        let task = session.webSocketTask(with: URL(string: "ws://127.0.0.1:9")!)
+
+        XCTAssertEqual(task.maximumMessageSize, 1_048_576)
+        HermesTUIGatewayWebSocketPolicy.configure(task)
+
+        XCTAssertEqual(task.maximumMessageSize, 32 * 1_024 * 1_024)
+    }
+
     func testTUIGatewayRegistersPendingResponseBeforeSendingRequest() throws {
         let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesTUIGatewayView.swift")
         let requestStart = try XCTUnwrap(source.range(of: "private func request(_ method:"))
