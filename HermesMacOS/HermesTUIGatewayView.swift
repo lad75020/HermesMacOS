@@ -202,6 +202,58 @@ struct HermesTUIModelCatalog: Equatable {
     var capabilities: [String: HermesTUIModelCapabilities] = [:]
 }
 
+struct HermesTUISessionCreationIdentity: Equatable, Sendable {
+    let profile: String
+    let generation: Int
+
+    init(profile: String, generation: Int) {
+        let trimmedProfile = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.profile = trimmedProfile.isEmpty ? "default" : trimmedProfile
+        self.generation = generation
+    }
+
+    func isCurrent(_ currentIdentity: HermesTUISessionCreationIdentity?) -> Bool {
+        guard let currentIdentity else { return false }
+        return self == currentIdentity
+    }
+}
+
+struct HermesTUIModelOptionsRefreshIdentity: Equatable, Sendable {
+    let selectedProfile: String
+    let activeProfile: String
+    let sessionID: String
+    let generation: Int
+
+    init(selectedProfile: String, activeProfile: String, sessionID: String, generation: Int) {
+        self.selectedProfile = Self.normalizedProfile(selectedProfile)
+        self.activeProfile = Self.normalizedProfile(activeProfile)
+        self.sessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.generation = generation
+    }
+
+    var shouldQuery: Bool {
+        !sessionID.isEmpty && selectedProfile == activeProfile
+    }
+
+    func catalogIfCurrent(
+        _ catalog: HermesTUIModelCatalog,
+        selectedProfile: String,
+        activeProfile: String,
+        sessionID: String,
+        generation: Int
+    ) -> HermesTUIModelCatalog? {
+        guard shouldQuery,
+              self == Self(selectedProfile: selectedProfile, activeProfile: activeProfile, sessionID: sessionID, generation: generation)
+        else { return nil }
+        return catalog
+    }
+
+    private static func normalizedProfile(_ profile: String) -> String {
+        let trimmed = profile.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "default" : trimmed
+    }
+}
+
 struct HermesTUIModelCapabilities: Equatable {
     var fast: Bool?
     var reasoning: Bool?
@@ -366,6 +418,9 @@ final class HermesTUIGatewayStore {
 
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
+    private var sessionCreationGeneration = 0
+    private var sessionCreationIdentity: HermesTUISessionCreationIdentity?
+    private var sessionCreationTask: Task<Void, Never>?
     private var requestCounter = 0
     private var pendingResponses: [String: CheckedContinuation<JSONValue, Error>] = [:]
     private var activeAssistantMessageID: UUID?
@@ -391,6 +446,10 @@ final class HermesTUIGatewayStore {
     }
 
     func disconnect() {
+        sessionCreationGeneration += 1
+        sessionCreationIdentity = nil
+        sessionCreationTask?.cancel()
+        sessionCreationTask = nil
         receiveTask?.cancel()
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
@@ -411,7 +470,13 @@ final class HermesTUIGatewayStore {
     func createSession(profile: String, model: String = "", provider: String = "", fast: Bool, reasoningEffort: String? = nil) {
         guard !isStreaming else { return }
         let selectedProfile = normalizedProfile(profile)
-        Task { await createGatewaySession(profile: selectedProfile, model: model, provider: provider, fast: fast, reasoningEffort: reasoningEffort) }
+        sessionCreationGeneration += 1
+        sessionCreationTask?.cancel()
+        let identity = HermesTUISessionCreationIdentity(profile: selectedProfile, generation: sessionCreationGeneration)
+        sessionCreationIdentity = identity
+        sessionCreationTask = Task {
+            await createGatewaySession(profile: selectedProfile, model: model, provider: provider, fast: fast, reasoningEffort: reasoningEffort, identity: identity)
+        }
     }
 
     func submitPrompt(_ prompt: String, attachment: HermesPromptAttachment? = nil, attachmentPath: String = "", model: String = "", provider: String = "", fast: Bool = false, reasoningEffort: String? = nil) {
@@ -597,7 +662,15 @@ final class HermesTUIGatewayStore {
             receiveTask?.cancel()
             receiveTask = Task { await receiveLoop(task) }
             if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                await createGatewaySession(profile: selectedProfile, model: selectedModel, provider: selectedProvider, fast: fast, reasoningEffort: reasoningEffort)
+                sessionCreationGeneration += 1
+                sessionCreationTask?.cancel()
+                let identity = HermesTUISessionCreationIdentity(profile: selectedProfile, generation: sessionCreationGeneration)
+                sessionCreationIdentity = identity
+                let creationTask = Task {
+                    await createGatewaySession(profile: selectedProfile, model: selectedModel, provider: selectedProvider, fast: fast, reasoningEffort: reasoningEffort, identity: identity)
+                }
+                sessionCreationTask = creationTask
+                await creationTask.value
             }
             await refreshActiveSessions()
         } catch {
@@ -654,7 +727,7 @@ final class HermesTUIGatewayStore {
         }
     }
 
-    private func createGatewaySession(profile: String, model: String = "", provider: String = "", fast: Bool, reasoningEffort: String? = nil) async {
+    private func createGatewaySession(profile: String, model: String = "", provider: String = "", fast: Bool, reasoningEffort: String? = nil, identity: HermesTUISessionCreationIdentity) async {
         do {
             let selectedProfile = normalizedProfile(profile)
             var params: [String: JSONValue] = ["profile": .string(selectedProfile)]
@@ -666,6 +739,8 @@ final class HermesTUIGatewayStore {
             let requestedReasoningEffort = HermesReasoningEffort.normalized(reasoningEffort ?? "")
             if let requestedReasoningEffort { params["reasoning_effort"] = .string(requestedReasoningEffort) }
             let result = try await request("session.create", params: params, timeoutSeconds: 120)
+            guard !Task.isCancelled else { return }
+            guard identity.isCurrent(sessionCreationIdentity) else { return }
             let object = result.objectValue
             sessionID = object["session_id"]?.stringValue ?? ""
             storedSessionID = object["stored_session_id"]?.stringValue ?? ""
@@ -683,6 +758,8 @@ final class HermesTUIGatewayStore {
             appendEvent(title: "Session ready", content: "Created live TUI session \(shortSessionID(sessionID)).", eventType: "session.create")
             await refreshActiveSessions()
         } catch {
+            guard !Task.isCancelled else { return }
+            guard identity.isCurrent(sessionCreationIdentity) else { return }
             lastErrorMessage = error.localizedDescription
             connectionStatus = "Session create failed"
         }
@@ -1502,6 +1579,8 @@ struct HermesTUIGatewayView: View {
     @State private var selectedModelProvider = ""
     @State private var modelRefreshError = ""
     @State private var isRefreshingModels = false
+    @State private var modelOptionsRefreshGeneration = 0
+    @State private var modelOptionsRefreshTask: Task<Void, Never>?
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var localPathSuggestions = HermesLocalPathSuggestionsStore()
     @State private var selectedSkillIndex = 0
@@ -1529,12 +1608,14 @@ struct HermesTUIGatewayView: View {
             clampFastModeIfNeeded()
             clampReasoningEffortIfNeeded()
             syncSelectedModelWithProfile(resetToProfileDefault: true)
-            Task { await refreshAvailableModels() }
+            scheduleAvailableModelsRefresh()
         }
         .onChange(of: store.isConnected) { _, isConnected in
-            if isConnected { Task { await refreshAvailableModels() } }
-            else { availableModels = fallbackModelOptions() }
+            if isConnected { scheduleAvailableModelsRefresh() }
+            else { invalidateAvailableModelsRefresh() }
         }
+        .onChange(of: store.activeProfile) { _, _ in scheduleAvailableModelsRefresh() }
+        .onChange(of: store.sessionID) { _, _ in scheduleAvailableModelsRefresh() }
         .onChange(of: store.activeModel) { _, model in
             let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty { selectedModel = trimmed }
@@ -1546,7 +1627,7 @@ struct HermesTUIGatewayView: View {
         .onChange(of: modelCapabilities) { _, _ in applyRestoredReasoningEffort(store.reasoningEffort) }
         .onChange(of: store.reasoningEffort) { _, effort in applyRestoredReasoningEffort(effort) }
         .onChange(of: promptText) { _, _ in handlePromptSkillQueryChange() }
-        .onDisappear { }
+        .onDisappear { modelOptionsRefreshTask?.cancel() }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
         }
@@ -1581,7 +1662,7 @@ struct HermesTUIGatewayView: View {
                     isLoading: isRefreshingModels,
                     isDisabled: store.isConnecting || store.isStreaming || store.isResumingSession,
                     onModelSelected: handleModelSelection,
-                    onRefresh: { Task { await refreshAvailableModels(refresh: true) } }
+                    onRefresh: { scheduleAvailableModelsRefresh(refresh: true) }
                 )
                 VStack(alignment: .leading, spacing: 6) {
                     HermesTUIFastTogglePill(
@@ -1942,17 +2023,65 @@ struct HermesTUIGatewayView: View {
         }
     }
 
-    private func refreshAvailableModels(refresh: Bool = false) async {
+    private func scheduleAvailableModelsRefresh() {
+        scheduleAvailableModelsRefresh(refresh: false)
+    }
+
+    private func scheduleAvailableModelsRefresh(refresh: Bool) {
+        modelOptionsRefreshGeneration += 1
+        modelOptionsRefreshTask?.cancel()
+        let generation = modelOptionsRefreshGeneration
+        modelOptionsRefreshTask = Task {
+            await refreshAvailableModels(generation: generation, refresh: refresh)
+        }
+    }
+
+    private func invalidateAvailableModelsRefresh() {
+        modelOptionsRefreshGeneration += 1
+        modelOptionsRefreshTask?.cancel()
+        modelOptionsRefreshTask = nil
+        isRefreshingModels = false
+        availableModels = fallbackModelOptions()
+        modelCapabilities = [:]
+        selectedModelProvider = selectedAPIProfile?.provider ?? ""
+        modelRefreshError = ""
+    }
+
+    private func refreshAvailableModels(generation: Int, refresh: Bool = false) async {
+        let identity = HermesTUIModelOptionsRefreshIdentity(
+            selectedProfile: selectedProfile,
+            activeProfile: store.activeProfile,
+            sessionID: store.sessionID,
+            generation: generation
+        )
+        guard isCurrentModelOptionsRefresh(identity) else { return }
         guard store.isConnected else {
             availableModels = fallbackModelOptions()
             modelCapabilities = [:]
+            selectedModelProvider = selectedAPIProfile?.provider ?? ""
             modelRefreshError = ""
+            isRefreshingModels = false
+            return
+        }
+        guard identity.shouldQuery else {
+            availableModels = fallbackModelOptions()
+            modelCapabilities = [:]
+            selectedModelProvider = selectedAPIProfile?.provider ?? ""
+            modelRefreshError = ""
+            isRefreshingModels = false
             return
         }
         isRefreshingModels = true
-        defer { isRefreshingModels = false }
         do {
-            let catalog = try await store.fetchModelOptions(profile: selectedProfile, refresh: refresh)
+            let fetchedCatalog = try await store.fetchModelOptions(profile: identity.selectedProfile, refresh: refresh)
+            guard !Task.isCancelled,
+                  let catalog = identity.catalogIfCurrent(
+                fetchedCatalog,
+                selectedProfile: selectedProfile,
+                activeProfile: store.activeProfile,
+                sessionID: store.sessionID,
+                generation: modelOptionsRefreshGeneration
+            ), store.isConnected else { return }
             availableModels = catalog.models.isEmpty ? fallbackModelOptions() : catalog.models
             modelCapabilities = catalog.capabilities
             selectedModelProvider = catalog.provider.isEmpty ? selectedAPIProfile?.provider ?? "" : catalog.provider
@@ -1961,11 +2090,32 @@ struct HermesTUIGatewayView: View {
             }
             modelRefreshError = ""
             clampReasoningEffortIfNeeded()
+            isRefreshingModels = false
+        } catch is CancellationError {
+            guard isCurrentModelOptionsRefresh(identity) else { return }
+            isRefreshingModels = false
         } catch {
+            guard isCurrentModelOptionsRefresh(identity) else { return }
+            guard !Task.isCancelled else {
+                isRefreshingModels = false
+                return
+            }
+            guard store.isConnected else { return }
             availableModels = fallbackModelOptions()
             modelCapabilities = [:]
+            selectedModelProvider = selectedAPIProfile?.provider ?? ""
             modelRefreshError = String(localized: "Models unavailable: \(error.localizedDescription)")
+            isRefreshingModels = false
         }
+    }
+
+    private func isCurrentModelOptionsRefresh(_ identity: HermesTUIModelOptionsRefreshIdentity) -> Bool {
+        identity == HermesTUIModelOptionsRefreshIdentity(
+            selectedProfile: selectedProfile,
+            activeProfile: store.activeProfile,
+            sessionID: store.sessionID,
+            generation: modelOptionsRefreshGeneration
+        )
     }
 
     private func handleModelSelection(_ newModel: String) {
