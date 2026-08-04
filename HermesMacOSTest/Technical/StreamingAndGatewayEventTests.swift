@@ -6,6 +6,7 @@ final class StreamingAndGatewayEventTests: XCTestCase {
         XCTAssertTrue(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("sessions.changed"))
         XCTAssertTrue(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("cron.changed"))
         XCTAssertTrue(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("pet.changed"))
+        XCTAssertTrue(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("platforms.changed"))
         XCTAssertFalse(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("message.delta"))
         XCTAssertFalse(HermesTUIGatewayEventPolicy.isGlobalChangeNotification("unknown.fixture"))
     }

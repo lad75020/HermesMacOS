@@ -153,7 +153,9 @@ enum HermesTUIGatewayEventPolicy {
     private static let globalChangeNotifications: Set<String> = [
         "sessions.changed",
         "cron.changed",
-        "pet.changed"
+        "pet.changed",
+        // Connectivity/health refreshes belong to the Messaging page, not a chat turn.
+        "platforms.changed"
     ]
 
     static func isGlobalChangeNotification(_ eventType: String) -> Bool {
