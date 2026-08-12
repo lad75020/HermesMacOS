@@ -411,7 +411,16 @@ final class HermesTUIWorkspace: Identifiable {
 @MainActor
 @Observable
 final class HermesTUIGatewayStore {
+    /// Event type emitted by the TUI gateway server for streamed background
+    /// terminal output chunks (`tui_gateway/server.py` → `agent.terminal.output`).
+    static let terminalOutputEventType = "agent.terminal.output"
+
     var messages: [HermesTUIGatewayMessage] = []
+    /// When false (default) the transcript hides streamed `agent.terminal.output`
+    /// bubbles; when true they are shown. Toggled by the checkbox next to the
+    /// live-sessions menu. Kept on the store so it persists across view refreshes
+    /// and per-workspace switches.
+    var showTerminalOutput = false
     var activeSessions: [HermesTUILiveSession] = []
     var sessionID = ""
     var storedSessionID = ""
@@ -445,6 +454,13 @@ final class HermesTUIGatewayStore {
 
     var canSendPrompt: Bool {
         isConnected && !isStreaming && !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Messages shown in the transcript. When `showTerminalOutput` is false,
+    /// streamed `agent.terminal.output` bubbles are filtered out.
+    var visibleMessages: [HermesTUIGatewayMessage] {
+        guard !showTerminalOutput else { return messages }
+        return messages.filter { $0.eventType != Self.terminalOutputEventType }
     }
 
     private func normalizedProfile(_ profile: String) -> String {
@@ -1751,6 +1767,10 @@ struct HermesTUIGatewayView: View {
                     Label("Live sessions", systemImage: "rectangle.stack.badge.person.crop")
                 }
                 .disabled(!store.isConnected || store.isStreaming)
+
+                Toggle("Terminal output", isOn: $store.showTerminalOutput)
+                    .toggleStyle(.checkbox)
+                    .help("Show streamed agent terminal output (agent.terminal.output) in the transcript. Off by default.")
             }
 
             if !store.lastErrorMessage.isEmpty {
@@ -1767,10 +1787,10 @@ struct HermesTUIGatewayView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
-                    if store.messages.isEmpty {
+                    if store.visibleMessages.isEmpty {
                         emptyState
                     } else {
-                        ForEach(store.messages) { message in
+                        ForEach(store.visibleMessages) { message in
                             HermesTUIGatewayBubble(
                                 message: message,
                                 responseText: Binding(
@@ -1794,8 +1814,9 @@ struct HermesTUIGatewayView: View {
                 .padding(.vertical, 16)
             }
             .onAppear { scrollToBottom(proxy, animated: false) }
-            .onChange(of: store.messages.count) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: store.visibleMessages.count) { _, _ in scrollToBottom(proxy) }
             .onChange(of: store.messages.last?.content) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: store.showTerminalOutput) { _, _ in scrollToBottom(proxy, animated: false) }
         }
     }
 
