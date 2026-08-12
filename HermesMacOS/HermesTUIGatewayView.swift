@@ -201,6 +201,18 @@ struct HermesTUIGatewayMessage: Identifiable, Equatable {
     var createdAt = Date()
 }
 
+private struct HermesTUIGatewayPendingStreamContent {
+    struct Identity: Equatable {
+        let type: String
+        let title: String
+        let role: HermesTUIGatewayMessage.Role
+        let eventType: String?
+    }
+
+    let identity: Identity
+    var chunks: [String]
+}
+
 struct HermesTUILiveSession: Identifiable, Equatable {
     let id: String
     let title: String
@@ -448,6 +460,9 @@ final class HermesTUIGatewayStore {
     private var activeAssistantMessageID: UUID?
     private var activeStreamMessageID: UUID?
     private var activeStreamContentType: String?
+    @ObservationIgnored private var pendingStreamContent: HermesTUIGatewayPendingStreamContent?
+    @ObservationIgnored private var pendingEventCount = 0
+    @ObservationIgnored private var streamFlushTask: Task<Void, Never>?
     private var currentTurnReceivedMessageDelta = false
     private var currentTurnMessageDeltaSegmentCount = 0
     private var pendingCurrentContextUsage: HermesTUICurrentContextUsage?
@@ -976,8 +991,21 @@ final class HermesTUIGatewayStore {
             }
             return
         }
-        eventCount += 1
+        recordIncomingEvent(event)
         handle(event)
+    }
+
+    private func recordIncomingEvent(_ event: HermesTUIGatewayEvent) {
+        guard Self.isBatchedStreamEvent(event.type) else {
+            flushPendingStreamContent()
+            eventCount += 1
+            return
+        }
+        pendingEventCount += 1
+    }
+
+    private static func isBatchedStreamEvent(_ eventType: String) -> Bool {
+        eventType == "message.delta" || eventType.hasSuffix(".delta")
     }
 
     private func handle(_ event: HermesTUIGatewayEvent) {
@@ -1008,7 +1036,7 @@ final class HermesTUIGatewayStore {
         case "message.delta":
             let delta = payload["text"]?.stringValue ?? ""
             if !delta.isEmpty { appendAssistantDelta(delta) }
-            connectionStatus = shortStatus("Receiving message")
+            setConnectionStatusIfChanged(shortStatus("Receiving message"))
         case "message.complete":
             let final = payload["text"]?.stringValue ?? ""
             let status = payload["status"]?.stringValue ?? "complete"
@@ -1031,7 +1059,7 @@ final class HermesTUIGatewayStore {
         case "reasoning.delta", "thinking.delta":
             let text = payload["text"]?.stringValue ?? ""
             if !text.isEmpty {
-                appendStreamContent(
+                queueStreamContent(
                     type: event.type,
                     title: event.type == "thinking.delta" ? "Thinking" : "Reasoning",
                     content: text,
@@ -1039,7 +1067,7 @@ final class HermesTUIGatewayStore {
                     eventType: event.type
                 )
             }
-            connectionStatus = shortStatus(event.type == "thinking.delta" ? "Thinking" : "Reasoning")
+            setConnectionStatusIfChanged(shortStatus(event.type == "thinking.delta" ? "Thinking" : "Reasoning"))
         case "tool.start":
             connectionStatus = shortStatus("Running \(payload["name"]?.stringValue ?? "tool")")
             appendEvent(title: "Tool started", content: toolSummary(payload: payload), eventType: event.type)
@@ -1078,9 +1106,9 @@ final class HermesTUIGatewayStore {
         case let deltaType where deltaType.hasSuffix(".delta"):
             let text = payload["text"]?.stringValue ?? eventSummary(payload: payload)
             if !text.isEmpty {
-                appendStreamContent(type: deltaType, title: streamTitle(for: deltaType), content: text, role: .event, eventType: deltaType)
+                queueStreamContent(type: deltaType, title: streamTitle(for: deltaType), content: text, role: .event, eventType: deltaType)
             }
-            connectionStatus = shortStatus(deltaType)
+            setConnectionStatusIfChanged(shortStatus(deltaType))
         default:
             connectionStatus = shortStatus(event.type)
             appendEvent(title: event.type, content: eventSummary(payload: payload), eventType: event.type)
@@ -1209,21 +1237,19 @@ final class HermesTUIGatewayStore {
         return try JSONDecoder().decode(HermesTUIGatewayWSTicketResponse.self, from: data).ticket
     }
 
-    private func appendAssistantDelta(_ delta: String) {
+    func appendAssistantDelta(_ delta: String) {
         currentTurnReceivedMessageDelta = true
-        let result = appendStreamContent(type: "message.delta", title: "Hermes", content: delta, role: .assistant)
-        if result.created {
-            currentTurnMessageDeltaSegmentCount += 1
-        }
-        activeAssistantMessageID = result.id
+        queueStreamContent(type: "message.delta", title: "Hermes", content: delta, role: .assistant)
     }
 
     private func updateAssistantMessage(text: String) {
+        flushPendingStreamContent()
         let result = appendStreamContent(type: "message.delta", title: "Hermes", content: text, role: .assistant)
         activeAssistantMessageID = result.id
     }
 
     private func completeAssistantMessage(text: String) {
+        flushPendingStreamContent()
         if !currentTurnReceivedMessageDelta {
             updateAssistantMessage(text: text)
             return
@@ -1233,6 +1259,55 @@ final class HermesTUIGatewayStore {
               let index = messages.firstIndex(where: { $0.id == activeAssistantMessageID })
         else { return }
         messages[index].content = text
+    }
+
+    private func queueStreamContent(type: String, title: String, content: String, role: HermesTUIGatewayMessage.Role, eventType: String? = nil) {
+        guard !content.isEmpty else { return }
+        let identity = HermesTUIGatewayPendingStreamContent.Identity(type: type, title: title, role: role, eventType: eventType)
+        if pendingStreamContent?.identity == identity {
+            pendingStreamContent?.chunks.append(content)
+        } else {
+            flushPendingStreamContent()
+            pendingStreamContent = HermesTUIGatewayPendingStreamContent(identity: identity, chunks: [content])
+        }
+        scheduleStreamFlush()
+    }
+
+    private func scheduleStreamFlush() {
+        guard streamFlushTask == nil else { return }
+        streamFlushTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(50))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.flushPendingStreamContent()
+        }
+    }
+
+    func flushPendingStreamContent() {
+        streamFlushTask?.cancel()
+        streamFlushTask = nil
+        if pendingEventCount > 0 {
+            eventCount += pendingEventCount
+            pendingEventCount = 0
+        }
+        guard let pendingStreamContent else { return }
+        self.pendingStreamContent = nil
+        let result = appendStreamContent(
+            type: pendingStreamContent.identity.type,
+            title: pendingStreamContent.identity.title,
+            content: pendingStreamContent.chunks.joined(),
+            role: pendingStreamContent.identity.role,
+            eventType: pendingStreamContent.identity.eventType
+        )
+        if pendingStreamContent.identity.role == .assistant {
+            if result.created {
+                currentTurnMessageDeltaSegmentCount += 1
+            }
+            activeAssistantMessageID = result.id
+        }
     }
 
     @discardableResult
@@ -1257,6 +1332,7 @@ final class HermesTUIGatewayStore {
     }
 
     private func resetStreamGrouping(resetTurn: Bool = true) {
+        flushPendingStreamContent()
         activeAssistantMessageID = nil
         activeStreamMessageID = nil
         activeStreamContentType = nil
@@ -1357,6 +1433,10 @@ final class HermesTUIGatewayStore {
         return String(normalized.prefix(37)) + "…"
     }
 
+    private func setConnectionStatusIfChanged(_ status: String) {
+        if connectionStatus != status { connectionStatus = status }
+    }
+
     private func shortSessionID(_ value: String) -> String {
         guard value.count > 12 else { return value }
         return String(value.prefix(12)) + "…"
@@ -1418,7 +1498,7 @@ struct HermesTUIGatewayWorkspacesView: View {
                         } label: {
                             Label("Delete Workspace", systemImage: "trash")
                         }
-                        .disabled(workspace.store.isStreaming || workspace.store.isConnecting || workspace.store.isResumingSession)
+                        .disabled(workspace.store.isConnecting || workspace.store.isResumingSession)
                     }
                     .help("Switch to TUI Gateway workspace \(workspace.number)")
                     .accessibilityLabel("TUI Gateway workspace \(workspace.number)")
@@ -1814,8 +1894,8 @@ struct HermesTUIGatewayView: View {
                 .padding(.vertical, 16)
             }
             .onAppear { scrollToBottom(proxy, animated: false) }
-            .onChange(of: store.visibleMessages.count) { _, _ in scrollToBottom(proxy) }
-            .onChange(of: store.messages.last?.content) { _, _ in scrollToBottom(proxy) }
+            .onChange(of: store.visibleMessages.count) { _, _ in scrollToBottom(proxy, animated: !store.isStreaming) }
+            .onChange(of: store.messages.last?.content) { _, _ in scrollToBottom(proxy, animated: !store.isStreaming) }
             .onChange(of: store.showTerminalOutput) { _, _ in scrollToBottom(proxy, animated: false) }
         }
     }
@@ -2336,12 +2416,10 @@ struct HermesTUIGatewayView: View {
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool = true) {
-        DispatchQueue.main.async {
-            if animated {
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("tui-gateway-bottom", anchor: .bottom) }
-            } else {
-                proxy.scrollTo("tui-gateway-bottom", anchor: .bottom)
-            }
+        if animated {
+            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("tui-gateway-bottom", anchor: .bottom) }
+        } else {
+            proxy.scrollTo("tui-gateway-bottom", anchor: .bottom)
         }
     }
 }

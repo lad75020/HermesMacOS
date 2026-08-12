@@ -221,6 +221,30 @@ final class TUIGatewayWorkflowTests: XCTestCase {
         XCTAssertEqual(HermesTUIWorkspace(number: 3, selectedReasoningEffort: "invalid").selectedReasoningEffort, "medium")
     }
 
+    func testClosingStreamingTUIWorkspaceKeepsGatewaySessionAlive() throws {
+        let contentSource = try HermesTestAssertions.readRepositoryFile("HermesMacOS/ContentView.swift")
+        let deleteStart = try XCTUnwrap(contentSource.range(of: "private func deleteTUIWorkspace("))
+        let deleteEnd = try XCTUnwrap(
+            contentSource.range(of: "private func resumeConversationInResponses", range: deleteStart.upperBound..<contentSource.endIndex)
+        )
+        let deleteSource = String(contentSource[deleteStart.lowerBound..<deleteEnd.lowerBound])
+
+        XCTAssertFalse(deleteSource.contains("guard !workspace.store.isStreaming"))
+        XCTAssertTrue(
+            deleteSource.contains("if workspace.store.isStreaming {")
+                && deleteSource.contains("backgroundTUIStreamingWorkspaces.append(workspace)")
+                && deleteSource.contains("else {\n            workspace.store.disconnect()")
+        )
+        XCTAssertTrue(
+            contentSource.contains("private func releaseCompletedBackgroundTUIWorkspaces()")
+                && contentSource.contains("completed.forEach { $0.store.disconnect() }")
+                && contentSource.contains("backgroundTUIStreamingWorkspaces.removeAll { !$0.store.isStreaming }")
+        )
+
+        let gatewaySource = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesTUIGatewayView.swift")
+        XCTAssertTrue(gatewaySource.contains(".disabled(workspace.store.isConnecting || workspace.store.isResumingSession)"))
+    }
+
     func testReasoningProtocolPayloadsUseSessionScopedConfiguration() throws {
         let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesTUIGatewayView.swift")
         XCTAssertTrue(source.contains("params[\"reasoning_effort\"] = .string(reasoningEffort)"))
@@ -292,6 +316,23 @@ final class TUIGatewayWorkflowTests: XCTestCase {
 
         XCTAssertNil(store.messages[0].currentContextUsage)
         XCTAssertNil(store.messages[1].currentContextUsage)
+    }
+
+    @MainActor
+    func testTUIGatewayBatchesLongAssistantStreamsBeforePublishingTranscript() {
+        let store = HermesTUIGatewayStore()
+        let deltas = (0..<10_000).map { "chunk-\($0);" }
+
+        for delta in deltas {
+            store.appendAssistantDelta(delta)
+        }
+
+        XCTAssertTrue(store.messages.isEmpty, "Rapid deltas must not invalidate the SwiftUI transcript one event at a time.")
+        store.flushPendingStreamContent()
+
+        XCTAssertEqual(store.messages.count, 1)
+        XCTAssertEqual(store.messages[0].role, .assistant)
+        XCTAssertEqual(store.messages[0].content, deltas.joined())
     }
 
     func testTUIGatewayConfiguresWebSocketForNativeVisionFrames() {

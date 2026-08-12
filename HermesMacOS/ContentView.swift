@@ -500,6 +500,9 @@ struct ContentView: View {
     @State private var kanbanStore = HermesKanbanStore()
     @State private var memoryStore = HermesMemoryStore()
     @State private var tuiWorkspaces = [HermesTUIWorkspace(number: 1)]
+    // Retains a dismissed live workspace until its gateway turn reaches a terminal event.
+    // Closing its visible tab must not cancel the underlying Hermes Agent session.
+    @State private var backgroundTUIStreamingWorkspaces: [HermesTUIWorkspace] = []
     @State private var selectedTUIWorkspaceID: HermesTUIWorkspace.ID?
     @State private var installationSession = HermesInstallationSession()
     @State private var configurationWebViewStore = HermesDashboardWebViewStore()
@@ -635,6 +638,9 @@ struct ContentView: View {
         .onChange(of: chatDraft) { _, newValue in HermesSettingsStore.saveChatDraft(newValue) }
         .onChange(of: askHermesTabVisible) { _, _ in applyVisibleTabFallback() }
         .onChange(of: chatHermesTabVisible) { _, _ in applyVisibleTabFallback() }
+        .onChange(of: backgroundTUIStreamingWorkspaces.map { $0.store.isStreaming }) { _, _ in
+            releaseCompletedBackgroundTUIWorkspaces()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .hermesWindowConnectionDidChange)) { notification in
             guard let changedWindowID = notification.object as? UUID, changedWindowID == windowID,
                   let connection = connectionCenter.connection(id: windowID)
@@ -831,13 +837,16 @@ struct ContentView: View {
     }
 
     private func deleteTUIWorkspace(_ workspace: HermesTUIWorkspace) {
-        guard !workspace.store.isStreaming,
-              !workspace.store.isConnecting,
+        guard !workspace.store.isConnecting,
               !workspace.store.isResumingSession,
               let deletedIndex = tuiWorkspaces.firstIndex(where: { $0.id == workspace.id }) else { return }
 
         let wasSelected = selectedTUIWorkspaceID == workspace.id
-        workspace.store.disconnect()
+        if workspace.store.isStreaming {
+            backgroundTUIStreamingWorkspaces.append(workspace)
+        } else {
+            workspace.store.disconnect()
+        }
         tuiWorkspaces.remove(at: deletedIndex)
 
         if tuiWorkspaces.isEmpty {
@@ -848,6 +857,12 @@ struct ContentView: View {
             let replacementIndex = min(deletedIndex, tuiWorkspaces.count - 1)
             selectedTUIWorkspaceID = tuiWorkspaces[replacementIndex].id
         }
+    }
+
+    private func releaseCompletedBackgroundTUIWorkspaces() {
+        let completed = backgroundTUIStreamingWorkspaces.filter { !$0.store.isStreaming }
+        completed.forEach { $0.store.disconnect() }
+        backgroundTUIStreamingWorkspaces.removeAll { !$0.store.isStreaming }
     }
 
     private func resumeConversationInResponses(_ result: HermesDashboardConversationResult) {
