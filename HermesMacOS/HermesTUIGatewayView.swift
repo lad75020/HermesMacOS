@@ -1017,7 +1017,15 @@ final class HermesTUIGatewayStore {
         case "gateway.ready":
             connectionStatus = "Gateway ready"
         case "session.info":
-            if let model = payload["model"]?.stringValue, !model.isEmpty {
+            // Ignore session.info events from a stale/older session. Selecting a
+            // profile creates a session at the profile's default model, then
+            // picking a model spins up a NEW session; an in-flight session.info
+            // from the OLD session (carrying the profile default) must not
+            // overwrite activeModel and revert the user's explicit model pick.
+            let currentSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+            let eventSessionID = (event.sessionID ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let isForCurrentSession = eventSessionID.isEmpty || currentSessionID.isEmpty || eventSessionID == currentSessionID
+            if isForCurrentSession, let model = payload["model"]?.stringValue, !model.isEmpty {
                 activeModel = model
                 sessionTitle = "\(shortSessionID(event.sessionID ?? sessionID)) • \(model)"
             }
@@ -1728,7 +1736,18 @@ struct HermesTUIGatewayView: View {
         .onChange(of: store.sessionID) { _, _ in scheduleAvailableModelsRefresh() }
         .onChange(of: store.activeModel) { _, model in
             let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { selectedModel = trimmed }
+            guard !trimmed.isEmpty else { return }
+            // Hardening (with the session.info session-ID guard above): don't let
+            // the store's active model overwrite a non-empty explicit user pick
+            // unless the incoming model is a real option for the current profile.
+            // A stale session's model (e.g. the profile default) won't appear in
+            // the current profile's discovered options, so it can't revert the pick.
+            let current = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            if current.isEmpty
+                || trimmed.caseInsensitiveCompare(current) == .orderedSame
+                || modelPickerOptions.contains(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+                selectedModel = trimmed
+            }
         }
         .onChange(of: selectedModel) { _, _ in
             clampReasoningEffortIfNeeded()
