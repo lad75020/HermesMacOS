@@ -73,6 +73,7 @@ struct HermesTUIGatewayParsedEvent: Equatable {
     let status: String?
     let requestID: String?
     let currentContextUsage: HermesTUICurrentContextUsage?
+    let sessionUsageSummary: HermesTUISessionUsageSummary?
 }
 
 struct HermesTUICurrentContextUsage: Equatable, Sendable {
@@ -122,6 +123,28 @@ struct HermesTUICurrentContextUsage: Equatable, Sendable {
     }
 }
 
+struct HermesTUISessionUsageSummary: Equatable, Sendable {
+    let activeSubagents: Int?
+    let compressions: Int?
+    let contextPercent: Double?
+
+    var displayText: String {
+        "AGENTS : \(Self.display(activeSubagents)), COMPRESSIONS: \(Self.display(compressions)), CONTEXT: \(Self.display(contextPercent))"
+    }
+
+    private static func display(_ value: Int?) -> String {
+        value.map { String($0) } ?? "—"
+    }
+
+    private static func display(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        if let integer = Int(exactly: value) {
+            return String(integer)
+        }
+        return String(value)
+    }
+}
+
 enum HermesTUIGatewayEventParser {
     static func parseEventEnvelope(_ text: String) throws -> HermesTUIGatewayParsedEvent? {
         guard let data = text.data(using: .utf8) else { return nil }
@@ -135,7 +158,8 @@ enum HermesTUIGatewayEventParser {
             text: payload["text"]?.stringValue ?? payload["preview"]?.stringValue,
             status: payload["status"]?.stringValue,
             requestID: payload["request_id"]?.stringValue ?? payload["id"]?.stringValue,
-            currentContextUsage: currentContextUsage(from: usage)
+            currentContextUsage: currentContextUsage(from: usage),
+            sessionUsageSummary: event.type == "session.usage" ? sessionUsageSummary(from: payload) : nil
         )
     }
 
@@ -145,6 +169,15 @@ enum HermesTUIGatewayEventParser {
             used: used,
             maximum: usage["context_max"]?.nonnegativeIntValue,
             percent: usage["context_percent"]?.finiteDoubleValue
+        )
+    }
+
+    static func sessionUsageSummary(from payload: [String: JSONValue]) -> HermesTUISessionUsageSummary {
+        let usage = payload["usage"]?.objectValue ?? payload
+        return HermesTUISessionUsageSummary(
+            activeSubagents: usage["active_subagents"]?.nonnegativeIntValue,
+            compressions: usage["compressions"]?.nonnegativeIntValue,
+            contextPercent: usage["context_percent"]?.finiteDoubleValue.flatMap { (0 ... 100).contains($0) ? $0 : nil }
         )
     }
 }
@@ -1036,6 +1069,10 @@ final class HermesTUIGatewayStore {
                 allowLatestAssistant: true
             )
             connectionStatus = "Session info updated"
+        case "session.usage":
+            let summary = HermesTUIGatewayEventParser.sessionUsageSummary(from: payload)
+            connectionStatus = "Session usage updated"
+            appendEvent(title: "Usage", content: summary.displayText, eventType: event.type)
         case "message.start":
             isStreaming = true
             latestCompletionToken = ""

@@ -44,6 +44,17 @@ final class StreamingAndGatewayEventTests: XCTestCase {
         XCTAssertNil(try HermesTUIGatewayEventParser.parseEventEnvelope(event)?.currentContextUsage)
     }
 
+    func testGatewayParserSummarizesSessionUsageWithoutRawPayload() throws {
+        let event = "{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"session.usage\",\"session_id\":\"s1\",\"payload\":{\"active_subagents\":0.0,\"calls\":14.0,\"compressions\":0.0,\"context_percent\":26.0,\"input\":732539.0}}}"
+
+        let parsed = try XCTUnwrap(HermesTUIGatewayEventParser.parseEventEnvelope(event))
+        XCTAssertEqual(parsed.sessionUsageSummary?.displayText, "AGENTS : 0, COMPRESSIONS: 0, CONTEXT: 26")
+
+        let invalidEvent = "{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"session.usage\",\"payload\":{\"active_subagents\":-1,\"compressions\":\"not-a-number\",\"context_percent\":\"NaN\",\"model\":\"must-not-render\"}}}"
+        let invalidParsed = try XCTUnwrap(HermesTUIGatewayEventParser.parseEventEnvelope(invalidEvent))
+        XCTAssertEqual(invalidParsed.sessionUsageSummary?.displayText, "AGENTS : —, COMPRESSIONS: —, CONTEXT: —")
+    }
+
     func testStreamFixturesIncludeMalformedAndUnknownEventCoverage() throws {
         let fixture = try HermesFixtureLoader.string(named: "stream-fixtures", extension: "ndjson", subdirectory: "Streams")
         XCTAssertTrue(fixture.contains("unknown.fixture"))
