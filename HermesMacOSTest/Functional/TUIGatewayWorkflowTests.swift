@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import HermesMacOS
 
@@ -269,6 +270,36 @@ final class TUIGatewayWorkflowTests: XCTestCase {
         XCTAssertFalse(message.isResolved)
         message.isResolved = true
         XCTAssertTrue(message.isResolved)
+    }
+
+    @MainActor
+    func testClarifyDockAttentionBouncesOnceAndStopsAfterResponse() throws {
+        var requestedKinds: [NSApplication.RequestUserAttentionType] = []
+        var cancelledRequestIDs: [Int] = []
+        let attention = HermesClarifyDockAttention(
+            requestAttention: { kind in
+                requestedKinds.append(kind)
+                return 42
+            },
+            cancelAttention: { requestID in
+                cancelledRequestIDs.append(requestID)
+            }
+        )
+
+        attention.start()
+        attention.start()
+        XCTAssertEqual(requestedKinds, [.criticalRequest], "Repeated clarify events must not start multiple dock bounce loops.")
+
+        attention.stop()
+        attention.stop()
+        XCTAssertEqual(cancelledRequestIDs, [42], "A user response must cancel the outstanding dock-attention request exactly once.")
+
+        let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/HermesTUIGatewayView.swift")
+        let responseStart = try XCTUnwrap(source.range(of: "func respondToPromptRequest("))
+        let responseEnd = try XCTUnwrap(source.range(of: "private func connectGateway(", range: responseStart.upperBound..<source.endIndex))
+        let responseSource = String(source[responseStart.lowerBound..<responseEnd.lowerBound])
+        XCTAssertTrue(responseSource.contains("if kind == .clarify") && responseSource.contains("clarifyDockAttention.stop()"))
+        XCTAssertTrue(source.contains("case \"clarify.request\":\n            connectionStatus = \"Clarification requested\"\n            clarifyDockAttention.start()"))
     }
 
     @MainActor

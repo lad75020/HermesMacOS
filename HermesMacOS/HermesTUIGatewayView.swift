@@ -3,6 +3,7 @@
 //  HermesMacOS
 //
 
+import AppKit
 import Foundation
 import Observation
 import SwiftUI
@@ -204,6 +205,35 @@ enum HermesTUIGatewayWebSocketPolicy {
 
     static func configure(_ task: URLSessionWebSocketTask) {
         task.maximumMessageSize = maximumMessageSize
+    }
+}
+
+/// Owns the dock-attention request associated with an unanswered clarify prompt.
+/// Keeping the request identifier prevents duplicate streamed events from starting
+/// multiple bounce loops and cancels the exact request after the user responds.
+@MainActor
+final class HermesClarifyDockAttention {
+    private let requestAttention: (NSApplication.RequestUserAttentionType) -> Int
+    private let cancelAttention: (Int) -> Void
+    private var requestID: Int?
+
+    init(
+        requestAttention: @escaping (NSApplication.RequestUserAttentionType) -> Int = { NSApp.requestUserAttention($0) },
+        cancelAttention: @escaping (Int) -> Void = { NSApp.cancelUserAttentionRequest($0) }
+    ) {
+        self.requestAttention = requestAttention
+        self.cancelAttention = cancelAttention
+    }
+
+    func start() {
+        guard requestID == nil else { return }
+        requestID = requestAttention(.criticalRequest)
+    }
+
+    func stop() {
+        guard let requestID else { return }
+        cancelAttention(requestID)
+        self.requestID = nil
     }
 }
 
@@ -499,6 +529,7 @@ final class HermesTUIGatewayStore {
     private var currentTurnReceivedMessageDelta = false
     private var currentTurnMessageDeltaSegmentCount = 0
     private var pendingCurrentContextUsage: HermesTUICurrentContextUsage?
+    private let clarifyDockAttention = HermesClarifyDockAttention()
 
     var canSendPrompt: Bool {
         isConnected && !isStreaming && !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -523,6 +554,7 @@ final class HermesTUIGatewayStore {
     }
 
     func disconnect() {
+        clarifyDockAttention.stop()
         sessionCreationGeneration += 1
         sessionCreationIdentity = nil
         sessionCreationTask?.cancel()
@@ -696,6 +728,9 @@ final class HermesTUIGatewayStore {
     }
 
     func respondToPromptRequest(messageID: UUID, kind: HermesTUIGatewayMessage.RequestKind, requestID: String, value: String) {
+        if kind == .clarify {
+            clarifyDockAttention.stop()
+        }
         Task {
             do {
                 let method: String
@@ -1127,6 +1162,7 @@ final class HermesTUIGatewayStore {
             appendRequest(kind: .approval, title: "Approval required", payload: payload)
         case "clarify.request":
             connectionStatus = "Clarification requested"
+            clarifyDockAttention.start()
             appendRequest(kind: .clarify, title: "Clarification requested", payload: payload)
         case "sudo.request":
             connectionStatus = "Sudo password requested"
