@@ -2063,8 +2063,10 @@ struct HermesTUIGatewayView: View {
     private var filteredSkillSuggestions: [HermesDashboardSkill] {
         guard let query = activeSkillQuery else { return [] }
         if query.isEmpty { return dashboardSkills.skills }
-        return dashboardSkills.skills.filter { $0.name.range(of: query, options: [.caseInsensitive, .anchored]) != nil }
-    }
+        // Match every skill whose name *contains* the characters typed after
+        // `/skill` (case-insensitive substring), not just a leading prefix.
+        return HermesSkillQueryMatching.filtered(dashboardSkills.skills, query: query)
+     }
 
     private var activePathToken: String? {
         guard let token = activeSlashToken else { return nil }

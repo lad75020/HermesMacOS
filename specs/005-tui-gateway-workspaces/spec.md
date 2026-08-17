@@ -5,6 +5,7 @@
 **Status**: Refined
 **Refined**: 2026-07-17 — Added live current-context token counts beside TUI assistant response bubble titles.
 **Refined**: 2026-07-17 — Added selected-model reasoning effort controls and session-scoped TUI Gateway inference configuration.
+**Refined**: 2026-08-17 — In the TUI Gateway prompt area, the `/skill` popover now filters to every known skill whose name *contains* the characters typed after `/skill` (case-insensitive substring, prefix matches first), instead of the previous anchored-prefix-only match (US5, FR-011, SC-008).
 **Input**: User description: "Feature: TUI Gateway Workspaces. Description: Mirrors live Hermes TUI sessions inside the native app with WebSocket JSON-RPC, multiple workspaces, attachments, streaming transcript events, and interactive requests. Relevant files: HermesMacOS/HermesTUIGatewayView.swift, docs/reference-tui-gateway-websocket.md, docs/how-to-use-tui-gateway.md. Focus on this feature only; do not modify other features."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -55,6 +56,21 @@ A user creates, switches, deletes, activates, interrupts, closes, and resumes TU
 
 ---
 
+### User Story 5 - `/skill` autocomplete popover matches skill names by contained characters (Priority: P5)
+While composing a prompt in the TUI Gateway tab, a user types `/skill` followed by characters, and a popover lists every known Hermes skill whose name *contains* those characters (a case-insensitive substring match, not just a leading prefix), so the intended skill can be found even when the typed characters are not at the start of the name.
+
+**Why this priority**: The `/skill` command is how a user loads a specific skill into the live TUI Gateway session; the popover must surface a skill by any substring of its name, otherwise skills whose names do not begin with the typed characters stay hidden and the command feels broken.
+
+**Independent Test**: In a connected TUI Gateway workspace, type `/skill` then a partial token, and verify the popover lists and can select every known skill whose name contains the typed characters case-insensitively, with prefix matches ordered first and the empty query showing all skills.
+
+**Acceptance Scenarios**:
+1. **Given** a skill named `macos-vnc-black-screen-debugging` exists, **When** the user types `/skill screen`, **Then** the popover lists that skill (the characters `screen` occur in the middle of the name) and selecting it replaces the token with `/skill macos-vnc-black-screen-debugging `.
+2. **Given** a connected TUI Gateway workspace, **When** the user types `/skill` with no trailing characters, **Then** the popover shows the full alphabetized list of known skills.
+3. **Given** a connected TUI Gateway workspace, **When** the user types `/skill` with no matching characters, **Then** the popover reports "No matching skills" instead of hiding the picker.
+4. **Given** multiple skills contain the typed characters, **When** the popover renders, **Then** skills whose names begin with the characters appear before other containing skills, each group alphabetical by name.
+
+---
+
 ### User Story 4 - Respond to live gateway requests (Priority: P4)
 A user answers approval, clarification, sudo, and secret request bubbles directly in the transcript.
 
@@ -88,6 +104,7 @@ A user answers approval, clarification, sudo, and secret request bubbles directl
 - **FR-008**: System MUST fail pending JSON-RPC requests on timeout, disconnect, or cancellation.
 - **FR-009**: System MUST parse current-window context occupancy from TUI Gateway usage payloads, associate the latest non-empty value with the active assistant response bubble, and render a compact monospaced context-token count beside the bubble title without using cumulative lifetime token totals as a fallback.
 - **FR-010**: System MUST use selected-model `model.options` reasoning capability metadata before profile fallback, render only valid available effort levels, carry supported efforts in `session.create` and forward-compatible `prompt.submit` payloads, apply live changes through session-scoped `config.set`, and restore valid effort from session/resume info.
+- **FR-011**: In the TUI Gateway prompt area, when the user types `/skill` followed by characters, the system MUST filter the known Hermes skills to those whose **name contains those characters** (a case-insensitive substring match anywhere in the name, not only a leading prefix), present the matches in an autocomplete popover (prefix matches ordered first, then remaining matches alphabetical by name, empty query shows all skills, no matches reports "No matching skills"), and on selection replace the typed token with `/skill <skill-name> `.
 - **FR-SEC**: System MUST validate dashboard URLs, reuse TLS/self-signed certificate policy, prefer one-time tickets, and protect secret/sudo input.
 - **FR-INT**: System MUST preserve the documented dashboard WebSocket JSON-RPC protocol.
 
@@ -95,6 +112,7 @@ A user answers approval, clarification, sudo, and secret request bubbles directl
 - **HermesTUIGatewayStore**: WebSocket connection, JSON-RPC request/response matching, event routing, session state, transcript, pending continuations, and failures.
 - **HermesTUIWorkspace**: Per-workspace store plus draft, request-response drafts, attachment state, and attention acknowledgements.
 - **HermesTUIModelCapabilities**: Per-model FAST/reasoning booleans returned by `model.options` for the selected provider.
+- **HermesSkillQueryMatching**: Pure helper that filters the known `HermesDashboardSkill` set to names containing the typed `/skill` characters (case-insensitive substring, prefix matches first) for the TUI Gateway prompt popover.
 - **HermesTUIWorkspace selected reasoning effort**: Canonical Hermes effort value, defaulting to `medium`, copied for new/replacement workspaces and constrained by the selected model's capability.
 - **HermesTUIGatewayMessage**: Transcript bubble for user, assistant, reasoning, tools, status, attachments, requests, errors, and background events, including optional current-context token metadata for assistant responses.
 - **HermesTUILiveSession**: Live session menu row returned from `session.active_list`.
@@ -109,6 +127,7 @@ A user answers approval, clarification, sudo, and secret request bubbles directl
 - **SC-005**: Approval/clarify/sudo/secret requests can be answered and marked resolved.
 - **SC-006**: When the gateway emits `usage.context_used`, the corresponding assistant response bubble displays the compact context-token count beside `Hermes`, updates without creating a duplicate bubble, and preserves the final value after streaming completes.
 - **SC-007**: A reasoning-capable selected model presents only valid effort choices, passes the chosen effort to a new/live TUI session, and restores a supported resumed effort without enabling an unsupported model.
+- **SC-008**: Typing `/skill` plus characters in the TUI Gateway prompt area surfaces every known skill whose name contains those characters (case-insensitive substring; prefix matches first, others alphabetical), an empty query lists all skills, a non-matching query reports "No matching skills", and selecting a match replaces the token with `/skill <skill-name> `.
 - **SC-BUILD**: The `HermesMacOS` scheme builds successfully with Xcode or command-line `xcodebuild`.
 - **SC-SMOKE**: The primary TUI Gateway journey can be validated independently with documented dashboard smoke checks.
 

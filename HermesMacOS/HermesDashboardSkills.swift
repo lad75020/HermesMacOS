@@ -98,6 +98,38 @@ private struct HermesDashboardSkillToggleRequest: Encodable {
     let enabled: Bool
 }
 
+/// Case-insensitive `/skill` query matching for the TUI Gateway prompt popover.
+///
+/// When the user types `/skill` followed by characters, the popover should list
+/// every known skill whose **name contains those characters** (a substring match
+/// anywhere in the name, not just a prefix). Prefix matches are ordered first so
+/// the closest candidates surface at the top, then the remaining substring matches,
+/// each alphabetical by name.
+enum HermesSkillQueryMatching {
+    /// Returns the skills whose name contains `query` (case-insensitive), with
+    /// prefix matches first. An empty/whitespace query returns all skills in order.
+    static func filtered(_ skills: [HermesDashboardSkill], query: String) -> [HermesDashboardSkill] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return skills }
+
+        let matches = skills.filter { skill in
+            skill.name.range(of: normalizedQuery, options: .caseInsensitive) != nil
+        }
+
+        let matchesWithPrefix = matches.map { skill in
+            (skill: skill, isPrefix: skill.name.range(of: normalizedQuery, options: [.caseInsensitive, .anchored]) != nil)
+        }
+
+        return matchesWithPrefix
+            .sorted { lhs, rhs in
+                // Prefix matches (name starts with the query) rise above plain substring matches.
+                if lhs.isPrefix != rhs.isPrefix { return lhs.isPrefix }
+                return lhs.skill.name.localizedCaseInsensitiveCompare(rhs.skill.name) == .orderedAscending
+            }
+            .map { $0.skill }
+    }
+}
+
 struct HermesSkillSlashPicker: View {
     let skills: [HermesDashboardSkill]
     let selectedIndex: Int

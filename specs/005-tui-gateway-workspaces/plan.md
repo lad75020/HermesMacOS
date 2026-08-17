@@ -1,5 +1,7 @@
 # Implementation Plan: TUI Gateway Workspaces
 
+> ⚠️ **STALE**: spec.md was refined on 2026-08-17 (`/skill` substring popover: US5, FR-011, SC-008). Run `/speckit.refine.propagate` to update this plan.
+
 **Branch**: `feature/time-machine-tui-gateway-workspaces` | **Date**: 2026-06-27 | **Spec**: [spec.md](./spec.md)
 
 **Propagated**: 2026-07-17 — Updated from spec.md refinement

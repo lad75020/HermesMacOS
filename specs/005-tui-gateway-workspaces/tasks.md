@@ -1,8 +1,10 @@
 # Tasks: TUI Gateway Workspaces
 
+> ⚠️ **STALE**: spec.md was refined on 2026-08-17 (`/skill` substring popover: US5, FR-011, SC-008). Run `/speckit.refine.propagate` to update this plan.
+
 **Input**: Design documents from `/specs/005-tui-gateway-workspaces/`
 
-**Propagated**: 2026-07-17 — Updated from spec.md refinement
+**Propagated**: 2026-08-17 — Updated from spec.md refinement (`/skill` substring popover: T022–T023)
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/tui-gateway-json-rpc.md, quickstart.md
 
@@ -43,6 +45,10 @@
 - [x] T020 [P] [US1] Verify canonical effort values, selected-model capability precedence, optional profile metadata, workspace copy/default behavior, and session-scoped reasoning payloads in `HermesMacOSTest/Functional/TUIGatewayWorkflowTests.swift` [(depends on T017, T018, T019)]
 - [x] T021 [P] [US1] Update `docs/reference-tui-gateway-websocket.md` and `docs/how-to-use-tui-gateway.md` for `usage.context_used`, `reasoning_effort`, selected-model support, and `config.set` behavior [(depends on T015, T019)]
 
+## Phase 9: Refined `/skill` Substring Popover
+- [x] T022 [US5] Extract `HermesSkillQueryMatching.filtered(_:query:)` in `HermesMacOS/HermesDashboardSkills.swift` to filter known skills by case-insensitive **name substring** (prefix matches first, others alphabetical) and wire it into the TUI Gateway composer's `filteredSkillSuggestions` in `HermesMacOS/HermesTUIGatewayView.swift` [(depends on T008)]
+- [x] T023 [P] [US5] Add focused unit coverage for `/skill` substring matching (substring match in a name, prefix ordering, empty-query returns all, case-insensitivity) in `HermesMacOSTest/Functional/TUIGatewayWorkflowTests.swift` [(depends on T022)]
+
 ## Dependencies
 - Phase 8 builds on the original US1/US2/US3 tracing in T007-T009 and does not block the environment-dependent live smoke check T013.
 - T014 → T015 → T016 covers FR-009/SC-006; T017 → T018 → T019 → T020 covers FR-010/SC-007; T021 follows both implementation paths.
@@ -54,5 +60,6 @@
 | FR-001–FR-008, FR-SEC, FR-INT | T004–T013 |
 | FR-009 / SC-006 | T014–T016 |
 | FR-010 / SC-007 | T017–T021 |
+| FR-011 / SC-008 | T022–T023 |
 | SC-001–SC-005 | T007–T013 |
 | SC-BUILD / SC-SMOKE | T011, T013 |

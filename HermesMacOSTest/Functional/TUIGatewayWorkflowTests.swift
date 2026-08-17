@@ -368,5 +368,67 @@ final class TUIGatewayWorkflowTests: XCTestCase {
         XCTAssertTrue(stream.contains("gateway.ready"))
         XCTAssertTrue(stream.contains("unknown.fixture"))
         XCTAssertTrue(HermesMacOSTestCoverageMap.category("tui-gateway").defaultCoverage.contains { $0.contains("TUIGatewayWorkflowTests") })
-    }
+     }
+
+     // MARK: - /skill substring popover matching (US5 / FR-011 / SC-008)
+
+     func testSkillQueryMatchesNamesContainingTypedCharacters() {
+        let skills = [
+             HermesDashboardSkill(name: "macos-vnc-black-screen-debugging", description: "Diagnose VNC black screen", category: "apple", enabled: true),
+             HermesDashboardSkill(name: "vision-debug", description: "vision", category: "apple", enabled: true),
+             HermesDashboardSkill(name: "unrelated-tool", description: "no match", category: "dev", enabled: true)
+         ]
+
+        // "screen" only appears in the MIDDLE of a name; an anchored prefix match
+        // would miss it, but a contained-substring match must surface it.
+        let results = HermesSkillQueryMatching.filtered(skills, query: "screen")
+        XCTAssertEqual(results.map(\.name), ["macos-vnc-black-screen-debugging"])
+     }
+
+     func testSkillQueryOrdersPrefixMatchesBeforeSubstringMatches() {
+        let skills = [
+             HermesDashboardSkill(name: "skill-picker", description: "prefix", category: "c", enabled: true),
+             HermesDashboardSkill(name: "my-skill-helper", description: "substring", category: "c", enabled: true),
+             HermesDashboardSkill(name: "totally-other", description: "no", category: "c", enabled: true)
+         ]
+
+        // "skil" is a prefix of "skill-picker" and a substring of "my-skill-helper".
+        // The prefix match must rise above the plain substring match.
+        let results = HermesSkillQueryMatching.filtered(skills, query: "skil")
+        XCTAssertEqual(results.map(\.name), ["skill-picker", "my-skill-helper"])
+     }
+
+     func testSkillQueryIsCaseInsensitive() {
+        let skills = [HermesDashboardSkill(name: "MacOS-VNC-Black-Screen-Debugging", description: nil, category: "apple", enabled: true)]
+        XCTAssertEqual(HermesSkillQueryMatching.filtered(skills, query: "SCR").map(\.name), ["MacOS-VNC-Black-Screen-Debugging"])
+     }
+
+     func testSkillQueryEmptyOrWhitespaceReturnsAllInOrder() {
+        let skills = [
+             HermesDashboardSkill(name: "bravo", description: nil, category: "c", enabled: true),
+             HermesDashboardSkill(name: "alpha", description: nil, category: "c", enabled: true),
+             HermesDashboardSkill(name: "charlie", description: nil, category: "c", enabled: true)
+         ]
+
+        XCTAssertEqual(HermesSkillQueryMatching.filtered(skills, query: "").map(\.name), ["bravo", "alpha", "charlie"])
+        XCTAssertEqual(HermesSkillQueryMatching.filtered(skills, query: "   ").map(\.name), ["bravo", "alpha", "charlie"])
+     }
+
+     func testSkillQueryWithNoMatchesReturnsEmpty() {
+        let skills = [HermesDashboardSkill(name: "alpha", description: nil, category: "c", enabled: true)]
+        XCTAssertTrue(HermesSkillQueryMatching.filtered(skills, query: "zzz").isEmpty)
+     }
+
+     func testSkillQueryExtractionAndTokenReplacement() {
+        // "/skill <query>" exposes the trailing token as the substring query.
+        XCTAssertEqual("/skill screen ".hermesActiveSlashSkillQuery, "screen")
+        XCTAssertEqual("/skill".hermesActiveSlashSkillQuery, "")
+
+        // A following slash (path token) ends the skill query, and no newline.
+        XCTAssertNil("/skill a/b".hermesActiveSlashSkillQuery)
+
+        // Selecting a skill replaces the active "/skill …" token, keeping prior text.
+        let replaced = "run /skill screen now ".replacingActiveSlashSkillQuery(with: "macos-vnc-black-screen-debugging")
+        XCTAssertEqual(replaced, "run /skill macos-vnc-black-screen-debugging ")
+     }
 }
