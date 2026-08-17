@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="HermesMacOS documentation field manual">
+  <title>Feature specs · HermesMacOS Field Manual</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../static/style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="site-shell">
+    <aside class="sidebar" id="site-nav" aria-label="Documentation navigation">
+      <a class="brand" href="../index.html" aria-label="HermesMacOS Field Manual home"><span class="brand-mark" aria-hidden="true">HM</span><span>Field<br>Manual</span></a>
+      <div class="nav-section-label">Documentation</div>
+      <nav class="tree-nav"><ul><li><a href="../docs/index.html">Product docs</a></li><li class="depth-1"><a href="../docs/README.html">HermesMacOS documentation</a></li><li class="depth-1"><a href="../docs/codebase/ARCHITECTURE.html">HermesMacOS codebase architecture</a></li><li class="depth-1"><a href="../docs/codebase/CONCERNS.html">HermesMacOS concerns</a></li><li class="depth-1"><a href="../docs/codebase/CONVENTIONS.html">HermesMacOS codebase conventions</a></li><li class="depth-1"><a href="../docs/codebase/INTEGRATIONS.html">HermesMacOS integrations</a></li><li class="depth-1"><a href="../docs/codebase/STACK.html">HermesMacOS codebase stack</a></li><li class="depth-1"><a href="../docs/codebase/STRUCTURE.html">HermesMacOS codebase structure</a></li><li class="depth-1"><a href="../docs/codebase/TESTING.html">HermesMacOS testing</a></li><li class="depth-1"><a href="../docs/explanation-architecture.html">Why HermesMacOS is structured as a native control surface</a></li><li class="depth-1"><a href="../docs/explanation-security-model.html">HermesMacOS security model</a></li><li class="depth-1"><a href="../docs/how-to-configure-endpoints.html">How to configure endpoints and saved windows</a></li><li class="depth-1"><a href="../docs/how-to-manage-hermes-runtime.html">How to manage Hermes runtime from the app</a></li><li class="depth-1"><a href="../docs/how-to-use-ask-and-chat.html">How to use Ask Hermes and Chat with Hermes</a></li><li class="depth-1"><a href="../docs/how-to-use-tui-gateway.html">How to use the TUI Gateway tab</a></li><li class="depth-1"><a href="../docs/reference-api-and-storage.html">HermesMacOS API and storage reference</a></li><li class="depth-1"><a href="../docs/reference-app-surface.html">HermesMacOS application surface reference</a></li><li class="depth-1"><a href="../docs/reference-tui-gateway-websocket.html">TUI Gateway WebSocket reference</a></li><li class="depth-1"><a href="../docs/tutorial-getting-started.html">Build HermesMacOS and send your first Ask Hermes prompt</a></li></ul><ul><li><a href="../specs/index.html">Feature specs</a></li><li class="depth-1"><a href="../specs/001-app-shell-settings/contracts/app-shell-settings.html">001-app-shell-settings · Contract: App Shell and Settings</a></li><li class="depth-1"><a href="../specs/001-app-shell-settings/data-model.html">001-app-shell-settings · Data Model: App Shell and Settings</a></li><li class="depth-1"><a href="../specs/001-app-shell-settings/plan.html">001-app-shell-settings · Implementation Plan: App Shell and Settings</a></li><li class="depth-1"><a href="../specs/001-app-shell-settings/quickstart.html">001-app-shell-settings · Quickstart: App Shell and Settings</a></li><li class="depth-1"><a href="../specs/001-app-shell-settings/research.html">001-app-shell-settings · Research: App Shell and Settings</a></li><li class="depth-1"><a href="../specs/001-app-shell-settings/spec.html">001-app-shell-settings · Feature Specification: App Shell and Settings</a></li><li class="depth-1"><a href="../specs/001-app-shell-settings/tasks.html">001-app-shell-settings · Tasks: App Shell and Settings</a></li><li class="depth-1"><a href="../specs/002-security-endpoint-guardrails/contracts/security-guardrails.html">002-security-endpoint-guardrails · Contract: Security and Endpoint Guardrails</a></li><li class="depth-1"><a href="../specs/002-security-endpoint-guardrails/data-model.html">002-security-endpoint-guardrails · Data Model: Security and Endpoint Guardrails</a></li><li class="depth-1"><a href="../specs/002-security-endpoint-guardrails/plan.html">002-security-endpoint-guardrails · Implementation Plan: Security and Endpoint Guardrails</a></li><li class="depth-1"><a href="../specs/002-security-endpoint-guardrails/quickstart.html">002-security-endpoint-guardrails · Quickstart: Security and Endpoint Guardrails</a></li><li class="depth-1"><a href="../specs/002-security-endpoint-guardrails/research.html">002-security-endpoint-guardrails · Research: Security and Endpoint Guardrails</a></li><li class="depth-1"><a href="../specs/002-security-endpoint-guardrails/spec.html">002-security-endpoint-guardrails · Feature Specification: Security and Endpoint Guardrails</a></li><li class="depth-1"><a href="../specs/002-security-endpoint-guardrails/tasks.html">002-security-endpoint-guardrails · Tasks: Security and Endpoint Guardrails</a></li><li class="depth-1"><a href="../specs/003-ask-hermes-responses/contracts/responses-api.html">003-ask-hermes-responses · Contract: Ask Hermes Responses API</a></li><li class="depth-1"><a href="../specs/003-ask-hermes-responses/data-model.html">003-ask-hermes-responses · Data Model: Ask Hermes Responses</a></li><li class="depth-1"><a href="../specs/003-ask-hermes-responses/plan.html">003-ask-hermes-responses · Implementation Plan: Ask Hermes Responses</a></li><li class="depth-1"><a href="../specs/003-ask-hermes-responses/quickstart.html">003-ask-hermes-responses · Quickstart: Ask Hermes Responses</a></li><li class="depth-1"><a href="../specs/003-ask-hermes-responses/research.html">003-ask-hermes-responses · Research: Ask Hermes Responses</a></li><li class="depth-1"><a href="../specs/003-ask-hermes-responses/spec.html">003-ask-hermes-responses · Feature Specification: Ask Hermes Responses</a></li><li class="depth-1"><a href="../specs/003-ask-hermes-responses/tasks.html">003-ask-hermes-responses · Tasks: Ask Hermes Responses</a></li><li class="depth-1"><a href="../specs/004-chat-completions-console/contracts/chat-completions-api.html">004-chat-completions-console · Contract: Chat Completions API</a></li><li class="depth-1"><a href="../specs/004-chat-completions-console/data-model.html">004-chat-completions-console · Data Model: Chat Completions Console</a></li><li class="depth-1"><a href="../specs/004-chat-completions-console/plan.html">004-chat-completions-console · Implementation Plan: Chat Completions Console</a></li><li class="depth-1"><a href="../specs/004-chat-completions-console/quickstart.html">004-chat-completions-console · Quickstart: Chat Completions Console</a></li><li class="depth-1"><a href="../specs/004-chat-completions-console/research.html">004-chat-completions-console · Research: Chat Completions Console</a></li><li class="depth-1"><a href="../specs/004-chat-completions-console/spec.html">004-chat-completions-console · Feature Specification: Chat Completions Console</a></li><li class="depth-1"><a href="../specs/004-chat-completions-console/tasks.html">004-chat-completions-console · Tasks: Chat Completions Console</a></li><li class="depth-1"><a href="../specs/005-tui-gateway-workspaces/contracts/tui-gateway-json-rpc.html">005-tui-gateway-workspaces · Contract: TUI Gateway JSON-RPC</a></li><li class="depth-1"><a href="../specs/005-tui-gateway-workspaces/data-model.html">005-tui-gateway-workspaces · Data Model: TUI Gateway Workspaces</a></li><li class="depth-1"><a href="../specs/005-tui-gateway-workspaces/plan.html">005-tui-gateway-workspaces · Implementation Plan: TUI Gateway Workspaces</a></li><li class="depth-1"><a href="../specs/005-tui-gateway-workspaces/quickstart.html">005-tui-gateway-workspaces · Quickstart: TUI Gateway Workspaces</a></li><li class="depth-1"><a href="../specs/005-tui-gateway-workspaces/research.html">005-tui-gateway-workspaces · Research: TUI Gateway Workspaces</a></li><li class="depth-1"><a href="../specs/005-tui-gateway-workspaces/spec.html">005-tui-gateway-workspaces · Feature Specification: TUI Gateway Workspaces</a></li><li class="depth-1"><a href="../specs/005-tui-gateway-workspaces/tasks.html">005-tui-gateway-workspaces · Tasks: TUI Gateway Workspaces</a></li><li class="depth-1"><a href="../specs/006-history-sessions-resume/contracts/dashboard-history-sessions-api.html">006-history-sessions-resume · Contract: Dashboard History and Sessions API</a></li><li class="depth-1"><a href="../specs/index.html">All 100 documents</a></li></ul></nav>
+      <p class="sidebar-foot">118 source documents<br>Built locally from repository notes.</p>
+    </aside>
+    <div class="page-column">
+      <header class="topbar"><button class="nav-toggle" type="button" aria-controls="site-nav" aria-expanded="false">Menu</button><a class="mobile-brand" href="../index.html">HermesMacOS / Field Manual</a><button class="search-trigger" type="button" data-search-open aria-label="Search documentation"><span>Search</span><kbd>/</kbd></button></header>
+      <main id="main-content"><section class="collection-header"><nav class="breadcrumbs" aria-label="Breadcrumb"><a href="../index.html">Field Manual</a><span>/</span><span>Feature specs</span></nav><p class="eyebrow">Collection index</p><h1>Feature specs</h1><p>Requirements, research, data models, contracts, and implementation plans.</p></section><section class="collection-list" aria-label="Feature specs"><article class="collection-item"><span class="path">001-app-shell-settings/contracts</span><div><a href="../specs/001-app-shell-settings/contracts/app-shell-settings.html">Contract: App Shell and Settings</a><p>Contract: App Shell and Settings
+
+This feature is an in-process UI/state contract rather than a network API contract.
+
+ App Launch Contract
+
+- HermesMacOSApp creates the macOS app scene and </p></div></article><article class="collection-item"><span class="path">001-app-shell-settings</span><div><a href="../specs/001-app-shell-settings/data-model.html">Data Model: App Shell and Settings</a><p>Data Model: App Shell and Settings
+
+ HermesMacOSTab
+
+Represents a top-level destination in the side-tab shell.
+
+- Attributes: stable identifier, localized title, icon/system image, selection</p></div></article><article class="collection-item"><span class="path">001-app-shell-settings</span><div><a href="../specs/001-app-shell-settings/plan.html">Implementation Plan: App Shell and Settings</a><p>Implementation Plan: App Shell and Settings
+
+Branch: feature/time-machine-app-shell-settings | Date: 2026-06-27 | Spec: spec.md
+
+Input: Feature specification from /specs/001-app-shell-settin</p></div></article><article class="collection-item"><span class="path">001-app-shell-settings</span><div><a href="../specs/001-app-shell-settings/quickstart.html">Quickstart: App Shell and Settings</a><p>Quickstart: App Shell and Settings
+
+ Build verification
+
+bash
+xcodebuild   -project HermesMacOS.xcodeproj   -scheme HermesMacOS   -destination &#x27;generic/platform=macOS&#x27;   -derivedDataPath /tm</p></div></article><article class="collection-item"><span class="path">001-app-shell-settings</span><div><a href="../specs/001-app-shell-settings/research.html">Research: App Shell and Settings</a><p>Research: App Shell and Settings
+
+ Decision 1: Treat this as a retroactive specification of existing behavior
+
+Decision: Do not redesign shell/settings source code unless verification finds </p></div></article><article class="collection-item"><span class="path">001-app-shell-settings</span><div><a href="../specs/001-app-shell-settings/spec.html">Feature Specification: App Shell and Settings</a><p>Feature Specification: App Shell and Settings
+
+Feature Branch: feature/time-machine-app-shell-settings  
+Created: 2026-06-27  
+Status: Draft  
+Input: User description: &quot;Feature: App Shell an</p></div></article><article class="collection-item"><span class="path">001-app-shell-settings</span><div><a href="../specs/001-app-shell-settings/tasks.html">Tasks: App Shell and Settings</a><p>Tasks: App Shell and Settings
+
+Input: Design documents from /specs/001-app-shell-settings/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts/app-shell-settings.md, quic</p></div></article><article class="collection-item"><span class="path">002-security-endpoint-guardrails/contracts</span><div><a href="../specs/002-security-endpoint-guardrails/contracts/security-guardrails.html">Contract: Security and Endpoint Guardrails</a><p>Contract: Security and Endpoint Guardrails
+
+ Endpoint Validation Contract
+
+- HermesEndpointSecurity.validateSensitiveURL(:) MUST throw HermesSecurityError.insecureTransport for non-loopback </p></div></article><article class="collection-item"><span class="path">002-security-endpoint-guardrails</span><div><a href="../specs/002-security-endpoint-guardrails/data-model.html">Data Model: Security and Endpoint Guardrails</a><p>Data Model: Security and Endpoint Guardrails
+
+ HermesSecurityError
+
+User-visible security error taxonomy.
+
+- Attributes: insecure transport host, encryption unavailable, local approval denie</p></div></article><article class="collection-item"><span class="path">002-security-endpoint-guardrails</span><div><a href="../specs/002-security-endpoint-guardrails/plan.html">Implementation Plan: Security and Endpoint Guardrails</a><p>Implementation Plan: Security and Endpoint Guardrails
+
+Branch: feature/time-machine-security-endpoint-guardrails | Date: 2026-06-27 | Spec: spec.md
+
+Input: Feature specification from /specs/</p></div></article><article class="collection-item"><span class="path">002-security-endpoint-guardrails</span><div><a href="../specs/002-security-endpoint-guardrails/quickstart.html">Quickstart: Security and Endpoint Guardrails</a><p>Quickstart: Security and Endpoint Guardrails
+
+ Build verification
+
+bash
+xcodebuild   -project HermesMacOS.xcodeproj   -scheme HermesMacOS   -destination &#x27;generic/platform=macOS&#x27;   -derivedDa</p></div></article><article class="collection-item"><span class="path">002-security-endpoint-guardrails</span><div><a href="../specs/002-security-endpoint-guardrails/research.html">Research: Security and Endpoint Guardrails</a><p>Research: Security and Endpoint Guardrails
+
+ Decision 1: Keep guardrails in shared Swift helpers
+
+Decision: Continue centralizing endpoint validation, Keychain storage, redaction, encrypted </p></div></article><article class="collection-item"><span class="path">002-security-endpoint-guardrails</span><div><a href="../specs/002-security-endpoint-guardrails/spec.html">Feature Specification: Security and Endpoint Guardrails</a><p>Feature Specification: Security and Endpoint Guardrails
+
+Feature Branch: feature/time-machine-security-endpoint-guardrails  
+Created: 2026-06-27  
+Status: Draft  
+Input: User description: &quot;F</p></div></article><article class="collection-item"><span class="path">002-security-endpoint-guardrails</span><div><a href="../specs/002-security-endpoint-guardrails/tasks.html">Tasks: Security and Endpoint Guardrails</a><p>Tasks: Security and Endpoint Guardrails
+
+Input: Design documents from /specs/002-security-endpoint-guardrails/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts/securit</p></div></article><article class="collection-item"><span class="path">003-ask-hermes-responses/contracts</span><div><a href="../specs/003-ask-hermes-responses/contracts/responses-api.html">Contract: Ask Hermes Responses API</a><p>Contract: Ask Hermes Responses API
+
+ Profiles
+
+- GET /v1/profiles returns profile records with id/name/default/model/provider/supported parameter metadata.
+- Ask Hermes uses the selected pro</p></div></article><article class="collection-item"><span class="path">003-ask-hermes-responses</span><div><a href="../specs/003-ask-hermes-responses/data-model.html">Data Model: Ask Hermes Responses</a><p>Data Model: Ask Hermes Responses
+
+ HermesRequestDraft
+
+- Attributes: profile, userPrompt, stream flag, reasoningLevel.
+- Relationships: edited by Ask composer, persisted by settings store, l</p></div></article><article class="collection-item"><span class="path">003-ask-hermes-responses</span><div><a href="../specs/003-ask-hermes-responses/plan.html">Implementation Plan: Ask Hermes Responses</a><p>Implementation Plan: Ask Hermes Responses
+
+Branch: feature/time-machine-ask-hermes-responses | Date: 2026-06-27 | Spec: spec.md
+
+Input: Feature specification from /specs/003-ask-hermes-respo</p></div></article><article class="collection-item"><span class="path">003-ask-hermes-responses</span><div><a href="../specs/003-ask-hermes-responses/quickstart.html">Quickstart: Ask Hermes Responses</a><p>Quickstart: Ask Hermes Responses
+
+ Build verification
+
+bash
+xcodebuild   -project HermesMacOS.xcodeproj   -scheme HermesMacOS   -destination &#x27;generic/platform=macOS&#x27;   -derivedDataPath /tmp/</p></div></article><article class="collection-item"><span class="path">003-ask-hermes-responses</span><div><a href="../specs/003-ask-hermes-responses/research.html">Research: Ask Hermes Responses</a><p>Research: Ask Hermes Responses
+
+ Decision 1: Keep Ask on /v1/responses
+
+Decision: Preserve the dedicated Responses API client instead of routing Ask through Chat or TUI Gateway.
+
+Rationale: </p></div></article><article class="collection-item"><span class="path">003-ask-hermes-responses</span><div><a href="../specs/003-ask-hermes-responses/spec.html">Feature Specification: Ask Hermes Responses</a><p>Feature Specification: Ask Hermes Responses
+
+Feature Branch: feature/time-machine-ask-hermes-responses  
+Created: 2026-06-27  
+Status: Draft  
+Input: User description: &quot;Feature: Ask Hermes R</p></div></article><article class="collection-item"><span class="path">003-ask-hermes-responses</span><div><a href="../specs/003-ask-hermes-responses/tasks.html">Tasks: Ask Hermes Responses</a><p>Tasks: Ask Hermes Responses
+
+Input: Design documents from /specs/003-ask-hermes-responses/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts/responses-api.md, quickstar</p></div></article><article class="collection-item"><span class="path">004-chat-completions-console/contracts</span><div><a href="../specs/004-chat-completions-console/contracts/chat-completions-api.html">Contract: Chat Completions API</a><p>Contract: Chat Completions API
+
+ Profiles
+- GET /v1/profiles populates the profile selector.
+- Selected profile is sent through X-Hermes-Profile.
+
+ Chat Request
+- POST /v1/chat/completions s</p></div></article><article class="collection-item"><span class="path">004-chat-completions-console</span><div><a href="../specs/004-chat-completions-console/data-model.html">Data Model: Chat Completions Console</a><p>Data Model: Chat Completions Console
+
+ HermesChatDraft
+- Attributes: profile, systemPrompt, userPrompt, stream flag.
+- Relationships: edited by Chat composer and persisted by settings store.</p></div></article><article class="collection-item"><span class="path">004-chat-completions-console</span><div><a href="../specs/004-chat-completions-console/plan.html">Implementation Plan: Chat Completions Console</a><p>Implementation Plan: Chat Completions Console
+
+Branch: feature/time-machine-chat-completions-console | Date: 2026-06-27 | Spec: spec.md
+
+ Summary
+Retroactively specify and verify the existin</p></div></article><article class="collection-item"><span class="path">004-chat-completions-console</span><div><a href="../specs/004-chat-completions-console/quickstart.html">Quickstart: Chat Completions Console</a><p>Quickstart: Chat Completions Console
+
+ Build verification
+bash
+xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination &#x27;generic/platform=macOS&#x27; -derivedDataPath /tmp/Herme</p></div></article><article class="collection-item"><span class="path">004-chat-completions-console</span><div><a href="../specs/004-chat-completions-console/research.html">Research: Chat Completions Console</a><p>Research: Chat Completions Console
+
+ Decision 1: Keep Chat on /v1/chat/completions
+Decision: Preserve a dedicated chat client rather than reusing the Responses or TUI Gateway path.  
+Rationa</p></div></article><article class="collection-item"><span class="path">004-chat-completions-console</span><div><a href="../specs/004-chat-completions-console/spec.html">Feature Specification: Chat Completions Console</a><p>Feature Specification: Chat Completions Console
+
+Feature Branch: feature/time-machine-chat-completions-console  
+Created: 2026-06-27  
+Status: Draft  
+Input: User description: &quot;Feature: Chat</p></div></article><article class="collection-item"><span class="path">004-chat-completions-console</span><div><a href="../specs/004-chat-completions-console/tasks.html">Tasks: Chat Completions Console</a><p>Tasks: Chat Completions Console
+
+Input: Design documents from /specs/004-chat-completions-console/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts/chat-completions-ap</p></div></article><article class="collection-item"><span class="path">005-tui-gateway-workspaces/contracts</span><div><a href="../specs/005-tui-gateway-workspaces/contracts/tui-gateway-json-rpc.html">Contract: TUI Gateway JSON-RPC</a><p>Contract: TUI Gateway JSON-RPC
+
+ Transport
+- Resolve Dashboard base URL, validate sensitive URL, obtain dashboard session token, request api/auth/ws-ticket when available, convert http/https</p></div></article><article class="collection-item"><span class="path">005-tui-gateway-workspaces</span><div><a href="../specs/005-tui-gateway-workspaces/data-model.html">Data Model: TUI Gateway Workspaces</a><p>Data Model: TUI Gateway Workspaces
+
+ HermesTUIGatewayStore
+- Attributes: connection state, WebSocket task, pending responses, session IDs, messages, event count, status/error, streaming/resu</p></div></article><article class="collection-item"><span class="path">005-tui-gateway-workspaces</span><div><a href="../specs/005-tui-gateway-workspaces/plan.html">Implementation Plan: TUI Gateway Workspaces</a><p>Implementation Plan: TUI Gateway Workspaces
+
+ ⚠️ STALE: spec.md was refined on 2026-08-17 (/skill substring popover: US5, FR-011, SC-008). Run /speckit.refine.propagate to update this plan.
+</p></div></article><article class="collection-item"><span class="path">005-tui-gateway-workspaces</span><div><a href="../specs/005-tui-gateway-workspaces/quickstart.html">Quickstart: TUI Gateway Workspaces</a><p>Quickstart: TUI Gateway Workspaces
+
+ Build verification
+bash
+xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination &#x27;generic/platform=macOS&#x27; -derivedDataPath /tmp/HermesM</p></div></article><article class="collection-item"><span class="path">005-tui-gateway-workspaces</span><div><a href="../specs/005-tui-gateway-workspaces/research.html">Research: TUI Gateway Workspaces</a><p>Research: TUI Gateway Workspaces
+
+ Decision 1: Use Dashboard WebSocket JSON-RPC
+Decision: Preserve api/ws JSON-RPC rather than HTTP Responses/Chat APIs.  
+Rationale: TUI Gateway mirrors the </p></div></article><article class="collection-item"><span class="path">005-tui-gateway-workspaces</span><div><a href="../specs/005-tui-gateway-workspaces/spec.html">Feature Specification: TUI Gateway Workspaces</a><p>Feature Specification: TUI Gateway Workspaces
+
+Feature Branch: feature/time-machine-tui-gateway-workspaces  
+Created: 2026-06-27  
+Status: Refined
+Refined: 2026-07-17 — Added live current-co</p></div></article><article class="collection-item"><span class="path">005-tui-gateway-workspaces</span><div><a href="../specs/005-tui-gateway-workspaces/tasks.html">Tasks: TUI Gateway Workspaces</a><p>Tasks: TUI Gateway Workspaces
+
+ ⚠️ STALE: spec.md was refined on 2026-08-17 (/skill substring popover: US5, FR-011, SC-008). Run /speckit.refine.propagate to update this plan.
+
+Input: Design</p></div></article><article class="collection-item"><span class="path">006-history-sessions-resume/contracts</span><div><a href="../specs/006-history-sessions-resume/contracts/dashboard-history-sessions-api.html">Contract: Dashboard History and Sessions API</a><p>Contract: Dashboard History and Sessions API
+
+ Dashboard authentication
+
+- Resolve dashboard base URL through HermesDashboardClient.
+- Extract or refresh dashboard session token from dashboa</p></div></article><article class="collection-item"><span class="path">006-history-sessions-resume</span><div><a href="../specs/006-history-sessions-resume/data-model.html">Data Model: History and Session Resume</a><p>Data Model: History and Session Resume
+
+ HermesDashboardHistorySearchSession
+
+- Attributes: query, results, loading/search flags, dashboard HTTP flag, status, last error, matched message/ses</p></div></article><article class="collection-item"><span class="path">006-history-sessions-resume</span><div><a href="../specs/006-history-sessions-resume/plan.html">Implementation Plan: History and Session Resume</a><p>Implementation Plan: History and Session Resume
+
+Branch: feature/time-machine-history-sessions-resume | Date: 2026-06-27 | Spec: spec.md
+
+Propagated: 2026-06-27 — Updated from spec.md refine</p></div></article><article class="collection-item"><span class="path">006-history-sessions-resume</span><div><a href="../specs/006-history-sessions-resume/quickstart.html">Quickstart: History and Session Resume</a><p>Quickstart: History and Session Resume
+
+ Build verification
+
+bash
+xcodebuild   -project HermesMacOS.xcodeproj   -scheme HermesMacOS   -destination &#x27;generic/platform=macOS&#x27;   -derivedDataPath</p></div></article><article class="collection-item"><span class="path">006-history-sessions-resume</span><div><a href="../specs/006-history-sessions-resume/research.html">Research: History and Session Resume</a><p>Research: History and Session Resume
+
+ Decision 1: Keep search on dashboard conversation endpoint
+
+Decision: Use api/sessions/search/conversations for full-text History search.
+
+Rationale: T</p></div></article><article class="collection-item"><span class="path">006-history-sessions-resume</span><div><a href="../specs/006-history-sessions-resume/spec.html">Feature Specification: History and Session Resume</a><p>Feature Specification: History and Session Resume
+
+Feature Branch: feature/time-machine-history-sessions-resume
+Created: 2026-06-27
+Status: Refined
+Refined: 2026-06-27 — Added Sessions-tab l</p></div></article><article class="collection-item"><span class="path">006-history-sessions-resume</span><div><a href="../specs/006-history-sessions-resume/tasks.html">Tasks: History and Session Resume</a><p>Tasks: History and Session Resume
+
+Propagated: 2026-06-27 — Updated from spec.md refinement for Sessions-tab localmemory persistence.
+
+Input: Design documents from /specs/006-history-session</p></div></article><article class="collection-item"><span class="path">007-approvals-inbox/contracts</span><div><a href="../specs/007-approvals-inbox/contracts/approvals-api.html">Contract: Approvals API</a><p>Contract: Approvals API
+
+ List approvals
+
+- GET /v1/approvals
+- Request headers:
+  - Accept: application/json
+  - Optional Authorization: Bearer &lt;api-key only after sensitive URL validation.</p></div></article><article class="collection-item"><span class="path">007-approvals-inbox</span><div><a href="../specs/007-approvals-inbox/data-model.html">Data Model: Approvals Inbox</a><p>Data Model: Approvals Inbox
+
+ HermesApprovalItem
+
+- Attributes: id, sessionKey, queuePosition, kind, title, command, description, patternKey, patternKeys, createdAt, surface, scopeOptions.
+-</p></div></article><article class="collection-item"><span class="path">007-approvals-inbox</span><div><a href="../specs/007-approvals-inbox/plan.html">Implementation Plan: Approvals Inbox</a><p>Implementation Plan: Approvals Inbox
+
+Branch: feature/time-machine-approvals-inbox | Date: 2026-06-27 | Spec: spec.md
+
+Input: Feature specification from /specs/007-approvals-inbox/spec.md
+
+ </p></div></article><article class="collection-item"><span class="path">007-approvals-inbox</span><div><a href="../specs/007-approvals-inbox/quickstart.html">Quickstart: Approvals Inbox</a><p>Quickstart: Approvals Inbox
+
+ Build verification
+
+bash
+xcodebuild   -project HermesMacOS.xcodeproj   -scheme HermesMacOS   -destination &#x27;generic/platform=macOS&#x27;   -derivedDataPath /tmp/Herme</p></div></article><article class="collection-item"><span class="path">007-approvals-inbox</span><div><a href="../specs/007-approvals-inbox/research.html">Research: Approvals Inbox</a><p>Research: Approvals Inbox
+
+ Decision 1: Merge remote and local approvals in one inbox
+
+Decision: Display /v1/approvals items and HermesLocalApprovalCenter pending items together.
+
+Rationale:</p></div></article><article class="collection-item"><span class="path">007-approvals-inbox</span><div><a href="../specs/007-approvals-inbox/spec.html">Feature Specification: Approvals Inbox</a><p>Feature Specification: Approvals Inbox
+
+Feature Branch: feature/time-machine-approvals-inbox  
+Created: 2026-06-27  
+Status: Draft  
+Input: User description: &quot;Feature: Approvals Inbox. Descr</p></div></article><article class="collection-item"><span class="path">007-approvals-inbox</span><div><a href="../specs/007-approvals-inbox/tasks.html">Tasks: Approvals Inbox</a><p>Tasks: Approvals Inbox
+
+Input: Design documents from /specs/007-approvals-inbox/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts/approvals-api.md, quickstart.md
+
+Test</p></div></article><article class="collection-item"><span class="path">008-dashboard-web-embedding/contracts</span><div><a href="../specs/008-dashboard-web-embedding/contracts/dashboard-web-embedding.html">Contract: Dashboard Web Embedding</a><p>Contract: Dashboard Web Embedding
+
+ URL normalization
+- Empty strings return no URL.
+- Full http/https URLs with hosts are accepted only when safe.
+- Host-only values are interpreted as HTTP</p></div></article><article class="collection-item"><span class="path">008-dashboard-web-embedding</span><div><a href="../specs/008-dashboard-web-embedding/data-model.html">Data Model: Dashboard Web Embedding</a><p>Data Model: Dashboard Web Embedding
+
+ HermesDashboardView
+- Attributes: dashboardURL, pagePath, title, systemImage, colorScheme, reloadToken.
+- Relationships: owns SwiftUI chrome and delegat</p></div></article><article class="collection-item"><span class="path">008-dashboard-web-embedding</span><div><a href="../specs/008-dashboard-web-embedding/plan.html">Implementation Plan: Dashboard Web Embedding</a><p>Implementation Plan: Dashboard Web Embedding
+
+Branch: feature/time-machine-dashboard-web-embedding | Date: 2026-06-27 | Spec: spec.md
+
+ Summary
+Retroactively specify and verify the existing </p></div></article><article class="collection-item"><span class="path">008-dashboard-web-embedding</span><div><a href="../specs/008-dashboard-web-embedding/quickstart.html">Quickstart: Dashboard Web Embedding</a><p>Quickstart: Dashboard Web Embedding
+
+ Build verification
+bash
+xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination &#x27;generic/platform=macOS&#x27; -derivedDataPath /tmp/Hermes</p></div></article><article class="collection-item"><span class="path">008-dashboard-web-embedding</span><div><a href="../specs/008-dashboard-web-embedding/research.html">Research: Dashboard Web Embedding</a><p>Research: Dashboard Web Embedding
+
+ Decision 1: Keep dashboard inside WebKit
+Decision: Embed dashboard pages with WKWebView instead of rebuilding every dashboard page natively.  
+Rationale: </p></div></article><article class="collection-item"><span class="path">008-dashboard-web-embedding</span><div><a href="../specs/008-dashboard-web-embedding/spec.html">Feature Specification: Dashboard Web Embedding</a><p>Feature Specification: Dashboard Web Embedding
+
+Feature Branch: feature/time-machine-dashboard-web-embedding  
+Created: 2026-06-27  
+Status: Draft  
+Input: User description: &quot;Feature: Dashbo</p></div></article><article class="collection-item"><span class="path">008-dashboard-web-embedding</span><div><a href="../specs/008-dashboard-web-embedding/tasks.html">Tasks: Dashboard Web Embedding</a><p>Tasks: Dashboard Web Embedding
+
+Input: Design documents from /specs/008-dashboard-web-embedding/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts/dashboard-web-embeddi</p></div></article><article class="collection-item"><span class="path">009-dashboard-configuration-management/contracts</span><div><a href="../specs/009-dashboard-configuration-management/contracts/dashboard-configuration-api.html">Contract: Dashboard Configuration API</a><p>Contract: Dashboard Configuration API
+
+ Resource categories
+- Skills: list/toggle/install/manage through HermesDashboardSkillsStore.
+- Plugins: hub/status/actions through HermesDashboardPlug</p></div></article><article class="collection-item"><span class="path">009-dashboard-configuration-management</span><div><a href="../specs/009-dashboard-configuration-management/data-model.html">Data Model: Dashboard Configuration Management</a><p>Data Model: Dashboard Configuration Management
+
+ HermesConfigurationView
+- Attributes: AppStorage expansion flags, dashboard stores, local stores, search/draft fields, API settings, dashboar</p></div></article><article class="collection-item"><span class="path">009-dashboard-configuration-management</span><div><a href="../specs/009-dashboard-configuration-management/plan.html">Implementation Plan: Dashboard Configuration Management</a><p>Implementation Plan: Dashboard Configuration Management
+
+Branch: feature/time-machine-dashboard-configuration-management | Date: 2026-06-27 | Spec: spec.md
+
+ Summary
+Retroactively specify an</p></div></article><article class="collection-item"><span class="path">009-dashboard-configuration-management</span><div><a href="../specs/009-dashboard-configuration-management/quickstart.html">Quickstart: Dashboard Configuration Management</a><p>Quickstart: Dashboard Configuration Management
+
+ Build verification
+bash
+xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination &#x27;generic/platform=macOS&#x27; -derivedDataPath </p></div></article><article class="collection-item"><span class="path">009-dashboard-configuration-management</span><div><a href="../specs/009-dashboard-configuration-management/research.html">Research: Dashboard Configuration Management</a><p>Research: Dashboard Configuration Management
+
+ Decision 1: Keep configuration split into stores and section views
+Decision: Preserve one top-level orchestration view with focused stores/sect</p></div></article><article class="collection-item"><span class="path">009-dashboard-configuration-management</span><div><a href="../specs/009-dashboard-configuration-management/spec.html">Feature Specification: Dashboard Configuration Management</a><p>Feature Specification: Dashboard Configuration Management
+
+Feature Branch: feature/time-machine-dashboard-configuration-management  
+Created: 2026-06-27  
+Status: Draft  
+Input: User descrip</p></div></article><article class="collection-item"><span class="path">009-dashboard-configuration-management</span><div><a href="../specs/009-dashboard-configuration-management/tasks.html">Tasks: Dashboard Configuration Management</a><p>Tasks: Dashboard Configuration Management
+
+Input: Design documents from /specs/009-dashboard-configuration-management/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts</p></div></article><article class="collection-item"><span class="path">010-local-runtime-profile-management/contracts</span><div><a href="../specs/010-local-runtime-profile-management/contracts/local-runtime-files.html">Contract: Local Runtime Files and Commands</a><p>Contract: Local Runtime Files and Commands
+
+ Profile directories
+- Default profile lives at Hermes home root.
+- Named profiles live under profiles/&lt;name.
+- Profile files may include config.y</p></div></article><article class="collection-item"><span class="path">010-local-runtime-profile-management</span><div><a href="../specs/010-local-runtime-profile-management/data-model.html">Data Model: Local Runtime and Profile Management</a><p>Data Model: Local Runtime and Profile Management
+
+ HermesLocalProfileInfo
+- Attributes: name, path, default/active flags, provider, model, baseURL, file presence, skill count, gateway runnin</p></div></article><article class="collection-item"><span class="path">010-local-runtime-profile-management</span><div><a href="../specs/010-local-runtime-profile-management/plan.html">Implementation Plan: Local Runtime and Profile Management</a><p>Implementation Plan: Local Runtime and Profile Management
+
+Branch: feature/time-machine-local-runtime-profile-management | Date: 2026-06-27 | Spec: spec.md
+
+ Summary
+Retroactively specify an</p></div></article><article class="collection-item"><span class="path">010-local-runtime-profile-management</span><div><a href="../specs/010-local-runtime-profile-management/quickstart.html">Quickstart: Local Runtime and Profile Management</a><p>Quickstart: Local Runtime and Profile Management
+
+ Build verification
+bash
+xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination &#x27;generic/platform=macOS&#x27; -derivedDataPat</p></div></article><article class="collection-item"><span class="path">010-local-runtime-profile-management</span><div><a href="../specs/010-local-runtime-profile-management/research.html">Research: Local Runtime and Profile Management</a><p>Research: Local Runtime and Profile Management
+
+ Decision 1: Use direct filesystem stores for profile/config files
+Decision: Preserve direct local read/write helpers rather than routing ever</p></div></article><article class="collection-item"><span class="path">010-local-runtime-profile-management</span><div><a href="../specs/010-local-runtime-profile-management/spec.html">Feature Specification: Local Runtime and Profile Management</a><p>Feature Specification: Local Runtime and Profile Management
+
+Feature Branch: feature/time-machine-local-runtime-profile-management  
+Created: 2026-06-27  
+Status: Draft  
+Input: User descrip</p></div></article><article class="collection-item"><span class="path">010-local-runtime-profile-management</span><div><a href="../specs/010-local-runtime-profile-management/tasks.html">Tasks: Local Runtime and Profile Management</a><p>Tasks: Local Runtime and Profile Management
+
+Input: Design documents from /specs/010-local-runtime-profile-management/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts</p></div></article><article class="collection-item"><span class="path">011-kanban-board-management/contracts</span><div><a href="../specs/011-kanban-board-management/contracts/kanban-api.html">Contract: Kanban API</a><p>Contract: Kanban API
+
+ Board data
+- Dashboard returns boards, columns, tasks, profiles, comments, logs, actions, and run metadata consumed by HermesKanbanView.
+- Tasks decode with optional f</p></div></article><article class="collection-item"><span class="path">011-kanban-board-management</span><div><a href="../specs/011-kanban-board-management/data-model.html">Data Model: Kanban Board Management</a><p>Data Model: Kanban Board Management
+
+ HermesKanbanColumnStatus
+- Attributes: raw status, title, icon, tint, visible order, movable status set.
+
+ HermesKanbanTask
+- Attributes: id, title, bod</p></div></article><article class="collection-item"><span class="path">011-kanban-board-management</span><div><a href="../specs/011-kanban-board-management/plan.html">Implementation Plan: Kanban Board Management</a><p>Implementation Plan: Kanban Board Management
+
+Branch: feature/time-machine-kanban-board-management | Date: 2026-06-27 | Spec: spec.md
+
+ Summary
+Retroactively specify and verify the existing </p></div></article><article class="collection-item"><span class="path">011-kanban-board-management</span><div><a href="../specs/011-kanban-board-management/quickstart.html">Quickstart: Kanban Board Management</a><p>Quickstart: Kanban Board Management
+
+ Build verification
+bash
+xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination &#x27;generic/platform=macOS&#x27; -derivedDataPath /tmp/Hermes</p></div></article><article class="collection-item"><span class="path">011-kanban-board-management</span><div><a href="../specs/011-kanban-board-management/research.html">Research: Kanban Board Management</a><p>Research: Kanban Board Management
+
+ Decision 1: Preserve native board models around dashboard APIs
+Decision: Keep decoded task/column/profile structs and native SwiftUI board UI.  
+Rationale</p></div></article><article class="collection-item"><span class="path">011-kanban-board-management</span><div><a href="../specs/011-kanban-board-management/spec.html">Feature Specification: Kanban Board Management</a><p>Feature Specification: Kanban Board Management
+
+Feature Branch: feature/time-machine-kanban-board-management  
+Created: 2026-06-27  
+Status: Draft  
+Input: User description: &quot;Feature: Kanban</p></div></article><article class="collection-item"><span class="path">011-kanban-board-management</span><div><a href="../specs/011-kanban-board-management/tasks.html">Tasks: Kanban Board Management</a><p>Tasks: Kanban Board Management
+
+Input: Design documents from /specs/011-kanban-board-management/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts/kanban-api.md, quicks</p></div></article><article class="collection-item"><span class="path">012-utilities-maintenance/contracts</span><div><a href="../specs/012-utilities-maintenance/contracts/utilities-maintenance.html">Contract: Utilities and Maintenance</a><p>Contract: Utilities and Maintenance
+
+ Utility panels
+- Clipboard monitoring is disabled by default and can be refreshed or cleared only by user action.
+- Messages history displays retained p</p></div></article><article class="collection-item"><span class="path">012-utilities-maintenance</span><div><a href="../specs/012-utilities-maintenance/data-model.html">Data Model: Utilities and Maintenance</a><p>Data Model: Utilities and Maintenance
+
+ HermesUtilitiesView
+- Attributes: disclosure flags, retention flags, selected history mode, status messages, connected host/window, injected stores.
+-</p></div></article><article class="collection-item"><span class="path">012-utilities-maintenance</span><div><a href="../specs/012-utilities-maintenance/plan.html">Implementation Plan: Utilities and Maintenance</a><p>Implementation Plan: Utilities and Maintenance
+
+Branch: feature/time-machine-utilities-maintenance | Date: 2026-06-27 | Spec: spec.md
+Propagated: 2026-06-28 — Updated from spec.md refinement</p></div></article><article class="collection-item"><span class="path">012-utilities-maintenance</span><div><a href="../specs/012-utilities-maintenance/quickstart.html">Quickstart: Utilities and Maintenance</a><p>Quickstart: Utilities and Maintenance
+
+ Build verification
+bash
+xcodebuild -project HermesMacOS.xcodeproj -scheme HermesMacOS -destination &#x27;generic/platform=macOS&#x27; -derivedDataPath /tmp/Herm</p></div></article><article class="collection-item"><span class="path">012-utilities-maintenance</span><div><a href="../specs/012-utilities-maintenance/research.html">Research: Utilities and Maintenance</a><p>Research: Utilities and Maintenance
+
+ Decision 1: Keep maintenance utilities explicit and opt-in
+Decision: Clipboard monitoring, knowledge erasure, repository updates, and STT recording rema</p></div></article><article class="collection-item"><span class="path">012-utilities-maintenance</span><div><a href="../specs/012-utilities-maintenance/spec.html">Feature Specification: Utilities and Maintenance</a><p>Feature Specification: Utilities and Maintenance
+
+Feature Branch: feature/time-machine-utilities-maintenance  
+Created: 2026-06-27  
+Status: Refined
+Input: User description: &quot;Feature: Utilit</p></div></article><article class="collection-item"><span class="path">012-utilities-maintenance</span><div><a href="../specs/012-utilities-maintenance/tasks.html">Tasks: Utilities and Maintenance</a><p>Tasks: Utilities and Maintenance
+
+Propagated: 2026-06-28 — Updated from spec.md refinement for Knowledge eraser Hindsight provider search and localmemory exclusion.
+
+Input: Design documents </p></div></article><article class="collection-item"><span class="path">013-hermesmacos-test-target/checklists</span><div><a href="../specs/013-hermesmacos-test-target/checklists/requirements.html">Specification Quality Checklist: HermesMacOS Test Target</a><p>Specification Quality Checklist: HermesMacOS Test Target
+
+Purpose: Validate specification completeness and quality before proceeding to planning
+Created: 2026-06-27
+Feature: spec.md
+
+ Conten</p></div></article><article class="collection-item"><span class="path">013-hermesmacos-test-target/contracts</span><div><a href="../specs/013-hermesmacos-test-target/contracts/test-coverage-contract.html">Contract: HermesMacOSTest Coverage and Execution</a><p>Contract: HermesMacOSTest Coverage and Execution
+
+ Target Contract
+
+- Target name: HermesMacOSTest exactly.
+- Platform: macOS.
+- Minimum supported OS: macOS 26.0.
+- Toolchain: Xcode 26.6 wit</p></div></article><article class="collection-item"><span class="path">013-hermesmacos-test-target</span><div><a href="../specs/013-hermesmacos-test-target/data-model.html">Data Model: HermesMacOS Test Target</a><p>Data Model: HermesMacOS Test Target
+
+ HermesMacOSTest Target
+
+Purpose: Native Xcode test target that builds with HermesMacOS and executes deterministic Swift tests.
+
+Key fields / settings:
+-</p></div></article><article class="collection-item"><span class="path">013-hermesmacos-test-target</span><div><a href="../specs/013-hermesmacos-test-target/plan.html">Implementation Plan: HermesMacOS Test Target</a><p>Implementation Plan: HermesMacOS Test Target
+
+Branch: main | Date: 2026-06-27 | Spec: spec.md
+
+Input: Feature specification from specs/013-hermesmacos-test-target/spec.md plus user constrain</p></div></article><article class="collection-item"><span class="path">013-hermesmacos-test-target</span><div><a href="../specs/013-hermesmacos-test-target/quickstart.html">Quickstart: HermesMacOS Test Target</a><p>Quickstart: HermesMacOS Test Target
+
+ Prerequisites
+
+- macOS 26.0 or newer.
+- Xcode 26.6 selected by xcode-select.
+- Apple Swift 6.3.3 available through xcrun swift --version.
+- XcodeGen ava</p></div></article><article class="collection-item"><span class="path">013-hermesmacos-test-target</span><div><a href="../specs/013-hermesmacos-test-target/research.html">Research: HermesMacOS Test Target</a><p>Research: HermesMacOS Test Target
+
+ Decision 1: Use Swift 6 language mode with Xcode 26.6 / Apple Swift 6.3.3
+
+Decision: Update project and test-target settings to Swift 6 language mode whil</p></div></article><article class="collection-item"><span class="path">013-hermesmacos-test-target</span><div><a href="../specs/013-hermesmacos-test-target/spec.html">Feature Specification: HermesMacOS Test Target</a><p>Feature Specification: HermesMacOS Test Target
+
+Feature Branch: 013-hermesmacos-test-target  
+Created: 2026-06-27  
+Status: Draft  
+Input: User description: &quot;Add an Xcode target « HermesMacO</p></div></article><article class="collection-item"><span class="path">013-hermesmacos-test-target</span><div><a href="../specs/013-hermesmacos-test-target/tasks.html">Tasks: HermesMacOS Test Target</a><p>Tasks: HermesMacOS Test Target
+
+Input: Design documents from specs/013-hermesmacos-test-target/
+
+Prerequisites: plan.md, spec.md, research.md, data-model.md, contracts/test-coverage-contract</p></div></article><article class="collection-item"><span class="path">014-memory-tab-settings/checklists</span><div><a href="../specs/014-memory-tab-settings/checklists/requirements.html">Specification Quality Checklist: Memory Tab and Tab Settings</a><p>Specification Quality Checklist: Memory Tab and Tab Settings
+
+Purpose: Validate specification completeness and quality before proceeding to planning
+Created: 2026-06-28
+Feature: spec.md
+
+ Co</p></div></article><article class="collection-item"><span class="path">014-memory-tab-settings/contracts</span><div><a href="../specs/014-memory-tab-settings/contracts/memory-tab-ui-contract.html">UI and Provider Contract: Memory Tab and Tab Settings</a><p>UI and Provider Contract: Memory Tab and Tab Settings
+
+This contract describes the user-visible behavior and provider boundary for implementation. It is not an external HTTP API contract.
+
+ </p></div></article><article class="collection-item"><span class="path">014-memory-tab-settings</span><div><a href="../specs/014-memory-tab-settings/data-model.html">Data Model: Memory Tab and Tab Settings</a><p>Data Model: Memory Tab and Tab Settings
+
+ TabVisibilityPreference
+
+Represents whether optional prompt tabs are shown in the main side navigation.
+
+| Field | Type | Required | Notes |
+|------</p></div></article><article class="collection-item"><span class="path">014-memory-tab-settings</span><div><a href="../specs/014-memory-tab-settings/plan.html">Implementation Plan: Memory Tab and Tab Settings</a><p>Implementation Plan: Memory Tab and Tab Settings
+
+Branch: main | Date: 2026-06-28 | Spec: spec.md
+
+Input: Feature specification from /specs/014-memory-tab-settings/spec.md
+
+ Summary
+
+Add Set</p></div></article><article class="collection-item"><span class="path">014-memory-tab-settings</span><div><a href="../specs/014-memory-tab-settings/quickstart.html">Quickstart: Memory Tab and Tab Settings</a><p>Quickstart: Memory Tab and Tab Settings
+
+ Prerequisites
+
+- macOS 26.0 or newer.
+- Xcode 26.6 or compatible Xcode 26 toolchain.
+- Apple Swift 6 language mode; local toolchain observed during </p></div></article><article class="collection-item"><span class="path">014-memory-tab-settings</span><div><a href="../specs/014-memory-tab-settings/research.html">Research: Memory Tab and Tab Settings</a><p>Research: Memory Tab and Tab Settings
+
+Feature: 014-memory-tab-settings  
+Date: 2026-06-28  
+Inputs considered: user request for latest Swift and macOS 26+, existing HermesMacOS docs/codebas</p></div></article><article class="collection-item"><span class="path">014-memory-tab-settings</span><div><a href="../specs/014-memory-tab-settings/spec.html">Feature Specification: Memory Tab and Tab Settings</a><p>Feature Specification: Memory Tab and Tab Settings
+
+Feature Branch: 014-memory-tab-settings  
+Created: 2026-06-28  
+Status: Draft  
+Input: User description: &quot;In HermesMacOS application /skil</p></div></article><article class="collection-item"><span class="path">014-memory-tab-settings</span><div><a href="../specs/014-memory-tab-settings/tasks.html">Tasks: Memory Tab and Tab Settings</a><p>Tasks: Memory Tab and Tab Settings
+
+Input: Design documents from /specs/014-memory-tab-settings/
+
+Prerequisites: specs/014-memory-tab-settings/plan.md, specs/014-memory-tab-settings/spec.md,</p></div></article></section>
+</main>
+      <footer class="page-footer">HermesMacOS documentation · 118 indexed source documents</footer>
+    </div>
+  </div>
+  <div class="search-dialog" data-search-dialog hidden role="dialog" aria-modal="true" aria-label="Search documentation">
+    <div class="search-panel"><div class="search-input-row"><label class="sr-only" for="doc-search">Search documentation</label><input id="doc-search" type="search" placeholder="Search all documentation…" autocomplete="off"><button type="button" data-search-close aria-label="Close search">Close</button></div><p class="search-hint">Search titles, paths, and document content. Press Escape to close.</p><div class="search-results" data-search-results aria-live="polite"></div></div>
+  </div>
+  <script>window.HERMES_WIKI={assetPrefix:".."};</script><script src="../static/app.js"></script>
+</body>
+</html>

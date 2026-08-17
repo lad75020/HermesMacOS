@@ -67,3 +67,5 @@ AGENTS.md
 /.codebase-memory
 /.codebase-memory
 /.codebase-memory
+/.playwright-cli
+/wiki/output
