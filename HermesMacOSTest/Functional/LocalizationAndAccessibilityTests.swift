@@ -81,4 +81,14 @@ final class LocalizationAndAccessibilityTests: XCTestCase {
         XCTAssertTrue(HermesMacOSTestCoverageMap.covers("localization-accessibility", "Memory tab controls"))
         XCTAssertTrue(HermesMacOSTestCoverageMap.covers("localization-accessibility", "Settings tab visibility controls"))
     }
+
+    func testResourceGaugeLabelsAndValuesAreCatalogBacked() throws {
+        let catalogData = try Data(contentsOf: HermesTestAssertions.repositoryFile("HermesMacOS/Localizable.xcstrings"))
+        let catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
+        let expectedKeys: Set<String> = ["Memory", "GPU", "Unavailable", "Stale", "Memory usage", "GPU usage", "%@%%"]
+
+        XCTAssertTrue(expectedKeys.isSubset(of: Set(strings.keys)))
+        XCTAssertTrue(HermesMacOSTestCoverageMap.covers("localization-accessibility", "resource gauge labels and values"))
+    }
 }

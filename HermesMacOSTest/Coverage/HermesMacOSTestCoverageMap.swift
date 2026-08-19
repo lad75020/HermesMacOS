@@ -168,7 +168,7 @@ enum HermesMacOSTestCoverageMap {
             identifier: "localization-accessibility",
             displayName: "Localization/accessibility",
             scope: .functional,
-            requiredSubcategories: ["primary navigation labels", "critical control strings", "supported app surfaces", "Memory tab controls", "Settings tab visibility controls"],
+            requiredSubcategories: ["primary navigation labels", "critical control strings", "supported app surfaces", "Memory tab controls", "Settings tab visibility controls", "resource gauge labels and values"],
             defaultCoverage: ["LocalizationAndAccessibilityTests"],
             liveSmokeOnly: false
         ),

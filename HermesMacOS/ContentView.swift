@@ -161,6 +161,7 @@ struct HermesSideTabSwitcher: View {
     let visibleTabs: [HermesMacOSTab]
     let onSelectTab: (HermesMacOSTab) -> Void
     @State private var reachabilityMonitor = HermesReachabilityMonitor()
+    @State private var resourceUsageMonitor = HermesResourceUsageMonitor()
     @State private var isAskBlinking = false
     @State private var isChatBlinking = false
     @State private var isTUIGatewayBlinking = false
@@ -199,6 +200,17 @@ struct HermesSideTabSwitcher: View {
                 }
             }
             Spacer(minLength: 0)
+
+            HermesResourceUsageGauge(
+                kind: .memory,
+                snapshot: resourceUsageMonitor.snapshot,
+                availability: resourceUsageMonitor.availability
+            )
+            HermesResourceUsageGauge(
+                kind: .gpu,
+                snapshot: resourceUsageMonitor.snapshot,
+                availability: resourceUsageMonitor.availability
+            )
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 16)
@@ -210,6 +222,12 @@ struct HermesSideTabSwitcher: View {
         }
         .task {
             await reachabilityMonitor.runDashboardLoop()
+        }
+        .task {
+            resourceUsageMonitor.start()
+        }
+        .onDisappear {
+            resourceUsageMonitor.stop()
         }
         .task(id: activeAskAttention) {
             await runAskBlinkLoop(for: activeAskAttention)

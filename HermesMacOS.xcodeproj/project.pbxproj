@@ -24,6 +24,7 @@
 		2D21A44CC2874406FE56A36A /* FailureRedactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0332163080D3E89A5069669F /* FailureRedactionTests.swift */; };
 		2DE01290382498965A3C55D7 /* AsyncLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 186733EC4FBC3C3DFB9BE290 /* AsyncLifecycleTests.swift */; };
 		3390947A5BC0E274D0687747 /* HermesDashboardWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A438EEA4520653FF5477193F /* HermesDashboardWebView.swift */; };
+		36B85429D635245CCE49B716 /* HermesResourceUsageMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 275C707ED4F90E963724ABF5 /* HermesResourceUsageMonitor.swift */; };
 		38A0F7AB682DF976E7B0F49E /* AskHermesWorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC6A4FCAC36D5B32F4F3564 /* AskHermesWorkflowTests.swift */; };
 		3924AE5FEA470C1E2BB7E00A /* HermesLiveSmokeConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0057A96AC6266EBEEAD4F9A /* HermesLiveSmokeConfiguration.swift */; };
 		3D40A4C856AC02552C57070E /* MemoryTabWorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 943AC68BEB19EA000F2B7704 /* MemoryTabWorkflowTests.swift */; };
@@ -44,6 +45,7 @@
 		750789AB53729473081941F7 /* StreamingAndGatewayEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A6E4FED4AFC71A8518CB863 /* StreamingAndGatewayEventTests.swift */; };
 		75F801715914F0744478A154 /* JetBrainsMono-Bold.woff2 in Resources */ = {isa = PBXBuildFile; fileRef = 28E6EB259A2B46DF7A3B0134 /* JetBrainsMono-Bold.woff2 */; };
 		769F8F9B214E7F65BF2E1395 /* UtilitiesWorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD54FFDA53A15A45CA17A23B /* UtilitiesWorkflowTests.swift */; };
+		7C2E54177EF0F40F14EAC77E /* HermesResourceUsageGauge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA89CFC2EDF60B2103E975F /* HermesResourceUsageGauge.swift */; };
 		7E2291B399D429A3C13078C9 /* YAMLConfigurationMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5624D03F07FB22C052CA18CA /* YAMLConfigurationMutationTests.swift */; };
 		7E22EC2AAB8B02F82DF4CF12 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 0111AF5B10A59D4B0A68BF86 /* InfoPlist.strings */; };
 		831EF4DDBB585FCBC82B091C /* HermesTestAssertions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94883D37F1301398A6F0BE85 /* HermesTestAssertions.swift */; };
@@ -89,6 +91,7 @@
 		DF122FE266074C8AE548DFC6 /* HermesCoverageContractVerifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCCB70481C18A6297025655F /* HermesCoverageContractVerifierTests.swift */; };
 		DFCB7A060E440BBA996D1D25 /* HermesMCPServersYAML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B6327440A2F80352A04DEAC /* HermesMCPServersYAML.swift */; };
 		E1848BEE3EF0960620A17BD3 /* HermesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6696056CAFB17C7255BD45D7 /* HermesViews.swift */; };
+		E1D07880393615EC6D19DCE2 /* HermesResourceUsageMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B7DE83A0C2E5172E657E0F /* HermesResourceUsageMonitorTests.swift */; };
 		E35AFDBA67173869562A5621 /* HermesConfigurationToolsetsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B27B9AF2E0C1B9B0EFDD80 /* HermesConfigurationToolsetsSection.swift */; };
 		E6744ACE824DD627E37B9020 /* HermesChatCompletionsAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03ABF022BB35018E0F307AEC /* HermesChatCompletionsAPI.swift */; };
 		E6DB079DBEBCA1119036ACEA /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */; };
@@ -128,7 +131,9 @@
 		2409A1205D704B5C7BCCE694 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		261DC1AC9FE01008500D6665 /* HermesSplash.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = HermesSplash.mp4; sourceTree = "<group>"; };
 		2680FF6141D203CB2D18D363 /* HermesKnowledgeEraserUtility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesKnowledgeEraserUtility.swift; sourceTree = "<group>"; };
+		275C707ED4F90E963724ABF5 /* HermesResourceUsageMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesResourceUsageMonitor.swift; sourceTree = "<group>"; };
 		28E6EB259A2B46DF7A3B0134 /* JetBrainsMono-Bold.woff2 */ = {isa = PBXFileReference; lastKnownFileType = file; path = "JetBrainsMono-Bold.woff2"; sourceTree = "<group>"; };
+		2EA89CFC2EDF60B2103E975F /* HermesResourceUsageGauge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesResourceUsageGauge.swift; sourceTree = "<group>"; };
 		2FBD58B663A5B4E000BE5AF1 /* TUIGatewayWorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TUIGatewayWorkflowTests.swift; sourceTree = "<group>"; };
 		3234A2874A5FB5575A300108 /* HermesDashboardSchedules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardSchedules.swift; sourceTree = "<group>"; };
 		364DD9671ABB4385711B9A99 /* HermesConfigurationRuntimeModelsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationRuntimeModelsSection.swift; sourceTree = "<group>"; };
@@ -190,6 +195,7 @@
 		D6ED932BB5ECB9F87BDF2481 /* HermesMacOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesMacOSApp.swift; sourceTree = "<group>"; };
 		D76746761A58C12E6B3890D5 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		E0057A96AC6266EBEEAD4F9A /* HermesLiveSmokeConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesLiveSmokeConfiguration.swift; sourceTree = "<group>"; };
+		E1B7DE83A0C2E5172E657E0F /* HermesResourceUsageMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesResourceUsageMonitorTests.swift; sourceTree = "<group>"; };
 		E23D78F8C8391F85BE1F3FFF /* HermesChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesChatView.swift; sourceTree = "<group>"; };
 		E2B386B1F22020941C27F458 /* HermesDashboardToolsets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesDashboardToolsets.swift; sourceTree = "<group>"; };
 		E43FD7C2C4D60920EE819258 /* HermesConfigurationMCPServersSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HermesConfigurationMCPServersSection.swift; sourceTree = "<group>"; };
@@ -367,6 +373,7 @@
 				384496BF748A9050AE664C0E /* BuildCommandContractTests.swift */,
 				B68E08D16F90AF9E5EE40DEE /* EndpointAndRequestContractTests.swift */,
 				0332163080D3E89A5069669F /* FailureRedactionTests.swift */,
+				E1B7DE83A0C2E5172E657E0F /* HermesResourceUsageMonitorTests.swift */,
 				AC7CA3E075C2982D7CC7E2A6 /* HindsightMemoryClientTests.swift */,
 				D69DAEDE6B5DFFB3349570B4 /* RetentionAndKeychainContractTests.swift */,
 				4105EFDF992C4334F9F45810 /* SecurityGuardrailTests.swift */,
@@ -416,6 +423,8 @@
 				7572FFAE866BD13B7B461991 /* HermesMemoryView.swift */,
 				EBBF745CBB6AEE27A9D9EB9E /* HermesModelsAPI.swift */,
 				1565E229891B7B645065BCEE /* HermesReachabilityMonitor.swift */,
+				2EA89CFC2EDF60B2103E975F /* HermesResourceUsageGauge.swift */,
+				275C707ED4F90E963724ABF5 /* HermesResourceUsageMonitor.swift */,
 				A835B92890D9FECB3798EE13 /* HermesSecurityUtilities.swift */,
 				C790E90C150D8867D2780DC7 /* HermesSpeechToText.swift */,
 				9FA74336B1C51EF23633C942 /* HermesTUIGatewayView.swift */,
@@ -486,15 +495,18 @@
 		BA35E1DF0C875A78120FB987 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1430;
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					3659EC334C0F0B8626C57FB4 = {
-						DevelopmentTeam = RJYVGK9S3F;
+						CreatedOnToolsVersion = 26.6;
+					DevelopmentTeam = RJYVGK9S3F;
 						ProvisioningStyle = Automatic;
 					};
 					E3C5D3AA387F5281A30E9B9E = {
-						DevelopmentTeam = RJYVGK9S3F;
+						CreatedOnToolsVersion = 26.6;
+					DevelopmentTeam = RJYVGK9S3F;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -595,6 +607,8 @@
 				AAA27FF93469EFFCC212AA35 /* HermesMemoryView.swift in Sources */,
 				8910B73C7B81F160EDD47BD8 /* HermesModelsAPI.swift in Sources */,
 				85ED4898D4174966BD091045 /* HermesReachabilityMonitor.swift in Sources */,
+				7C2E54177EF0F40F14EAC77E /* HermesResourceUsageGauge.swift in Sources */,
+				36B85429D635245CCE49B716 /* HermesResourceUsageMonitor.swift in Sources */,
 				909EF4B11692B962362C0BF7 /* HermesSecurityUtilities.swift in Sources */,
 				2776471A84D2345DB28B851A /* HermesSpeechToText.swift in Sources */,
 				CC2F6BCC29409FFA92ED4CFD /* HermesTUIGatewayView.swift in Sources */,
@@ -629,6 +643,7 @@
 				A41A916C6971899411E77AA9 /* HermesMacOSTestCoverageMapTests.swift in Sources */,
 				91A863AC03131468AC933632 /* HermesMacOSTestTargetTests.swift in Sources */,
 				1CF7FA84BA6D7EBF14C703AC /* HermesMockURLProtocol.swift in Sources */,
+				E1D07880393615EC6D19DCE2 /* HermesResourceUsageMonitorTests.swift in Sources */,
 				1CF53A9ADD17ADA79D126153 /* HermesTemporaryRuntimeFixture.swift in Sources */,
 				831EF4DDBB585FCBC82B091C /* HermesTestAssertions.swift in Sources */,
 				E6F795D669DDB84DC7735AC1 /* HindsightMemoryClientTests.swift in Sources */,
@@ -734,6 +749,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
@@ -757,6 +773,7 @@
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
@@ -819,6 +836,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -834,6 +852,7 @@
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_VERSION = 6.0;
 			};
 			name = Release;

@@ -2,7 +2,8 @@
 
 **Feature Branch**: `feature/time-machine-app-shell-settings`  
 **Created**: 2026-06-27  
-**Status**: Draft  
+**Status**: Refined
+**Refined**: 2026-08-20 — Added bottom-sidebar macOS memory and GPU usage gauges backed by the local `GPUUsage` utility.
 **Input**: User description: "Feature: App Shell and Settings. Description: Provides the native macOS entry point, main tab shell, endpoint settings, theming, localization, and startup experience users navigate from. Relevant files: project.yml, HermesMacOS/HermesMacOSApp.swift, HermesMacOS/ContentView.swift, HermesMacOS/SettingsView.swift, HermesMacOS/HermesTypography.swift, HermesMacOS/SplashView.swift, HermesMacOS/Localizable.xcstrings, HermesMacOS/HermesMacOS.entitlements. Focus on this feature only; do not modify other features."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -55,6 +56,23 @@ A user sees the app with the configured app identity, localized strings, custom 
 
 ---
 
+### User Story 4 - Monitor local Mac resource use from navigation (Priority: P4)
+
+A Hermes user can see the Mac's current memory and GPU usage without leaving the navigation shell, so they can recognize local resource pressure while working in any top-level destination.
+
+**Why this priority**: The gauges are supplementary to primary navigation, but they provide useful operational context for local-model and GPU-intensive workflows.
+
+**Independent Test**: Launch HermesMacOS and confirm two compact pie-chart-styled gauges appear at the bottom of the left navigation bar; confirm their labels and percentages update from a valid `GPUUsage` sample and that a failed sample presents a bounded unavailable state.
+
+**Acceptance Scenarios**:
+
+1. **Given** the main shell is visible and `/Volumes/WDBlack4TB/Code/NodeMLX/utils/GPUUsage` returns valid output, **When** the sidebar's resource monitor polls the utility, **Then** it renders separate Memory and GPU gauges at the bottom of the left navigation bar using the reported percentage values.
+2. **Given** either value changes, **When** a later successful poll completes, **Then** the matching gauge and its textual percentage update without blocking tab selection or rendering unrelated feature views.
+3. **Given** VoiceOver is enabled, **When** focus reaches either gauge, **Then** it exposes a localized label and current percentage value that identifies Memory or GPU usage.
+4. **Given** the utility is missing, times out, exits unsuccessfully, or emits unparsable output, **When** the next poll is processed, **Then** the app keeps navigation usable and presents an unavailable/stale gauge state without displaying raw process output or crashing.
+
+---
+
 ### Edge Cases
 
 - If LocalAuthentication or startup secret unlock fails, the app must show a bounded failure state instead of exposing protected secrets or crashing.
@@ -63,6 +81,9 @@ A user sees the app with the configured app identity, localized strings, custom 
 - If a saved endpoint pair, theme, language, or font preference is invalid or unavailable, the app must fall back to a safe default and avoid breaking navigation.
 - If resources such as bundled fonts or splash media are unavailable, the app must degrade to system fonts or a static shell without blocking core navigation.
 - If Settings modifies SSH credentials or API keys, secrets must remain in Keychain-backed storage and temporary key files must be cleaned up.
+- If either resource percentage is absent, non-finite, or outside `0...100`, the system must reject that sample and retain a clearly unavailable/stale visual state rather than rendering a misleading gauge.
+- If the resource monitor view disappears or the app terminates, its polling task and any running utility process must be cancelled/terminated promptly; it must not leave an uncancellable background loop.
+- The monitor must invoke only the fixed local `GPUUsage` executable path, without a shell, user-supplied arguments, or interpolation of untrusted text into a process command.
 
 ## Requirements *(mandatory)*
 
@@ -76,6 +97,11 @@ A user sees the app with the configured app identity, localized strings, custom 
 - **FR-006**: System MUST expose visual attention states for long-running or completed background work in side-tab/workspace controls.
 - **FR-007**: System MUST register and use bundled typography/resources when present while preserving safe fallbacks.
 - **FR-008**: System MUST keep app identity, permission purpose strings, deployment target, code-signing settings, and entitlements aligned with `project.yml` and localized resources.
+- **FR-009**: System MUST display two compact pie-chart-styled gauges, labeled Memory and GPU, anchored below the navigation controls at the bottom of the left navigation bar.
+- **FR-010**: System MUST poll the fixed local executable `/Volumes/WDBlack4TB/Code/NodeMLX/utils/GPUUsage` at a bounded cadence (default: every five seconds) and parse both `GPU Usage: <percent>%` and `Memory Usage: <percent>%` values from each successful invocation.
+- **FR-011**: System MUST validate parsed resource values as finite percentages in `0...100`, update only values that changed, and make the numeric percentage and gauge meaning accessible in addition to the visual pie chart.
+- **FR-012**: System MUST run the blocking utility invocation off the UI actor, enforce a bounded execution time, and cancel polling/process work when the navigation shell is no longer visible or the app exits.
+- **FR-013**: System MUST treat resource monitor failures as non-fatal: retain usable navigation, avoid exposing raw utility output, and present an unavailable or stale state until a later valid sample succeeds.
 - **FR-SEC**: System MUST preserve HermesMacOS security guardrails for endpoint validation, Keychain/encrypted retention, redaction, TLS pin approval, local filesystem approvals, and bounded process execution where applicable.
 - **FR-INT**: System MUST preserve documented Hermes API/Dashboard/TUI Gateway contracts by passing current endpoint settings to composed feature views without changing their headers, tokens, streaming events, cancellation IDs, attachments, retries, or user-visible error states.
 
@@ -87,6 +113,8 @@ A user sees the app with the configured app identity, localized strings, custom 
 - **HermesAppTheme**: User-selected appearance mode that maps to system, light, or dark color scheme behavior.
 - **HermesAppLanguageSelection**: User-selected app language option used by shell/settings localization behavior.
 - **HermesSSHHostCredentials**: Keychain-backed host credentials used by local repository maintenance workflows surfaced from Settings.
+- **HermesResourceUsageSnapshot**: A validated, timestamped pair of local Memory and GPU percentages with a freshness/availability state used only by the sidebar resource gauges.
+- **HermesResourceUsageMonitor**: Main-actor-owned observable monitor that schedules cancellable polling, invokes the fixed utility path off the UI actor, validates output, and publishes only the latest safe snapshot or unavailable state.
 
 ## Success Criteria *(mandatory)*
 
@@ -97,6 +125,8 @@ A user sees the app with the configured app identity, localized strings, custom 
 - **SC-003**: A user can update and persist API/dashboard endpoint settings and return to the main shell in one Settings session.
 - **SC-004**: Sensitive settings remain outside plaintext preference storage according to existing Keychain helper behavior.
 - **SC-005**: At least one non-default theme/font/language preference can be selected without breaking the root navigation shell.
+- **SC-006**: When `GPUUsage` returns valid percentages, the sidebar shows two correctly labeled gauges whose accessible values match the most recently validated Memory and GPU samples within one polling interval.
+- **SC-007**: While the resource utility is unavailable, slow, malformed, or fails, tab selection remains responsive and no crash, raw process output, or unbounded polling/process work is observed.
 - **SC-BUILD**: The `HermesMacOS` scheme builds successfully with Xcode or command-line `xcodebuild`.
 - **SC-SMOKE**: The primary user journey can be validated independently with documented manual, mock-backed, or live-service smoke checks.
 
@@ -106,9 +136,16 @@ A user sees the app with the configured app identity, localized strings, custom 
 - The feature does not add a new test target; verification relies on build plus manual shell/settings smoke checks documented in this feature.
 - Existing flat source-file organization under `HermesMacOS/` remains in place.
 - Existing Hermes API, Dashboard, TUI Gateway, security, and local runtime features consume the endpoint/settings state owned by this shell.
+- The fixed `GPUUsage` executable is locally installed and currently emits separate `GPU Usage: <percent>%` and `Memory Usage: <percent>%` lines; a direct invocation on 2026-08-20 returned `GPU Usage: 27%` and `Memory Usage: 66.1%`.
+- A five-second polling interval is an acceptable default for this non-interactive operational indicator; implementation may make the interval configurable internally without increasing frequency or compromising cancellation behavior.
 
 ## Clarifications
 
 ### Session 2026-06-27
 
 - No critical product questions were generated for this retroactive feature; current source and docs provide sufficient behavior boundaries for plan/tasks generation.
+
+### Session 2026-08-20
+
+- Add two compact pie-chart-styled resource gauges at the bottom of the existing `HermesSideTabSwitcher` in `ContentView`: one for Memory usage and one for GPU usage.
+- Poll `/Volumes/WDBlack4TB/Code/NodeMLX/utils/GPUUsage`, which was verified to be an arm64 Mach-O executable and to return both values in one invocation.

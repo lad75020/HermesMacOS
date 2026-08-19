@@ -899,7 +899,7 @@ private final class HermesProcessOutputBuffer: @unchecked Sendable {
 }
 
 enum HermesProcessRunner {
-    static func run(executable: String, arguments: [String], environment: [String: String]? = nil, currentDirectory: String? = nil, timeout: TimeInterval? = nil) throws -> HermesProcessResult {
+    nonisolated static func run(executable: String, arguments: [String], environment: [String: String]? = nil, currentDirectory: String? = nil, timeout: TimeInterval? = nil) throws -> HermesProcessResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -937,7 +937,7 @@ enum HermesProcessRunner {
         return HermesProcessResult(exitCode: process.terminationStatus, output: text, timedOut: timedOut)
     }
 
-    static func runCancellable(
+    nonisolated static func runCancellable(
         executable: String,
         arguments: [String],
         environment: [String: String]? = nil,
