@@ -7,6 +7,7 @@ import AppKit
 import Foundation
 import Observation
 import SwiftUI
+@preconcurrency import Translation
 
 private enum HermesTUIGatewayError: LocalizedError {
     case invalidDashboardURL
@@ -540,6 +541,26 @@ final class HermesTUIGatewayStore {
     var visibleMessages: [HermesTUIGatewayMessage] {
         guard !showTerminalOutput else { return messages }
         return messages.filter { $0.eventType != Self.terminalOutputEventType }
+    }
+
+    /// A streamed bubble cannot be translated until its source content is stable.
+    func isMessageComplete(_ message: HermesTUIGatewayMessage) -> Bool {
+        guard isStreaming else { return true }
+        return message.id != activeStreamMessageID
+    }
+
+    /// Replaces only a selection whose source bubble is still unchanged.
+    /// Translation therefore preserves transcript identity and stays outside the
+    /// TUI Gateway request/response path.
+    @discardableResult
+    func replaceSelectedText(in messageID: UUID, originalContent: String, selectedRange: NSRange, with translatedText: String) -> Bool {
+        guard let index = messages.firstIndex(where: { $0.id == messageID }),
+              messages[index].content == originalContent,
+              let range = Range(selectedRange, in: originalContent)
+        else { return false }
+
+        messages[index].content.replaceSubrange(range, with: translatedText)
+        return true
     }
 
     private func normalizedProfile(_ profile: String) -> String {
@@ -1775,6 +1796,7 @@ struct HermesTUIGatewayView: View {
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var localPathSuggestions = HermesLocalPathSuggestionsStore()
     @State private var selectedSkillIndex = 0
+    @State private var translationService = HermesNativeTranslationService()
     @AppStorage("hermes.macOS.tuiGatewayBubbleFontSize") private var bubbleFontSize = 14.0
     @AppStorage("hermes.macOS.promptFontSize") private var promptFontSize = 14.0
 
@@ -1832,6 +1854,16 @@ struct HermesTUIGatewayView: View {
         .onDisappear { modelOptionsRefreshTask?.cancel() }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
+        }
+        .translationTask(translationService.configuration) { session in
+            await translationService.performTranslation(with: session) { selection, translatedText in
+                store.replaceSelectedText(
+                    in: selection.messageID,
+                    originalContent: selection.originalContent,
+                    selectedRange: selection.selectedRange,
+                    with: translatedText
+                )
+            }
         }
     }
 
@@ -1950,6 +1982,25 @@ struct HermesTUIGatewayView: View {
                     .font(.caption)
                     .foregroundStyle(Color.hermesDestructive)
             }
+
+            if translationService.isTranslating {
+                Label("Translating selected text…", systemImage: "character.bubble")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .accessibilityLabel("Translation in progress")
+            }
+
+            if !translationService.errorMessage.isEmpty {
+                HStack(spacing: 8) {
+                    Label(translationService.errorMessage, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesDestructive)
+                        .accessibilityLabel("Translation error: \(translationService.errorMessage)")
+                    Button("Dismiss") { translationService.dismissError() }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
+            }
         }
         .padding(18)
         .hermesGlassPanel(cornerRadius: 0)
@@ -1970,6 +2021,8 @@ struct HermesTUIGatewayView: View {
                                     set: { requestResponses[message.id] = $0 }
                                 ),
                                 fontSize: bubbleFontSize,
+                                isMessageComplete: store.isMessageComplete(message),
+                                translationService: translationService,
                                 onApproval: { choice, all in store.respondToApproval(messageID: message.id, choice: choice, applyToAll: all) },
                                 onPromptResponse: { value in
                                     guard let kind = message.requestKind, let requestID = message.requestID else { return }
@@ -2658,6 +2711,8 @@ private struct HermesTUIGatewayBubble: View {
     let message: HermesTUIGatewayMessage
     @Binding var responseText: String
     let fontSize: Double
+    let isMessageComplete: Bool
+    var translationService: HermesNativeTranslationService?
     let onApproval: (String, Bool) -> Void
     let onPromptResponse: (String) -> Void
 
@@ -2687,7 +2742,15 @@ private struct HermesTUIGatewayBubble: View {
                     }
                 }
 
-                HermesCopyableBubbleContent(text: message.content.isEmpty ? "…" : message.content, copyText: message.content, isUser: isUser, rendersMarkdown: !isUser && message.role == .assistant, fontSize: fontSize, isResponding: message.role == .assistant && message.content.isEmpty)
+                HermesCopyableBubbleContent(
+                    text: message.content.isEmpty ? "…" : message.content,
+                    copyText: message.content,
+                    isUser: isUser,
+                    rendersMarkdown: !isUser && message.role == .assistant,
+                    fontSize: fontSize,
+                    isResponding: message.role == .assistant && message.content.isEmpty,
+                    onTranslateSelection: translationAction
+                )
 
                 if message.role == .request && !message.isResolved {
                     requestControls
@@ -2700,6 +2763,18 @@ private struct HermesTUIGatewayBubble: View {
     }
 
     private var isUser: Bool { message.role == .user }
+
+    private var translationAction: ((NSRange) -> Void)? {
+        guard isMessageComplete, !message.content.isEmpty, let translationService else { return nil }
+        return { range in
+            translationService.requestTranslation(
+                messageID: message.id,
+                content: message.content,
+                selectedRange: range,
+                isMessageComplete: true
+            )
+        }
+    }
 
     @ViewBuilder
     private var requestControls: some View {

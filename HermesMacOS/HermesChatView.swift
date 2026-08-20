@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+@preconcurrency import Translation
 
 struct HermesChatConsoleView: View {
     @Binding var apiSettings: HermesAPISettings
@@ -27,6 +28,7 @@ struct HermesChatConsoleView: View {
     @State private var dashboardSkills = HermesDashboardSkillsStore()
     @State private var localPathSuggestions = HermesLocalPathSuggestionsStore()
     @State private var selectedSkillIndex = 0
+    @State private var translationService = HermesNativeTranslationService()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +50,16 @@ struct HermesChatConsoleView: View {
         .onDisappear { speechToText.stopTranscription() }
         .fileImporter(isPresented: $isImportingAttachment, allowedContentTypes: HermesPromptAttachment.supportedContentTypes, allowsMultipleSelection: false) { result in
             handleAttachmentImport(result)
+        }
+        .translationTask(translationService.configuration) { session in
+            await translationService.performTranslation(with: session) { selection, translatedText in
+                chatSession.replaceSelectedText(
+                    in: selection.messageID,
+                    originalContent: selection.originalContent,
+                    selectedRange: selection.selectedRange,
+                    with: translatedText
+                )
+            }
         }
     }
 
@@ -118,8 +130,10 @@ struct HermesChatConsoleView: View {
                                 liveContent: liveContent(for: message),
                                 fontSize: chatBubbleFontSize,
                                 isResponding: isChatPlaceholder(message),
+                                isMessageComplete: isChatMessageComplete(message),
                                 responseElapsedSeconds: responseElapsedSeconds(for: message),
-                                tokenUsage: tokenUsage(for: message)
+                                tokenUsage: tokenUsage(for: message),
+                                translationService: translationService
                             )
                                 .id(message.id)
                         }
@@ -161,6 +175,25 @@ struct HermesChatConsoleView: View {
                 Text(chatSession.lastErrorMessage)
                     .font(.caption)
                     .foregroundStyle(Color.hermesDestructive)
+            }
+
+            if translationService.isTranslating {
+                Label("Translating selected text…", systemImage: "character.bubble")
+                    .font(.caption)
+                    .foregroundStyle(Color.hermesSecondaryText)
+                    .accessibilityLabel("Translation in progress")
+            }
+
+            if !translationService.errorMessage.isEmpty {
+                HStack(spacing: 8) {
+                    Label(translationService.errorMessage, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(Color.hermesDestructive)
+                        .accessibilityLabel("Translation error: \(translationService.errorMessage)")
+                    Button("Dismiss") { translationService.dismissError() }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                }
             }
 
             if !speechToText.statusMessage.isEmpty || !speechToText.lastErrorMessage.isEmpty {
@@ -441,6 +474,10 @@ struct HermesChatConsoleView: View {
         chatSession.isSending && message.role != "user" && resolvedLiveContent(for: message).isEmpty && message.id == chatSession.entries.last(where: { $0.role != "user" })?.id
     }
 
+    private func isChatMessageComplete(_ message: HermesChatMessage) -> Bool {
+        message.role == "user" || !chatSession.isSending || message.id != chatSession.activeResponseMessageID
+    }
+
     private func liveContent(for message: HermesChatMessage) -> String? {
         let content = resolvedLiveContent(for: message)
         return content.isEmpty ? nil : content
@@ -504,8 +541,10 @@ struct HermesChatBubble: View {
     let liveContent: String?
     let fontSize: Double
     var isResponding = false
+    var isMessageComplete = true
     var responseElapsedSeconds: Int?
     var tokenUsage: HermesTokenUsage?
+    var translationService: HermesNativeTranslationService?
 
     var body: some View {
         HStack(alignment: .bottom) {
@@ -528,7 +567,15 @@ struct HermesChatBubble: View {
                             .accessibilityLabel("Response token usage: \(tokenUsage.accessibilityText)")
                     }
                 }
-                HermesCopyableBubbleContent(text: displayContent, copyText: message.content, isUser: isUser, rendersMarkdown: !isUser, fontSize: fontSize, isResponding: isResponding)
+                HermesCopyableBubbleContent(
+                    text: displayContent,
+                    copyText: message.content,
+                    isUser: isUser,
+                    rendersMarkdown: !isUser,
+                    fontSize: fontSize,
+                    isResponding: isResponding,
+                    onTranslateSelection: translationAction
+                )
             }
             .frame(maxWidth: 680, alignment: isUser ? .trailing : .leading)
             if !isUser { Spacer(minLength: 80) }
@@ -538,6 +585,18 @@ struct HermesChatBubble: View {
 
     private var isUser: Bool { message.role == "user" }
     private var displayContent: String { liveContent ?? message.content }
+
+    private var translationAction: ((NSRange) -> Void)? {
+        guard isMessageComplete, let translationService else { return nil }
+        return { range in
+            translationService.requestTranslation(
+                messageID: message.id,
+                content: message.content,
+                selectedRange: range,
+                isMessageComplete: true
+            )
+        }
+    }
 
     private static func formattedElapsedTime(_ seconds: Int) -> String {
         let clampedSeconds = max(0, seconds)

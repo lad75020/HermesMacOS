@@ -966,6 +966,7 @@ struct HermesCopyableBubbleContent: View {
     let rendersMarkdown: Bool
     let fontSize: Double
     let isResponding: Bool
+    var onTranslateSelection: ((NSRange) -> Void)? = nil
 
     private var renderableText: String {
         if rendersMarkdown, let imageMarkdown = HermesImageJSONFormatter.renderableImageMarkdown(from: text) {
@@ -983,8 +984,18 @@ struct HermesCopyableBubbleContent: View {
                         .foregroundStyle(Color.hermesSecondaryText)
                 }
             } else {
-                HermesBubbleMessageText(text: renderableText, rendersMarkdown: rendersMarkdown, fontSize: fontSize)
-                    .textSelection(.enabled)
+                if let onTranslateSelection {
+                    HermesSelectableBubbleText(
+                        text: copyText,
+                        isUser: isUser,
+                        fontSize: fontSize,
+                        onTranslateSelection: onTranslateSelection
+                    )
+                    .accessibilityLabel("Message text. Select text and right-click to translate to English.")
+                } else {
+                    HermesBubbleMessageText(text: renderableText, rendersMarkdown: rendersMarkdown, fontSize: fontSize)
+                        .textSelection(.enabled)
+                }
             }
         }
         .padding(13)
@@ -1060,6 +1071,102 @@ struct HermesCopyableBubbleContent: View {
         operation.showsPrintPanel = true
         operation.showsProgressPanel = true
         operation.run()
+    }
+}
+
+private struct HermesSelectableBubbleText: NSViewRepresentable {
+    let text: String
+    let isUser: Bool
+    let fontSize: Double
+    let onTranslateSelection: (NSRange) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onTranslateSelection: onTranslateSelection) }
+
+    func makeNSView(context: Context) -> HermesBubbleTextView {
+        let textView = HermesBubbleTextView()
+        textView.coordinator = context.coordinator
+        configure(textView)
+        return textView
+    }
+
+    func updateNSView(_ textView: HermesBubbleTextView, context: Context) {
+        context.coordinator.onTranslateSelection = onTranslateSelection
+        if textView.string != text {
+            textView.string = text
+            textView.setSelectedRange(NSRange(location: 0, length: 0))
+        }
+        configure(textView)
+        textView.invalidateIntrinsicContentSize()
+    }
+
+    private func configure(_ textView: HermesBubbleTextView) {
+        textView.font = .systemFont(ofSize: fontSize)
+        textView.textColor = isUser ? .white : .labelColor
+        textView.alignment = .left
+    }
+
+    final class Coordinator: NSObject {
+        var onTranslateSelection: (NSRange) -> Void
+
+        init(onTranslateSelection: @escaping (NSRange) -> Void) {
+            self.onTranslateSelection = onTranslateSelection
+        }
+
+        @MainActor @objc func translateSelection(_ sender: Any?) {
+            guard let item = sender as? NSMenuItem,
+                  let textView = item.representedObject as? HermesBubbleTextView
+            else { return }
+            let selectedRange = textView.selectedRange()
+            guard selectedRange.length > 0 else { return }
+            onTranslateSelection(selectedRange)
+        }
+    }
+}
+
+private final class HermesBubbleTextView: NSTextView {
+    weak var coordinator: HermesSelectableBubbleText.Coordinator?
+
+    init() {
+        let storage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        container.lineFragmentPadding = 0
+        layoutManager.addTextContainer(container)
+        super.init(frame: .zero, textContainer: container)
+        isEditable = false
+        isSelectable = true
+        isRichText = false
+        importsGraphics = false
+        drawsBackground = false
+        isHorizontallyResizable = false
+        isVerticallyResizable = true
+        textContainerInset = .zero
+        textContainer?.widthTracksTextView = true
+        setContentHuggingPriority(.defaultLow, for: .horizontal)
+    }
+
+    override var intrinsicContentSize: NSSize {
+        guard let textContainer, let layoutManager else { return super.intrinsicContentSize }
+        layoutManager.ensureLayout(for: textContainer)
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        return NSSize(width: NSView.noIntrinsicMetric, height: ceil(usedRect.height + textContainerInset.height * 2))
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard selectedRange().length > 0, let coordinator else { return super.menu(for: event) }
+        let menu = super.menu(for: event) ?? NSMenu()
+        guard !menu.items.contains(where: { $0.title == "Translate to English" }) else { return menu }
+        menu.addItem(.separator())
+        let item = NSMenuItem(title: "Translate to English", action: #selector(HermesSelectableBubbleText.Coordinator.translateSelection(_:)), keyEquivalent: "")
+        item.target = coordinator
+        item.representedObject = self
+        menu.addItem(item)
+        return menu
     }
 }
 

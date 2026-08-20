@@ -273,6 +273,43 @@ final class TUIGatewayWorkflowTests: XCTestCase {
     }
 
     @MainActor
+    func testTUIGatewayTranslationReplacesOnlySelectedRangeAndPreservesBubbleIdentity() {
+        let store = HermesTUIGatewayStore()
+        let first = HermesTUIGatewayMessage(role: .assistant, title: "Hermes", content: "Bonjour, Laurent")
+        let second = HermesTUIGatewayMessage(role: .user, title: "You", content: "Keep this message")
+        store.messages = [first, second]
+
+        let didReplace = store.replaceSelectedText(
+            in: first.id,
+            originalContent: first.content,
+            selectedRange: NSRange(location: 0, length: 7),
+            with: "Hello"
+        )
+
+        XCTAssertTrue(didReplace)
+        XCTAssertEqual(store.messages.map(\.id), [first.id, second.id])
+        XCTAssertEqual(store.messages.map(\.content), ["Hello, Laurent", "Keep this message"])
+    }
+
+    @MainActor
+    func testTUIGatewayTranslationRejectsStaleSelectionWithoutChangingHistory() {
+        let store = HermesTUIGatewayStore()
+        let message = HermesTUIGatewayMessage(role: .assistant, title: "Hermes", content: "Bonjour")
+        store.messages = [message]
+
+        let didReplace = store.replaceSelectedText(
+            in: message.id,
+            originalContent: "Changed before translation finished",
+            selectedRange: NSRange(location: 0, length: 7),
+            with: "Hello"
+        )
+
+        XCTAssertFalse(didReplace)
+        XCTAssertEqual(store.messages.first?.id, message.id)
+        XCTAssertEqual(store.messages.first?.content, "Bonjour")
+    }
+
+    @MainActor
     func testClarifyDockAttentionBouncesOnceAndStopsAfterResponse() throws {
         var requestedKinds: [NSApplication.RequestUserAttentionType] = []
         var cancelledRequestIDs: [Int] = []

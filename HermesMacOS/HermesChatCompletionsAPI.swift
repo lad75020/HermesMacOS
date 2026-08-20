@@ -74,6 +74,19 @@ final class HermesChatSession {
         connectionStatus = "Cancelled"
     }
 
+    /// Replaces only a selection whose source bubble is still unchanged.
+    /// Translation therefore preserves transcript identity and remains outside
+    /// the Hermes API request path.
+    func replaceSelectedText(in messageID: UUID, originalContent: String, selectedRange: NSRange, with translatedText: String) -> Bool {
+        guard let index = entries.firstIndex(where: { $0.id == messageID }),
+              entries[index].content == originalContent,
+              let range = Range(selectedRange, in: originalContent)
+        else { return false }
+
+        entries[index].content.replaceSubrange(range, with: translatedText)
+        return true
+    }
+
     func resetConversation() {
         cancelActiveRequest()
         requestTask?.cancel()
