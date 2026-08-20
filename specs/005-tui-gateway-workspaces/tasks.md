@@ -1,10 +1,9 @@
 # Tasks: TUI Gateway Workspaces
 
-> ⚠️ **STALE**: spec.md was refined on 2026-08-17 (`/skill` substring popover: US5, FR-011, SC-008). Run `/speckit.refine.propagate` to update this plan.
-
 **Input**: Design documents from `/specs/005-tui-gateway-workspaces/`
 
 **Propagated**: 2026-08-17 — Updated from spec.md refinement (`/skill` substring popover: T022–T023)
+**Propagated**: 2026-08-20 — Updated from spec.md refinement (session input/output token totals in the TUI Gateway sidebar: T024–T027).
 
 **Prerequisites**: plan.md, spec.md, research.md, data-model.md, contracts/tui-gateway-json-rpc.md, quickstart.md
 
@@ -22,7 +21,7 @@
 - [x] T007 [US1] Trace WebSocket/token/ticket/session.create setup in source/docs
 
 ## Phase 4: User Story 2 - Send prompts, attachments, and receive streamed events (Priority: P2)
-- [x] T008 [US2] Trace prompt.submit, input.detect_drop, and event rendering in source/docs
+- [x] T008 [US2] Trace prompt.submit, input.detect_drop, event rendering, and sanitized `session.usage` summary handling in source/docs
 
 ## Phase 5: User Story 3 - Manage multiple TUI workspaces and sessions (Priority: P3)
 - [x] T009 [US3] Trace workspace isolation, activate, close, interrupt, and resume flows in source/docs
@@ -43,16 +42,22 @@
 - [x] T018 [US3] Persist a valid selected reasoning effort per `HermesTUIWorkspace`, default replacement workspaces to `medium`, and disable reasoning controls for unsupported selected models in `HermesMacOS/ContentView.swift` and `HermesMacOS/HermesTUIGatewayView.swift` [(depends on T017)]
 - [x] T019 [US1] Include supported `reasoning_effort` in `session.create` and forward-compatible `prompt.submit`, apply idle live changes through session-scoped `config.set` with key `reasoning`, and restore supported effort from session/resume info in `HermesMacOS/HermesTUIGatewayView.swift` [(depends on T017, T018)]
 - [x] T020 [P] [US1] Verify canonical effort values, selected-model capability precedence, optional profile metadata, workspace copy/default behavior, and session-scoped reasoning payloads in `HermesMacOSTest/Functional/TUIGatewayWorkflowTests.swift` [(depends on T017, T018, T019)]
-- [x] T021 [P] [US1] Update `docs/reference-tui-gateway-websocket.md` and `docs/how-to-use-tui-gateway.md` for `usage.context_used`, `reasoning_effort`, selected-model support, and `config.set` behavior [(depends on T015, T019)]
+- [x] T021 [P] [US1] Update `docs/reference-tui-gateway-websocket.md` and `docs/how-to-use-tui-gateway.md` for `usage.context_used`, sanitized `session.usage` summaries, `reasoning_effort`, selected-model support, and `config.set` behavior [(depends on T015, T019)]
 
 ## Phase 9: Refined `/skill` Substring Popover
 - [x] T022 [US5] Extract `HermesSkillQueryMatching.filtered(_:query:)` in `HermesMacOS/HermesDashboardSkills.swift` to filter known skills by case-insensitive **name substring** (prefix matches first, others alphabetical) and wire it into the TUI Gateway composer's `filteredSkillSuggestions` in `HermesMacOS/HermesTUIGatewayView.swift` [(depends on T008)]
 - [x] T023 [P] [US5] Add focused unit coverage for `/skill` substring matching (substring match in a name, prefix ordering, empty-query returns all, case-insensitivity) in `HermesMacOSTest/Functional/TUIGatewayWorkflowTests.swift` [(depends on T022)]
 
+## Phase 10: Refined Session Token Totals in the TUI Sidebar
+- [x] T024 [US2] Extend `HermesTUIGatewayEventParser` and `HermesTUIGatewayStore` to read active-session `session.usage` `payload.usage.input` and `payload.usage.output` counters, preserve the sanitized three-field transcript summary, reject invalid values, and replace cumulative snapshots rather than summing them in `HermesMacOS/HermesTUIGatewayView.swift` [(depends on T008)]
+- [x] T025 [US2] Keep token totals isolated per `HermesTUIWorkspace`, clear them on session create/activate/resume/close/disconnect or stale-session changes, and pass the selected workspace's latest totals into the left navigation panel in `HermesMacOS/HermesTUIGatewayView.swift` and `HermesMacOS/ContentView.swift` [(depends on T024)]
+- [x] T026 [P] [US2] Render labeled input/output totals in compact thousands directly above the Memory and GPU gauges, using green input text and blue output text, in `HermesMacOS/ContentView.swift` [(depends on T025)]
+- [x] T027 [P] [US2] Add parser, snapshot-replacement, invalid-value, stale-session, workspace-isolation, sidebar-formatting, and color assertions in `HermesMacOSTest/Functional/TUIGatewayWorkflowTests.swift` and `HermesMacOSTest/Technical/StreamingAndGatewayEventTests.swift`, and document the `session.usage` payload/sidebar behavior in `docs/reference-tui-gateway-websocket.md` and `docs/how-to-use-tui-gateway.md` [(depends on T024, T025, T026)]
+
 ## Dependencies
 - Phase 8 builds on the original US1/US2/US3 tracing in T007-T009 and does not block the environment-dependent live smoke check T013.
-- T014 → T015 → T016 covers FR-009/SC-006; T017 → T018 → T019 → T020 covers FR-010/SC-007; T021 follows both implementation paths.
-- T016 and T020 may run in parallel after their respective implementation dependencies; T021 may run alongside those focused tests.
+- T014 → T015 → T016 covers FR-009/SC-006; T017 → T018 → T019 → T020 covers FR-010/SC-007; T022 → T023 covers FR-011/SC-008; T024 → T025 → T026 → T027 covers FR-012/FR-013 and SC-009/SC-010; T021 follows the existing usage/reasoning documentation paths.
+- T016, T020, T023, and T027 may run in parallel after their respective implementation dependencies; T021 may run alongside the focused tests.
 
 ## Requirement Traceability
 | Requirement family | Tasks |
@@ -61,5 +66,7 @@
 | FR-009 / SC-006 | T014–T016 |
 | FR-010 / SC-007 | T017–T021 |
 | FR-011 / SC-008 | T022–T023 |
+| FR-012 / SC-009 | T008, T021, T024, T027 |
+| FR-013 / SC-010 | T024–T027 |
 | SC-001–SC-005 | T007–T013 |
 | SC-BUILD / SC-SMOKE | T011, T013 |

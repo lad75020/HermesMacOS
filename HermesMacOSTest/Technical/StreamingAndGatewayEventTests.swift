@@ -55,6 +55,28 @@ final class StreamingAndGatewayEventTests: XCTestCase {
         XCTAssertEqual(invalidParsed.sessionUsageSummary?.displayText, "AGENTS : —, COMPRESSIONS: —, CONTEXT: —")
     }
 
+    func testGatewayParserExtractsSessionTokenSnapshotsWithoutExpandingTranscriptSummary() throws {
+        let event = "{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"session.usage\",\"session_id\":\"s1\",\"payload\":{\"usage\":{\"active_subagents\":1,\"compressions\":2,\"context_percent\":26,\"input\":12000,\"output\":8000,\"total\":20000,\"model\":\"must-not-render\"}}}}"
+
+        let parsed = try XCTUnwrap(HermesTUIGatewayEventParser.parseEventEnvelope(event))
+        XCTAssertEqual(parsed.sessionTokenTotals, HermesTUISessionTokenTotals(inputTokens: 12_000, outputTokens: 8_000))
+        XCTAssertEqual(parsed.sessionTokenTotals?.inputDisplayText, "12K")
+        XCTAssertEqual(parsed.sessionTokenTotals?.outputDisplayText, "8K")
+        XCTAssertEqual(parsed.sessionUsageSummary?.displayText, "AGENTS : 1, COMPRESSIONS: 2, CONTEXT: 26")
+        XCTAssertFalse(parsed.sessionUsageSummary?.displayText.contains("20000") == true)
+    }
+
+    func testGatewayParserRejectsInvalidSessionTokenFields() throws {
+        let invalid = "{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"session.usage\",\"session_id\":\"s1\",\"payload\":{\"usage\":{\"input\":-1,\"output\":\"NaN\"}}}}"
+        let partial = "{\"jsonrpc\":\"2.0\",\"method\":\"event\",\"params\":{\"type\":\"session.usage\",\"session_id\":\"s1\",\"payload\":{\"usage\":{\"input\":\"not-a-number\",\"output\":10000}}}}"
+
+        XCTAssertNil(try HermesTUIGatewayEventParser.parseEventEnvelope(invalid)?.sessionTokenTotals)
+        XCTAssertEqual(
+            try HermesTUIGatewayEventParser.parseEventEnvelope(partial)?.sessionTokenTotals,
+            HermesTUISessionTokenTotals(inputTokens: nil, outputTokens: 10_000)
+        )
+    }
+
     func testStreamFixturesIncludeMalformedAndUnknownEventCoverage() throws {
         let fixture = try HermesFixtureLoader.string(named: "stream-fixtures", extension: "ndjson", subdirectory: "Streams")
         XCTAssertTrue(fixture.contains("unknown.fixture"))

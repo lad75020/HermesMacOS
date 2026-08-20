@@ -158,6 +158,7 @@ struct HermesSideTabSwitcher: View {
     let tuiGatewayAttention: HermesTopTabAttention?
     let historyAttention: HermesTopTabAttention?
     let approvalsAttention: HermesTopTabAttention?
+    let sessionTokenTotals: HermesTUISessionTokenTotals
     let visibleTabs: [HermesMacOSTab]
     let onSelectTab: (HermesMacOSTab) -> Void
     @State private var reachabilityMonitor = HermesReachabilityMonitor()
@@ -200,6 +201,10 @@ struct HermesSideTabSwitcher: View {
                 }
             }
             Spacer(minLength: 0)
+
+            if selectedTab == .tuiGateway {
+                HermesTUISessionTokenTotalsView(totals: sessionTokenTotals)
+            }
 
             HermesResourceUsageGauge(
                 kind: .memory,
@@ -440,6 +445,42 @@ struct HermesSideTabSwitcher: View {
     }
 }
 
+struct HermesTUISessionTokenTotalsView: View {
+    let totals: HermesTUISessionTokenTotals
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("TOKENS")
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .foregroundStyle(Color.hermesSecondaryText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text("IN \(totals.inputDisplayText)")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(.green)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .accessibilityLabel("Input tokens")
+                .accessibilityValue(totals.inputAccessibilityText)
+
+            Text("OUT \(totals.outputDisplayText)")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(.blue)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.55)
+                .accessibilityLabel("Output tokens")
+                .accessibilityValue(totals.outputAccessibilityText)
+        }
+        .frame(width: 44, alignment: .leading)
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Session token totals")
+    }
+}
+
 private struct HermesReachabilityLEDRow: View {
     let monitor: HermesReachabilityMonitor
 
@@ -616,6 +657,7 @@ struct ContentView: View {
                 tuiGatewayAttention: tuiGatewayTabAttention,
                 historyAttention: historyTabAttention,
                 approvalsAttention: approvalsTabAttention,
+                sessionTokenTotals: selectedTUIWorkspace.store.sessionTokenTotals,
                 visibleTabs: visibleTabs,
                 onSelectTab: handleTopTabSelection
             )

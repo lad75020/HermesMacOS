@@ -103,6 +103,7 @@ The reasoning menu uses only valid Hermes values: `none`, `minimal`, `low`, `med
 | --- | --- |
 | `gateway.ready` | Updates status to `Gateway ready`. |
 | `session.info` | Updates the session title with the short session ID and model when available. When `payload.usage.context_used` is present, updates the active assistant bubble's context counter, or the latest assistant bubble only while the current turn is safely active. |
+| `session.usage` | Adds one sanitized transcript summary containing only `active_subagents`, `compressions`, and `context_percent`; valid cumulative `payload.usage.input` and `payload.usage.output` values refresh the selected workspace's sidebar totals. |
 | `message.start` | Marks the workspace streaming, resets stream grouping, and sets status to `Hermes is responding`. |
 | `message.delta` | Appends assistant text to the active assistant bubble, creating a new bubble when the stream type changes. |
 | `message.complete` | Finalizes assistant text, attaches `payload.usage.context_used` to that response before stream grouping resets, then stops streaming. If no deltas arrived, creates an assistant bubble from final text. If one contiguous message segment exists, replaces it with final text. |
@@ -139,6 +140,28 @@ This keeps assistant text, reasoning, thinking, and tool output readable while p
 Assistant response headers show a compact counter beside **Hermes**, for example `Context 12.3K`, when the gateway reports real current-window occupancy. The only accepted used-token source is `payload.usage.context_used` on `message.complete` or `session.info`; JSON numbers and numeric strings are accepted. Optional `context_max` and `context_percent` enrich the accessibility label.
 
 The counter never falls back to `usage.total` or another cumulative session total. If `context_used` is absent, invalid, or zero, no counter is shown. Readings update an existing assistant response in place and never create transcript bubbles. Session identity, active-turn, user-turn, disconnect, create, activate, resume, and close boundaries prevent a reading from being attached to a response from another session or turn.
+
+## Session token totals
+
+`session.usage` events carry cumulative session counters under `payload.usage`:
+
+```json
+{
+  "type": "session.usage",
+  "session_id": "live-session-id",
+  "payload": {
+    "usage": {
+      "input": 12000,
+      "output": 8000,
+      "total": 20000
+    }
+  }
+}
+```
+
+The selected TUI workspace keeps the latest valid `input` and `output` snapshots and displays them as compact thousands values directly above the Memory and GPU gauges in the left navigation panel. Input is green and output is blue. A later snapshot replaces the previous values; it is not added to them. Missing, negative, non-finite, or malformed fields leave the last valid value unchanged. Events tagged with a different session ID are ignored, and session create, activate, resume, close, and disconnect boundaries clear the totals. Switching workspaces preserves each workspace's own totals.
+
+The transcript remains separate from the sidebar: each `session.usage` event is rendered as `AGENTS : <active_subagents>, COMPRESSIONS: <compressions>, CONTEXT: <context_percent>`, with `—` placeholders for invalid selected summary fields. Token counters and other raw usage fields are never included in that bubble.
 
 ## Workspace model
 

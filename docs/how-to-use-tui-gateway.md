@@ -89,6 +89,15 @@ When Hermes reports current context-window occupancy, an assistant response head
 
 The value comes only from `usage.context_used` in `message.complete` or `session.info` events. HermesMacOS accepts a JSON number or numeric string. It deliberately does not substitute cumulative `usage.total`; when the gateway does not report current-window occupancy, the counter is omitted.
 
+## Read session token totals
+
+While **TUI Gateway** is selected, the left navigation panel shows the selected workspace's cumulative session totals directly above the Memory and GPU gauges:
+
+- **IN** is the input-token total expressed in thousands and rendered in green.
+- **OUT** is the output-token total expressed in thousands and rendered in blue.
+
+The values refresh whenever a valid `session.usage` event arrives. They are snapshots, so a later event replaces the previous values instead of adding them. Invalid or missing fields do not erase the last valid value, while creating, activating, resuming, closing, or disconnecting a session clears the old totals. Each TUI workspace keeps its own values when you switch between workspace buttons.
+
 ## Interrupt, close, and switch sessions
 
 - **Interrupt** sends `session.interrupt` for the current live session and stops local streaming state.

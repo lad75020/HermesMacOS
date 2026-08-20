@@ -76,6 +76,7 @@ struct HermesTUIGatewayParsedEvent: Equatable {
     let requestID: String?
     let currentContextUsage: HermesTUICurrentContextUsage?
     let sessionUsageSummary: HermesTUISessionUsageSummary?
+    let sessionTokenTotals: HermesTUISessionTokenTotals?
 }
 
 struct HermesTUICurrentContextUsage: Equatable, Sendable {
@@ -147,6 +148,60 @@ struct HermesTUISessionUsageSummary: Equatable, Sendable {
     }
 }
 
+struct HermesTUISessionTokenTotals: Equatable, Sendable {
+    let inputTokens: Int?
+    let outputTokens: Int?
+
+    init(inputTokens: Int? = nil, outputTokens: Int? = nil) {
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+    }
+
+    static let empty = HermesTUISessionTokenTotals()
+
+    var hasValue: Bool {
+        inputTokens != nil || outputTokens != nil
+    }
+
+    var inputDisplayText: String {
+        Self.compactThousands(inputTokens)
+    }
+
+    var outputDisplayText: String {
+        Self.compactThousands(outputTokens)
+    }
+
+    var inputAccessibilityText: String {
+        Self.accessibilityText(inputTokens, label: "Input")
+    }
+
+    var outputAccessibilityText: String {
+        Self.accessibilityText(outputTokens, label: "Output")
+    }
+
+    private static func compactThousands(_ value: Int?) -> String {
+        guard let value else { return "—" }
+        let thousands = Double(value) / 1_000
+        let decimals = thousands < 100 && thousands.rounded() != thousands ? 1 : 0
+        return String(format: "%.*fK", decimals, thousands)
+    }
+
+    private static func accessibilityText(_ value: Int?, label: String) -> String {
+        guard let value else { return "\(label) tokens unavailable" }
+        return "\(grouped(value)) \(label.lowercased()) tokens"
+    }
+
+    private static func grouped(_ value: Int) -> String {
+        let digits = String(value)
+        return stride(from: digits.count, to: 0, by: -3).reversed().enumerated().map { index, end in
+            let start = max(0, end - 3)
+            let lower = digits.index(digits.startIndex, offsetBy: start)
+            let upper = digits.index(digits.startIndex, offsetBy: end)
+            return (index == 0 && start == 0 ? "" : ",") + digits[lower..<upper]
+        }.joined()
+    }
+}
+
 enum HermesTUIGatewayEventParser {
     static func parseEventEnvelope(_ text: String) throws -> HermesTUIGatewayParsedEvent? {
         guard let data = text.data(using: .utf8) else { return nil }
@@ -161,7 +216,8 @@ enum HermesTUIGatewayEventParser {
             status: payload["status"]?.stringValue,
             requestID: payload["request_id"]?.stringValue ?? payload["id"]?.stringValue,
             currentContextUsage: currentContextUsage(from: usage),
-            sessionUsageSummary: event.type == "session.usage" ? sessionUsageSummary(from: payload) : nil
+            sessionUsageSummary: event.type == "session.usage" ? sessionUsageSummary(from: payload) : nil,
+            sessionTokenTotals: event.type == "session.usage" ? sessionTokenTotals(from: payload) : nil
         )
     }
 
@@ -181,6 +237,15 @@ enum HermesTUIGatewayEventParser {
             compressions: usage["compressions"]?.nonnegativeIntValue,
             contextPercent: usage["context_percent"]?.finiteDoubleValue.flatMap { (0 ... 100).contains($0) ? $0 : nil }
         )
+    }
+
+    static func sessionTokenTotals(from payload: [String: JSONValue]) -> HermesTUISessionTokenTotals? {
+        let usage = payload["usage"]?.objectValue ?? payload
+        let totals = HermesTUISessionTokenTotals(
+            inputTokens: usage["input"]?.nonnegativeIntValue,
+            outputTokens: usage["output"]?.nonnegativeIntValue
+        )
+        return totals.hasValue ? totals : nil
     }
 }
 
@@ -508,6 +573,7 @@ final class HermesTUIGatewayStore {
     var eventCount = 0
     var lastErrorMessage = ""
     var latestCompletionToken = ""
+    var sessionTokenTotals = HermesTUISessionTokenTotals.empty
     var isConnecting = false
     var isConnected = false
     var isStreaming = false
@@ -530,6 +596,8 @@ final class HermesTUIGatewayStore {
     private var currentTurnReceivedMessageDelta = false
     private var currentTurnMessageDeltaSegmentCount = 0
     private var pendingCurrentContextUsage: HermesTUICurrentContextUsage?
+    private var sessionTokenTotalsSessionID = ""
+    private var sessionTokenTotalsAwaitingSession = false
     private let clarifyDockAttention = HermesClarifyDockAttention()
 
     var canSendPrompt: Bool {
@@ -592,6 +660,7 @@ final class HermesTUIGatewayStore {
         isStreaming = false
         isResumingSession = false
         pendingCurrentContextUsage = nil
+        clearSessionTokenTotals(awaitingSession: true)
         resetStreamGrouping()
         connectionStatus = "Disconnected"
         failPending(HermesTUIGatewayError.notConnected)
@@ -600,6 +669,7 @@ final class HermesTUIGatewayStore {
     func createSession(profile: String, model: String = "", provider: String = "", fast: Bool, reasoningEffort: String? = nil) {
         guard !isStreaming else { return }
         let selectedProfile = normalizedProfile(profile)
+        clearSessionTokenTotals(awaitingSession: true)
         sessionCreationGeneration += 1
         sessionCreationTask?.cancel()
         let identity = HermesTUISessionCreationIdentity(profile: selectedProfile, generation: sessionCreationGeneration)
@@ -703,6 +773,7 @@ final class HermesTUIGatewayStore {
                 latestCompletionToken = ""
                 isStreaming = false
                 pendingCurrentContextUsage = nil
+                clearSessionTokenTotals(awaitingSession: true)
                 resetStreamGrouping()
                 await refreshActiveSessions()
             } catch {
@@ -718,6 +789,7 @@ final class HermesTUIGatewayStore {
 
     func activateSession(_ liveSession: HermesTUILiveSession) {
         guard !isStreaming else { return }
+        clearSessionTokenTotals(awaitingSession: true)
         Task { await activate(sessionID: liveSession.id) }
     }
 
@@ -725,6 +797,7 @@ final class HermesTUIGatewayStore {
         let target = storedSessionID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !target.isEmpty else { return }
         let selectedProfile = normalizedProfile(profile)
+        clearSessionTokenTotals(awaitingSession: true)
         Task { await resumeStoredSession(target, title: title, profile: selectedProfile, dashboardBaseURL: dashboardBaseURL, apiSettings: apiSettings) }
     }
 
@@ -795,6 +868,9 @@ final class HermesTUIGatewayStore {
             connectionStatus = "Connected"
             receiveTask?.cancel()
             receiveTask = Task { await receiveLoop(task) }
+            if createSessionIfMissing, !sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                bindSessionTokenTotalsToCurrentSession()
+            }
             if createSessionIfMissing && sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 sessionCreationGeneration += 1
                 sessionCreationTask?.cancel()
@@ -846,6 +922,7 @@ final class HermesTUIGatewayStore {
             activeProfile = selectedProfile
             activeModel = object["info"]?.objectValue["model"]?.stringValue ?? activeModel
             updateReasoningEffort(from: object["info"]?.objectValue ?? [:])
+            bindSessionTokenTotalsToCurrentSession()
             latestCompletionToken = ""
             let displayTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
             sessionTitle = displayTitle.isEmpty ? "TUI session \(shortSessionID(storedSessionID.isEmpty ? sessionID : storedSessionID))" : displayTitle
@@ -882,6 +959,7 @@ final class HermesTUIGatewayStore {
             activeModel = object["info"]?.objectValue["model"]?.stringValue ?? selectedModel
             self.reasoningEffort = requestedReasoningEffort ?? self.reasoningEffort
             updateReasoningEffort(from: object["info"]?.objectValue ?? [:])
+            bindSessionTokenTotalsToCurrentSession()
             sessionTitle = "TUI session \(shortSessionID(sessionID))"
             messages.removeAll()
             latestCompletionToken = ""
@@ -1054,6 +1132,7 @@ final class HermesTUIGatewayStore {
                 isConnected = false
                 isStreaming = false
                 pendingCurrentContextUsage = nil
+                clearSessionTokenTotals(awaitingSession: true)
                 resetStreamGrouping()
                 connectionStatus = "Disconnected"
                 lastErrorMessage = error.localizedDescription
@@ -1101,6 +1180,9 @@ final class HermesTUIGatewayStore {
         let payload = event.payload?.objectValue ?? [:]
         if let eventSessionID = event.sessionID, !eventSessionID.isEmpty, sessionID.isEmpty {
             sessionID = eventSessionID
+            if !sessionTokenTotalsAwaitingSession {
+                bindSessionTokenTotalsToCurrentSession()
+            }
         }
         switch event.type {
         case "gateway.ready":
@@ -1127,6 +1209,10 @@ final class HermesTUIGatewayStore {
             connectionStatus = "Session info updated"
         case "session.usage":
             let summary = HermesTUIGatewayEventParser.sessionUsageSummary(from: payload)
+            applySessionTokenTotals(
+                HermesTUIGatewayEventParser.sessionTokenTotals(from: payload),
+                eventSessionID: event.sessionID
+            )
             connectionStatus = "Session usage updated"
             appendEvent(title: "Usage", content: summary.displayText, eventType: event.type)
         case "message.start":
@@ -1244,6 +1330,47 @@ final class HermesTUIGatewayStore {
         }
         messages[assistantIndex].currentContextUsage = usage
         pendingCurrentContextUsage = nil
+    }
+
+    @discardableResult
+    func applySessionTokenTotals(_ totals: HermesTUISessionTokenTotals?, eventSessionID: String?) -> Bool {
+        guard let totals, !sessionTokenTotalsAwaitingSession else { return false }
+        let currentSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !currentSessionID.isEmpty else { return false }
+
+        if sessionTokenTotalsSessionID != currentSessionID {
+            sessionTokenTotals = .empty
+            sessionTokenTotalsSessionID = currentSessionID
+        }
+
+        let incomingSessionID = eventSessionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard incomingSessionID.isEmpty || incomingSessionID == currentSessionID else { return false }
+
+        let inputTokens = totals.inputTokens.flatMap { $0 >= 0 ? $0 : nil }
+        let outputTokens = totals.outputTokens.flatMap { $0 >= 0 ? $0 : nil }
+        guard inputTokens != nil || outputTokens != nil else { return false }
+
+        let updated = HermesTUISessionTokenTotals(
+            inputTokens: inputTokens ?? sessionTokenTotals.inputTokens,
+            outputTokens: outputTokens ?? sessionTokenTotals.outputTokens
+        )
+        guard updated != sessionTokenTotals else { return false }
+        sessionTokenTotals = updated
+        return true
+    }
+
+    private func clearSessionTokenTotals(awaitingSession: Bool) {
+        sessionTokenTotals = .empty
+        sessionTokenTotalsSessionID = ""
+        sessionTokenTotalsAwaitingSession = awaitingSession
+    }
+
+    private func bindSessionTokenTotalsToCurrentSession() {
+        let currentSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !currentSessionID.isEmpty else { return }
+        sessionTokenTotals = .empty
+        sessionTokenTotalsSessionID = currentSessionID
+        sessionTokenTotalsAwaitingSession = false
     }
 
     private func completionToken(for event: HermesTUIGatewayEvent, status: String) -> String {

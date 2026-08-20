@@ -7,6 +7,7 @@
 **Refined**: 2026-07-17 — Added selected-model reasoning effort controls and session-scoped TUI Gateway inference configuration.
 **Refined**: 2026-08-17 — In the TUI Gateway prompt area, the `/skill` popover now filters to every known skill whose name *contains* the characters typed after `/skill` (case-insensitive substring, prefix matches first), instead of the previous anchored-prefix-only match (US5, FR-011, SC-008).
 **Refined**: 2026-08-17 — `session.usage` transcript events now render only a compact agents/compressions/context summary instead of raw usage metadata (US2, FR-012, SC-009).
+**Refined**: 2026-08-20 — Added cumulative session input/output token totals from streamed `Session.Usage` (`session.usage`) events to the TUI Gateway left navigation panel above the Memory/GPU gauges, with green input and blue output values (US2, FR-013, SC-010).
 **Input**: User description: "Feature: TUI Gateway Workspaces. Description: Mirrors live Hermes TUI sessions inside the native app with WebSocket JSON-RPC, multiple workspaces, attachments, streaming transcript events, and interactive requests. Relevant files: HermesMacOS/HermesTUIGatewayView.swift, docs/reference-tui-gateway-websocket.md, docs/how-to-use-tui-gateway.md. Focus on this feature only; do not modify other features."
 
 ## User Scenarios & Testing *(mandatory)*
@@ -27,7 +28,7 @@ A user connects a TUI Gateway workspace to the dashboard WebSocket, obtains a li
 ---
 
 ### User Story 2 - Send prompts, attachments, and receive streamed events (Priority: P2)
-A user submits prompts and attachments through JSON-RPC and sees assistant, reasoning, thinking, tool, status, background, and error events rendered as distinct transcript bubbles. Assistant response bubble headers show the live current-context token occupancy reported by Hermes.
+A user submits prompts and attachments through JSON-RPC and sees assistant, reasoning, thinking, tool, status, background, and error events rendered as distinct transcript bubbles. Assistant response bubble headers show the live current-context token occupancy reported by Hermes. The left navigation panel also shows the active session's cumulative input/output token totals above the Memory and GPU resource gauges, refreshed from streamed `Session.Usage` (`session.usage`) events.
 
 **Why this priority**: This is the core TUI execution experience inside HermesMacOS.
 
@@ -40,6 +41,7 @@ A user submits prompts and attachments through JSON-RPC and sees assistant, reas
 4. **Given** Hermes reports `usage.context_used` for a response, **When** the usage arrives in `message.complete` or `session.info`, **Then** the current assistant response bubble shows a compact live context-token count immediately beside its title.
 5. **Given** Hermes does not report current-window context occupancy, **When** a response bubble renders, **Then** the app omits the context counter rather than substituting cumulative session token totals.
 6. **Given** Hermes emits `session.usage`, **When** its event bubble renders, **Then** it shows only `AGENTS : <active_subagents>, COMPRESSIONS: <compressions>, CONTEXT: <context_percent>` and never the raw usage payload or unrelated fields.
+7. **Given** Hermes emits `session.usage` for the active session with cumulative counters under `payload.usage.input` and `payload.usage.output`, **When** the event is received, **Then** the app refreshes the selected workspace's input/output totals, displays two clearly labeled compact values in thousands directly above the Memory and GPU gauges, renders input in green and output in blue, and keeps those values separate from the compact transcript summary.
 
 ---
 
@@ -92,6 +94,8 @@ A user answers approval, clarification, sudo, and secret request bubbles directl
 - Secret/sudo inputs must use secure fields and avoid leaking values into transcript text.
 - Attachment-only sends are allowed, but unsupported attachments must fail safely.
 - A selected-model capability value of `reasoning: false` disables reasoning even when the selected profile's default model supports it.
+- `session.usage` input/output values are cumulative session snapshots: a later event replaces the prior valid totals rather than being added to them; missing, negative, non-finite, or malformed token fields do not overwrite the last valid value.
+- A `session.usage` event from a different or stale session must not change the selected workspace's totals; creating, activating, resuming, closing, or disconnecting a session clears stale totals, while switching workspaces preserves each workspace's own session totals.
 
 ## Requirements *(mandatory)*
 
@@ -107,18 +111,20 @@ A user answers approval, clarification, sudo, and secret request bubbles directl
 - **FR-009**: System MUST parse current-window context occupancy from TUI Gateway usage payloads, associate the latest non-empty value with the active assistant response bubble, and render a compact monospaced context-token count beside the bubble title without using cumulative lifetime token totals as a fallback.
 - **FR-010**: System MUST use selected-model `model.options` reasoning capability metadata before profile fallback, render only valid available effort levels, carry supported efforts in `session.create` and forward-compatible `prompt.submit` payloads, apply live changes through session-scoped `config.set`, and restore valid effort from session/resume info.
 - **FR-011**: In the TUI Gateway prompt area, when the user types `/skill` followed by characters, the system MUST filter the known Hermes skills to those whose **name contains those characters** (a case-insensitive substring match anywhere in the name, not only a leading prefix), present the matches in an autocomplete popover (prefix matches ordered first, then remaining matches alphabetical by name, empty query shows all skills, no matches reports "No matching skills"), and on selection replace the typed token with `/skill <skill-name> `.
-- **FR-012**: System MUST render `session.usage` as exactly one compact summary containing only `active_subagents`, `compressions`, and `context_percent` in the form `AGENTS : <active_subagents>, COMPRESSIONS: <compressions>, CONTEXT: <context_percent>`; absent, malformed, or non-finite selected values MUST use a placeholder rather than exposing the raw payload.
+- **FR-012**: System MUST render the `session.usage` transcript event as exactly one compact summary containing only `active_subagents`, `compressions`, and `context_percent` in the form `AGENTS : <active_subagents>, COMPRESSIONS: <compressions>, CONTEXT: <context_percent>`; absent, malformed, or non-finite selected values MUST use a placeholder rather than exposing the raw payload.
+- **FR-013**: System MUST read nonnegative finite cumulative input/output token counters from `payload.usage.input` and `payload.usage.output` in each active-session `session.usage` (`Session.Usage`) event, refresh the selected workspace's latest totals on every valid event without double-counting repeated snapshots, and expose two clearly labeled compact values expressed in thousands directly above the Memory and GPU gauges in the left navigation panel, with input rendered green and output rendered blue.
 - **FR-SEC**: System MUST validate dashboard URLs, reuse TLS/self-signed certificate policy, prefer one-time tickets, and protect secret/sudo input.
 - **FR-INT**: System MUST preserve the documented dashboard WebSocket JSON-RPC protocol.
 
 ### Key Entities *(include if feature involves data)*
-- **HermesTUIGatewayStore**: WebSocket connection, JSON-RPC request/response matching, event routing, session state, transcript, pending continuations, and failures.
+- **HermesTUIGatewayStore**: WebSocket connection, JSON-RPC request/response matching, event routing, session state, transcript, pending continuations, failures, and the latest session token totals.
 - **HermesTUIWorkspace**: Per-workspace store plus draft, request-response drafts, attachment state, and attention acknowledgements.
 - **HermesTUIModelCapabilities**: Per-model FAST/reasoning booleans returned by `model.options` for the selected provider.
 - **HermesSkillQueryMatching**: Pure helper that filters the known `HermesDashboardSkill` set to names containing the typed `/skill` characters (case-insensitive substring, prefix matches first) for the TUI Gateway prompt popover.
 - **HermesTUIWorkspace selected reasoning effort**: Canonical Hermes effort value, defaulting to `medium`, copied for new/replacement workspaces and constrained by the selected model's capability.
 - **HermesTUIGatewayMessage**: Transcript bubble for user, assistant, reasoning, tools, status, attachments, requests, errors, and background events, including optional current-context token metadata for assistant responses.
-- **HermesTUISessionUsageSummary**: Sanitized, finite-only values for the `session.usage` agents, compressions, and context-percent display.
+- **HermesTUISessionUsageSummary**: Sanitized, finite-only values for the transcript-only `session.usage` agents, compressions, and context-percent display.
+- **HermesTUISessionTokenTotals**: Per-workspace, active-session cumulative input/output token counters sourced from `payload.usage.input` and `payload.usage.output`, with compact thousands formatting and input/output presentation colors for the left navigation panel.
 - **HermesTUILiveSession**: Live session menu row returned from `session.active_list`.
 - **JSONValue**: Shared value type for JSON-RPC params and event payload summaries.
 
@@ -132,16 +138,22 @@ A user answers approval, clarification, sudo, and secret request bubbles directl
 - **SC-006**: When the gateway emits `usage.context_used`, the corresponding assistant response bubble displays the compact context-token count beside `Hermes`, updates without creating a duplicate bubble, and preserves the final value after streaming completes.
 - **SC-007**: A reasoning-capable selected model presents only valid effort choices, passes the chosen effort to a new/live TUI session, and restores a supported resumed effort without enabling an unsupported model.
 - **SC-008**: Typing `/skill` plus characters in the TUI Gateway prompt area surfaces every known skill whose name contains those characters (case-insensitive substring; prefix matches first, others alphabetical), an empty query lists all skills, a non-matching query reports "No matching skills", and selecting a match replaces the token with `/skill <skill-name> `.
-- **SC-009**: A `session.usage` event with extra usage fields produces one event bubble whose content is only the specified three-field summary; extra fields such as model, calls, token totals, or prompts are absent.
+- **SC-009**: A `session.usage` event with extra usage fields produces one event bubble whose content is only the specified three-field summary; extra fields such as model, calls, token totals, or prompts are absent from that bubble while the sidebar token values remain a separate UI surface.
+- **SC-010**: For an active session, a stream event with `payload.usage.input = 12,000` and `payload.usage.output = 8,000` shows labeled `12K` input in green and `8K` output in blue above the two resource gauges; a later event with `input = 24,000` and `output = 10,000` replaces those values with `24K` and `10K` rather than `36K` and `18K`, and workspace/session switching does not mix the totals.
 - **SC-BUILD**: The `HermesMacOS` scheme builds successfully with Xcode or command-line `xcodebuild`.
 - **SC-SMOKE**: The primary TUI Gateway journey can be validated independently with documented dashboard smoke checks.
 
 ## Assumptions
 - This pass uses the installed Hermes Agent's existing `model.options`, `session.create`, `config.set`, and `session.info` reasoning contract; it does not add backend WebSocket methods.
 - Capability rows describe model-level support; absent rows may use profile metadata and the existing model-support helper as a conservative fallback.
+- The TUI Gateway `session.usage` event wraps the live usage snapshot under `payload.usage`; its `input` and `output` fields are cumulative session counters, not per-event deltas.
 - Live verification requires a reachable Hermes Dashboard exposing `api/ws` and auth routes.
 - ~~No automated test target exists yet.~~ Superseded: `HermesMacOSTest` now provides automated coverage for TUI Gateway event parsing and workflow contracts.
 
 ## Clarifications
 ### Session 2026-06-27
 - No critical product questions were generated; existing source and docs define the TUI Gateway behavior boundaries.
+
+### Session 2026-08-20
+- The native TUI Gateway consumes the protocol event type `session.usage` (referred to as `Session.Usage` in the request) and reads cumulative `payload.usage.input` and `payload.usage.output` counters.
+- Token totals are maintained per active workspace/session and displayed immediately above the existing Memory and GPU gauges; the transcript's `session.usage` bubble remains limited to its three-field agents/compressions/context summary.

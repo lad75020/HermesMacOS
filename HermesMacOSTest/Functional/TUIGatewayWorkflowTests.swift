@@ -387,6 +387,58 @@ final class TUIGatewayWorkflowTests: XCTestCase {
     }
 
     @MainActor
+    func testSessionTokenTotalsReplaceSnapshotsAndIgnoreInvalidOrStaleEvents() {
+        let store = HermesTUIGatewayStore()
+        store.sessionID = "current"
+
+        XCTAssertTrue(store.applySessionTokenTotals(HermesTUISessionTokenTotals(inputTokens: 12_000, outputTokens: 8_000), eventSessionID: "current"))
+        XCTAssertEqual(store.sessionTokenTotals, HermesTUISessionTokenTotals(inputTokens: 12_000, outputTokens: 8_000))
+
+        XCTAssertTrue(store.applySessionTokenTotals(HermesTUISessionTokenTotals(inputTokens: 24_000, outputTokens: 10_000), eventSessionID: "current"))
+        XCTAssertEqual(store.sessionTokenTotals, HermesTUISessionTokenTotals(inputTokens: 24_000, outputTokens: 10_000))
+
+        XCTAssertFalse(store.applySessionTokenTotals(HermesTUISessionTokenTotals(inputTokens: -1, outputTokens: nil), eventSessionID: "current"))
+        XCTAssertEqual(store.sessionTokenTotals, HermesTUISessionTokenTotals(inputTokens: 24_000, outputTokens: 10_000))
+
+        XCTAssertFalse(store.applySessionTokenTotals(HermesTUISessionTokenTotals(inputTokens: 99_000, outputTokens: 99_000), eventSessionID: "stale"))
+        XCTAssertEqual(store.sessionTokenTotals, HermesTUISessionTokenTotals(inputTokens: 24_000, outputTokens: 10_000))
+    }
+
+    @MainActor
+    func testSessionTokenTotalsRemainIsolatedPerWorkspaceAndClearOnDisconnect() {
+        let first = HermesTUIWorkspace(number: 1)
+        let second = HermesTUIWorkspace(number: 2)
+        first.store.sessionID = "first"
+        second.store.sessionID = "second"
+
+        XCTAssertTrue(first.store.applySessionTokenTotals(HermesTUISessionTokenTotals(inputTokens: 12_000, outputTokens: 8_000), eventSessionID: "first"))
+        XCTAssertTrue(second.store.applySessionTokenTotals(HermesTUISessionTokenTotals(inputTokens: 24_000, outputTokens: 10_000), eventSessionID: "second"))
+        XCTAssertEqual(first.store.sessionTokenTotals.inputTokens, 12_000)
+        XCTAssertEqual(second.store.sessionTokenTotals.inputTokens, 24_000)
+
+        first.store.disconnect()
+        XCTAssertEqual(first.store.sessionTokenTotals, .empty)
+        XCTAssertEqual(second.store.sessionTokenTotals, HermesTUISessionTokenTotals(inputTokens: 24_000, outputTokens: 10_000))
+    }
+
+    func testSessionTokenTotalsSidebarUsesCompactThousandsAndRequiredColors() throws {
+        let totals = HermesTUISessionTokenTotals(inputTokens: 12_000, outputTokens: 8_000)
+        XCTAssertEqual(totals.inputDisplayText, "12K")
+        XCTAssertEqual(totals.outputDisplayText, "8K")
+
+        let source = try HermesTestAssertions.readRepositoryFile("HermesMacOS/ContentView.swift")
+        let totalsView = try XCTUnwrap(source.range(of: "HermesTUISessionTokenTotalsView(totals: sessionTokenTotals)"))
+        let memoryGauge = try XCTUnwrap(source.range(of: "HermesResourceUsageGauge(\n                kind: .memory", range: totalsView.upperBound..<source.endIndex))
+        XCTAssertLessThan(totalsView.lowerBound, memoryGauge.lowerBound)
+        XCTAssertTrue(source.contains("if selectedTab == .tuiGateway"))
+        XCTAssertTrue(source.contains("sessionTokenTotals: selectedTUIWorkspace.store.sessionTokenTotals"))
+        XCTAssertTrue(source.contains(".foregroundStyle(.green)"))
+        XCTAssertTrue(source.contains(".foregroundStyle(.blue)"))
+        XCTAssertTrue(source.contains("Text(\"IN \\(totals.inputDisplayText)\")"))
+        XCTAssertTrue(source.contains("Text(\"OUT \\(totals.outputDisplayText)\")"))
+    }
+
+    @MainActor
     func testTUIGatewayBatchesLongAssistantStreamsBeforePublishingTranscript() {
         let store = HermesTUIGatewayStore()
         let deltas = (0..<10_000).map { "chunk-\($0);" }
