@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import NaturalLanguage
 import Observation
 @preconcurrency import Translation
 
@@ -51,7 +52,10 @@ final class HermesNativeTranslationService {
         isTranslating = true
         // SwiftUI owns the TranslationSession lifecycle so macOS can prepare
         // its on-device language resources before the translation begins.
-        configuration = TranslationSession.Configuration(source: nil, target: english)
+        configuration = TranslationSession.Configuration(
+            source: Self.detectedSourceLanguage(for: selection),
+            target: english
+        )
     }
 
     nonisolated func performTranslation(with session: sending TranslationSession, apply: @escaping @MainActor (HermesChatTranslationSelection, String) -> Bool) async {
@@ -61,7 +65,12 @@ final class HermesNativeTranslationService {
         }
 
         do {
-            let availability = try await LanguageAvailability().status(for: selectedText, to: english)
+            let availability: LanguageAvailability.Status
+            if let sourceLanguage = session.sourceLanguage {
+                availability = await LanguageAvailability().status(from: sourceLanguage, to: english)
+            } else {
+                availability = try await LanguageAvailability().status(for: selectedText, to: english)
+            }
             guard availability != .unsupported else { throw HermesNativeTranslationError.unavailable }
             try await session.prepareTranslation()
             let response = try await session.translate(selectedText)
@@ -95,6 +104,25 @@ final class HermesNativeTranslationService {
         isTranslating = false
         configuration = nil
         if !keepingError { errorMessage = "" }
+    }
+
+    nonisolated private static func detectedSourceLanguage(for selection: HermesChatTranslationSelection) -> Locale.Language? {
+        var candidates = [selection.originalContent]
+        if let selectedText = selection.selectedText {
+            candidates.insert(selectedText, at: 0)
+        }
+
+        for candidate in candidates {
+            let text = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+
+            let recognizer = NLLanguageRecognizer()
+            recognizer.processString(text)
+            guard let language = recognizer.dominantLanguage, language != .undetermined else { continue }
+            return Locale.Language(identifier: language.rawValue)
+        }
+
+        return nil
     }
 
     nonisolated private static func translatedTextPreservingEdgeWhitespace(from source: String, translated: String) -> String {

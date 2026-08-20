@@ -61,6 +61,21 @@ final class ChatHermesWorkflowTests: XCTestCase {
         XCTAssertFalse(service.errorMessage.isEmpty)
     }
 
+    @MainActor
+    func testNativeTranslationServiceHintsShortSpanishSelectionToTranslationFramework() {
+        let service = HermesNativeTranslationService()
+
+        service.requestTranslation(
+            messageID: UUID(),
+            content: "Hola, ¿cómo estás?",
+            selectedRange: NSRange(location: 0, length: 4),
+            isMessageComplete: true
+        )
+
+        XCTAssertEqual(service.configuration?.source?.languageCode?.identifier, "es")
+        XCTAssertEqual(service.configuration?.target?.languageCode?.identifier, "en")
+    }
+
     func testChatDraftRedactionRemovesSecretLikePromptContent() {
         let token = String(repeating: "t", count: 30)
         let secretPrompt = "api_key=" + token
